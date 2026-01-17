@@ -12,6 +12,7 @@
 - PostgreSQL и Redis
 - Makefile для автоматизации команд
 - Zero-downtime деплой
+- Admin панель (Next.js) на том же сервере
 
 ---
 
@@ -31,7 +32,7 @@ backend/
 │   └── env.py                    # ВАЖНО: экранирование % для URL-encoded паролей
 ├── nginx/
 │   ├── nginx-initial.conf        # Начальная конфигурация (HTTP only)
-│   ├── nginx.conf.template       # Шаблон с SSL
+│   ├── nginx.conf.template       # Шаблон с SSL (обновлённый синтаксис http2)
 │   └── conf.d/                   # Дополнительные конфиги
 └── scripts/
     ├── init-ssl.sh               # Инициализация SSL сертификатов
@@ -223,7 +224,62 @@ networks:
     driver: bridge
 ```
 
-### 3. alembic/env.py (КРИТИЧЕСКИ ВАЖНОЕ ИСПРАВЛЕНИЕ!)
+### 3. nginx.conf.template (ВАЖНО: Обновлённый синтаксис!)
+
+**Ключевые изменения:**
+- ✅ Использует **современный синтаксис http2**: `listen 443 ssl;` + `http2 on;` (вместо deprecated `listen 443 ssl http2;`)
+- ✅ Правильные пути к SSL сертификатам: `/etc/letsencrypt/live/api.${DOMAIN}/` (Certbot генерирует сертификат для `api.domain.com`)
+- ✅ Admin панель проксируется на Docker контейнер `admin:3000` вместо статических файлов
+
+```nginx
+# Пример критически важных строк из шаблона:
+
+# API Server
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;  # ✅ Современный синтаксис!
+    server_name api.${DOMAIN};
+
+    # ✅ Правильный путь: api.${DOMAIN}, не ${DOMAIN}!
+    ssl_certificate /etc/letsencrypt/live/api.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.${DOMAIN}/privkey.pem;
+    # ...
+}
+
+# Admin Panel Server
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;  # ✅ Современный синтаксис!
+    server_name admin.${DOMAIN};
+
+    # ✅ Используем тот же сертификат что и API
+    ssl_certificate /etc/letsencrypt/live/api.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.${DOMAIN}/privkey.pem;
+
+    # ✅ Проксируем на Docker контейнер Next.js (не статические файлы!)
+    location / {
+        proxy_pass http://admin:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        # ...
+    }
+}
+```
+
+**Генерация конфига из шаблона:**
+```bash
+export DOMAIN=mediann.dev
+envsubst '${DOMAIN}' < nginx/nginx.conf.template > nginx/nginx.conf
+```
+
+### 4. alembic/env.py (КРИТИЧЕСКИ ВАЖНОЕ ИСПРАВЛЕНИЕ!)
 
 ```python
 # Alembic Config object
@@ -234,6 +290,13 @@ config = context.config
 # ConfigParser интерпретирует % как интерполяцию, поэтому нужно экранировать
 database_url_str = str(settings.database_url).replace("%", "%%")
 config.set_main_option("sqlalchemy.url", database_url_str)
+```
+
+### 5. .env.prod (CORS Origins)
+
+```bash
+# CORS: Указываем все домены фронтендов
+CORS_ORIGINS=https://admin.mediann.dev,https://front.mediann.dev,https://mediann.dev,http://localhost:3002
 ```
 
 ---
@@ -293,21 +356,48 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-### Ошибка 5: SSL сертификат не создаётся
+### Ошибка 5: SSL сертификат не создаётся / неправильный путь
 
-**Проблема:** Nginx возвращает 404 на ACME challenge
+**Проблема:** Nginx не может загрузить сертификат или путь неправильный
 
-**Решение:** Использовать standalone режим certbot:
+**Решение:** Certbot генерирует сертификат для `api.domain.com`, поэтому путь должен быть `/etc/letsencrypt/live/api.${DOMAIN}/`:
 ```bash
-# Остановить nginx
-docker compose -f docker-compose.prod.yml --env-file .env.prod stop nginx
-
-# Получить сертификат в standalone режиме
+# При получении сертификата указываем api.domain.com
 docker run --rm -p 80:80 -v certbot_certs:/etc/letsencrypt certbot/certbot certonly \
-  --standalone -d api.domain.com -d admin.domain.com --email admin@domain.com --agree-tos --no-eff-email
+  --standalone -d api.domain.com -d admin.domain.com \
+  --email admin@domain.com --agree-tos --no-eff-email
 
-# Запустить nginx с SSL конфигурацией
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d nginx
+# В nginx.conf.template используем api.${DOMAIN}
+ssl_certificate /etc/letsencrypt/live/api.${DOMAIN}/fullchain.pem;
+```
+
+### Ошибка 6: Deprecated синтаксис http2 в Nginx
+
+**Проблема:** `nginx: [warn] the "listen ... http2" directive is deprecated`
+
+**Решение:** Использовать современный синтаксис:
+```nginx
+# ❌ DEPRECATED:
+listen 443 ssl http2;
+
+# ✅ ПРАВИЛЬНО:
+listen 443 ssl;
+listen [::]:443 ssl;
+http2 on;
+```
+
+### Ошибка 7: Admin панель возвращает 403
+
+**Проблема:** Nginx настроен на статические файлы, а нужно проксировать на Docker контейнер
+
+**Решение:** В `nginx.conf.template` для `admin.${DOMAIN}` использовать `proxy_pass`:
+```nginx
+location / {
+    proxy_pass http://admin:3000;  # Проксируем на Next.js контейнер
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    # ...
+}
 ```
 
 ---
@@ -342,6 +432,9 @@ cp env.prod.example .env.prod
 nano .env.prod  # Заполнить ВСЕ значения!
 
 # ВАЖНО: Если в пароле есть / или другие спецсимволы - URL-encode их!
+
+# CORS Origins (в .env.prod)
+CORS_ORIGINS=https://admin.mediann.dev,https://front.mediann.dev,https://mediann.dev,http://localhost:3002
 ```
 
 ### Шаг 3: Настройка DNS
@@ -379,19 +472,25 @@ chmod +x scripts/init-ssl.sh
 # Остановить nginx
 docker compose -f docker-compose.prod.yml --env-file .env.prod stop nginx
 
-# Получить сертификат
+# Получить сертификат (ВАЖНО: указываем api.domain.com!)
 docker run --rm -p 80:80 \
   -v cms_certbot_certs:/etc/letsencrypt \
   certbot/certbot certonly --standalone \
   -d api.domain.com -d admin.domain.com \
   --email admin@domain.com --agree-tos --no-eff-email
 
-# Сгенерировать nginx конфиг
+# Сгенерировать nginx конфиг из шаблона
 export DOMAIN=domain.com
 envsubst '${DOMAIN}' < nginx/nginx.conf.template > nginx/nginx.conf
 
+# Проверить синтаксис
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx -t
+
 # Запустить nginx
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d nginx
+
+# Перезапустить nginx для применения конфигурации
+docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
 ```
 
 ### Шаг 6: Миграции и инициализация
@@ -415,6 +514,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f backend
 
 # Тест API
 curl https://api.domain.com/health
+
+# Тест Admin панели
+curl -I https://admin.domain.com
 ```
 
 ---
@@ -455,19 +557,31 @@ deploy:
 ```bash
 cd /opt/myproject/backend
 
-# Получить изменения
+# 1. Получить изменения
 git pull origin main
 
-# Пересобрать образ
+# 2. Пересгенерировать nginx.conf из шаблона (если изменился шаблон!)
+export DOMAIN=mediann.dev
+envsubst '${DOMAIN}' < nginx/nginx.conf.template > nginx/nginx.conf
+
+# 3. Проверить синтаксис nginx
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx -t
+
+# 4. Пересобрать образ
 docker compose -f docker-compose.prod.yml --env-file .env.prod build --no-cache backend
 
-# Миграции (если есть новые)
+# 5. Миграции (если есть новые)
 docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm migrations
 
-# Перезапуск
+# 6. Перезапуск
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d backend
+docker compose -f docker-compose.prod.yml --env-file .env.prod restart nginx
+
+# 7. Перезагрузить конфигурацию nginx (без downtime)
 docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx -s reload
 ```
+
+**Важно:** После `git pull` если изменился `nginx.conf.template`, **обязательно** пересгенерируй `nginx.conf` и перезапусти nginx!
 
 ---
 
@@ -480,6 +594,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx 
 - [ ] Сервис `migrations` использует `image:` а не `build:`
 - [ ] Порты 80 и 443 открыты в firewall
 - [ ] Docker login выполнен (для избежания rate limits)
+- [ ] CORS Origins настроены в `.env.prod`
+- [ ] `nginx.conf.template` использует современный синтаксис http2
+- [ ] Admin панель настроена на проксирование (если используется)
 
 ---
 
@@ -490,4 +607,28 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx 
 3. **Ограничь доступ к серверу** (SSH keys only, fail2ban)
 4. **Регулярные бэкапы:** `make db-backup`
 5. **Мониторинг логов:** `make prod-logs`
+6. **Обновляй зависимости:** регулярно проверяй уязвимости
 
+---
+
+## 🔗 Интеграция с Admin панелью
+
+Admin панель (Next.js) должна быть запущена в Docker контейнере на том же сервере:
+
+- **Контейнер:** `admin` (или другое имя из docker-compose фронтенда)
+- **Порт:** 3000
+- **Сеть:** должна быть в той же Docker сети что и backend (`cms_network_prod`)
+- **Nginx:** проксирует `admin.domain.com` → `http://admin:3000`
+
+**Проверка подключения из nginx контейнера:**
+```bash
+docker exec cms_nginx_prod wget -qO- http://admin:3000/ | head -1
+# Должно вернуть: <!DOCTYPE html>...
+```
+
+---
+
+## 📚 Дополнительные ресурсы
+
+- [DEPLOYMENT.md](../docs/DEPLOYMENT.md) - Полная инструкция по деплою
+- [ADMIN_FRONTEND_DEPLOYMENT_PROMPT.md](../docs/ADMIN_FRONTEND_DEPLOYMENT_PROMPT.md) - Деплой админ панели
