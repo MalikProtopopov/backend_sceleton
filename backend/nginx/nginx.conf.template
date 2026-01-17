@@ -199,10 +199,6 @@ http {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-        # Root for static files (pre-built Next.js export)
-        root /var/www/admin;
-        index index.html;
-
         # Health check
         location /nginx-health {
             access_log off;
@@ -210,20 +206,28 @@ http {
             add_header Content-Type text/plain;
         }
 
-        # Static assets with caching
+        # Next.js static assets with caching
         location /_next/static/ {
+            proxy_pass http://admin:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
             expires 1y;
             add_header Cache-Control "public, immutable";
         }
 
-        location /static/ {
-            expires 1y;
-            add_header Cache-Control "public, immutable";
-        }
-
-        # Next.js pages - try static file first, then fallback to index.html (SPA)
+        # Proxy all requests to Next.js container
         location / {
-            try_files $uri $uri.html $uri/ /index.html;
+            proxy_pass http://admin:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
         }
     }
 }
