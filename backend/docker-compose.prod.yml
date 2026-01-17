@@ -150,11 +150,10 @@ services:
 
   # ---------------------------------------------------------------------------
   # Database migrations (run once on startup)
+  # Uses the same image as backend to ensure consistency
   # ---------------------------------------------------------------------------
   migrations:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: backend-backend:latest
     container_name: cms_migrations_prod
     env_file:
       - .env.prod
