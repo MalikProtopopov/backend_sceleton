@@ -1,0 +1,251 @@
+# =============================================================================
+# Production Docker Compose Configuration
+# =============================================================================
+# Usage:
+#   1. Copy env.prod.example to .env.prod and configure
+#   2. Run: make prod-up
+#   3. Initialize SSL: make ssl-init DOMAIN=your-domain.com EMAIL=admin@your-domain.com
+#
+# Or directly:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Nginx Reverse Proxy with SSL
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: cms_nginx_prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_webroot:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - admin_static:/var/www/admin:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cms_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Certbot for SSL certificates
+  # ---------------------------------------------------------------------------
+  certbot:
+    image: certbot/certbot:latest
+    container_name: cms_certbot_prod
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    # Run certbot renew automatically
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - cms_network
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: cms_postgres_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-cms_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Don't expose port externally in production
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cms_user} -d ${POSTGRES_DB:-cms_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cms_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Redis for caching and task queue
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: cms_redis_prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cms_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # FastAPI Backend Application
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cms_backend_prod
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      # Override for Docker network
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cms_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cms_db}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      ENVIRONMENT: production
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - cms_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Database migrations (run once on startup)
+  # ---------------------------------------------------------------------------
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cms_migrations_prod
+    env_file:
+      - .env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cms_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cms_db}
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - cms_network
+
+  # ---------------------------------------------------------------------------
+  # Admin Panel (Next.js) - Optional, uncomment when ready
+  # ---------------------------------------------------------------------------
+  # admin:
+  #   build:
+  #     context: ../admin  # Adjust path to your admin panel
+  #     dockerfile: Dockerfile
+  #   container_name: cms_admin_prod
+  #   restart: unless-stopped
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: https://api.${DOMAIN}
+  #     NODE_ENV: production
+  #   expose:
+  #     - "3000"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:3000"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   networks:
+  #     - cms_network
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # MinIO (Self-hosted S3) - Optional, use if not using external S3
+  # ---------------------------------------------------------------------------
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: cms_minio_prod
+  #   restart: unless-stopped
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+  #   command: server /data --console-address ":9001"
+  #   volumes:
+  #     - minio_data:/data
+  #   expose:
+  #     - "9000"
+  #     - "9001"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #     interval: 30s
+  #     timeout: 20s
+  #     retries: 3
+  #   networks:
+  #     - cms_network
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    name: cms_postgres_data_prod
+  redis_data:
+    name: cms_redis_data_prod
+  certbot_webroot:
+    name: cms_certbot_webroot
+  certbot_certs:
+    name: cms_certbot_certs
+  admin_static:
+    name: cms_admin_static
+  # minio_data:
+  #   name: cms_minio_data_prod
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  cms_network:
+    name: cms_network_prod
+    driver: bridge
+

@@ -1,0 +1,17 @@
+{
+  "include": ["backend/app"],
+  "exclude": [
+    "docs",
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    "backend/tests"
+  ],
+  "venvPath": "backend",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false
+}
+

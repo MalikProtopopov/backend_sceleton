@@ -1,0 +1,5 @@
+id,type,label,value,url
+contact_1,telegram,Telegram,@medianndev_bot,https://mediann.dev/contacts/
+contact_2,phone,Телефон,+7 989 453 0373,https://mediann.dev/contacts/
+contact_3,email,Email,sales@mediann.dev,https://mediann.dev/contacts/
+contact_4,address,Адрес,"г. Махачкала, ул. Ермошкина, д. 17а",https://mediann.dev/contacts/

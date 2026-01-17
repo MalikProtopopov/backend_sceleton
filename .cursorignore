@@ -1,0 +1,19 @@
+# Reference/example code (documentation only)
+docs/reference/
+
+# Test data
+docs/test-data/
+
+# Build artifacts
+**/__pycache__
+*.pyc
+.venv/
+node_modules/
+
+# IDE
+.idea/
+
+# Misc
+*.log
+.DS_Store
+

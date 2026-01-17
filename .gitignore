@@ -1,0 +1,38 @@
+# =============================================================================
+# Root .gitignore
+# =============================================================================
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Cursor AI
+.cursor/
+.cursorrules
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Project specific
+*.plan.md
+plans/
+

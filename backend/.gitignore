@@ -1,0 +1,189 @@
+# =============================================================================
+# Backend .gitignore
+# =============================================================================
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Ruff
+.ruff_cache/
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+# Ignore actual env files, but keep examples
+.env
+.env.*
+!.env.example
+!.env.dev
+!.env.prod.example
+
+# =============================================================================
+# Docker
+# =============================================================================
+# Docker volumes (created by docker-compose)
+*.volume
+docker-data/
+
+# =============================================================================
+# Database
+# =============================================================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Database backups
+backups/
+*.sql.gz
+*.sql
+*.dump
+
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
+logs/
+*.log.*
+
+# =============================================================================
+# SSL Certificates
+# =============================================================================
+# Let's Encrypt certificates (should not be in git)
+certbot/
+letsencrypt/
+*.pem
+*.key
+*.crt
+*.cert
+
+# =============================================================================
+# Nginx
+# =============================================================================
+# Generated nginx config (from template)
+nginx/nginx.conf
+# Keep templates and initial config
+!nginx/nginx.conf.template
+!nginx/nginx-initial.conf
+
+# =============================================================================
+# MinIO / S3
+# =============================================================================
+minio-data/
+s3-data/
+
+# =============================================================================
+# Build artifacts
+# =============================================================================
+*.whl
+*.tar.gz
+dist/
+build/
+
+# =============================================================================
+# Testing
+# =============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+test-results/
+junit.xml
+
+# =============================================================================
+# Temporary files
+# =============================================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+.cache/
+
+# =============================================================================
+# OS
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# Project specific
+# =============================================================================
+# Alembic (keep migrations, ignore temp files)
+alembic/__pycache__/
+
+# Scripts output
+scripts/output/
+scripts/tmp/
+
+# Local development
+.local/
+local/
+
