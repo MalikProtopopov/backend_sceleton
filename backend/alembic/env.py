@@ -32,7 +32,9 @@ from app.modules.assets.models import FileAsset  # noqa: F401
 config = context.config
 
 # Set database URL from settings
-config.set_main_option("sqlalchemy.url", str(settings.database_url))
+# Escape % characters for ConfigParser (it interprets % as interpolation)
+database_url_str = str(settings.database_url).replace("%", "%%")
+config.set_main_option("sqlalchemy.url", database_url_str)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:
