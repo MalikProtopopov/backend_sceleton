@@ -66,20 +66,12 @@ http {
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:50m;
     ssl_session_tickets off;
-    ssl_stapling on;
-    ssl_stapling_verify on;
 
     # Upstream for backend API
     upstream backend {
         server backend:8000;
         keepalive 32;
     }
-
-    # Upstream for admin panel (uncomment when admin is deployed)
-    # upstream admin {
-    #     server admin:3000;
-    #     keepalive 16;
-    # }
 
     # ==========================================================================
     # HTTP Server - Redirect to HTTPS
@@ -105,13 +97,14 @@ http {
     # API Server (api.domain.com)
     # ==========================================================================
     server {
-        listen 443 ssl http2;
-        listen [::]:443 ssl http2;
+        listen 443 ssl;
+        listen [::]:443 ssl;
+        http2 on;
         server_name api.${DOMAIN};
 
-        # SSL certificates
-        ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+        # SSL certificates (using api.DOMAIN as that's how certbot generates them)
+        ssl_certificate /etc/letsencrypt/live/api.${DOMAIN}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/api.${DOMAIN}/privkey.pem;
 
         # Security headers
         add_header X-Frame-Options "SAMEORIGIN" always;
@@ -135,10 +128,6 @@ http {
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            
-            # Optional: restrict access to docs
-            # allow 10.0.0.0/8;
-            # deny all;
         }
 
         # Login endpoint with stricter rate limiting
@@ -194,13 +183,14 @@ http {
     # Admin Panel Server (admin.domain.com)
     # ==========================================================================
     server {
-        listen 443 ssl http2;
-        listen [::]:443 ssl http2;
+        listen 443 ssl;
+        listen [::]:443 ssl;
+        http2 on;
         server_name admin.${DOMAIN};
 
-        # SSL certificates
-        ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+        # SSL certificates (using same cert as API)
+        ssl_certificate /etc/letsencrypt/live/api.${DOMAIN}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/api.${DOMAIN}/privkey.pem;
 
         # Security headers
         add_header X-Frame-Options "SAMEORIGIN" always;
@@ -235,18 +225,5 @@ http {
         location / {
             try_files $uri $uri.html $uri/ /index.html;
         }
-
-        # If using Next.js server (not static export), uncomment below:
-        # location / {
-        #     proxy_pass http://admin;
-        #     proxy_http_version 1.1;
-        #     proxy_set_header Host $host;
-        #     proxy_set_header X-Real-IP $remote_addr;
-        #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        #     proxy_set_header X-Forwarded-Proto $scheme;
-        #     proxy_set_header Upgrade $http_upgrade;
-        #     proxy_set_header Connection "upgrade";
-        # }
     }
 }
-
