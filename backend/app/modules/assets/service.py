@@ -24,6 +24,7 @@ class S3Service:
 
     def __init__(self) -> None:
         self._client = None
+        self._public_client = None
 
     @property
     def is_configured(self) -> bool:
@@ -32,7 +33,7 @@ class S3Service:
 
     @property
     def client(self):
-        """Get or create S3 client.
+        """Get or create S3 client for internal operations.
         
         Raises:
             ExternalServiceError: If S3 credentials are not configured.
@@ -54,6 +55,27 @@ class S3Service:
             )
         return self._client
 
+    @property
+    def public_client(self):
+        """Get or create S3 client for generating presigned URLs.
+        
+        Uses S3_PUBLIC_URL as endpoint so signatures are valid for browser requests.
+        Falls back to internal client if S3_PUBLIC_URL is not configured.
+        """
+        if not settings.s3_public_url:
+            return self.client
+        
+        if self._public_client is None:
+            self._public_client = boto3.client(
+                "s3",
+                endpoint_url=settings.s3_public_url,
+                aws_access_key_id=settings.s3_access_key,
+                aws_secret_access_key=settings.s3_secret_key,
+                region_name=settings.s3_region,
+                config=Config(signature_version="s3v4"),
+            )
+        return self._public_client
+
     def generate_presigned_upload_url(
         self,
         s3_key: str,
@@ -62,11 +84,11 @@ class S3Service:
     ) -> str:
         """Generate presigned URL for direct upload to S3.
         
-        If S3_PUBLIC_URL is configured, the internal endpoint URL is replaced
-        with the public URL for browser access (e.g., through nginx proxy).
+        Uses public_client to generate URLs with correct host for browser requests.
+        The signature is calculated with the public endpoint URL.
         """
         try:
-            url = self.client.generate_presigned_url(
+            url = self.public_client.generate_presigned_url(
                 "put_object",
                 Params={
                     "Bucket": settings.s3_bucket_name,
@@ -75,11 +97,6 @@ class S3Service:
                 },
                 ExpiresIn=expires_in,
             )
-            
-            # Replace internal endpoint with public URL if configured
-            if settings.s3_public_url and settings.s3_endpoint_url:
-                url = url.replace(settings.s3_endpoint_url, settings.s3_public_url)
-            
             return url
         except Exception as e:
             logger.exception("s3_presign_failed", error=str(e))
