@@ -59,6 +59,7 @@ class Settings(BaseSettings):
 
     # S3 Storage (auto-configured to MinIO in development)
     s3_endpoint_url: str = ""
+    s3_public_url: str = ""  # Public URL for presigned URLs (e.g., https://api.example.com/s3)
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_bucket_name: str = "cms-assets"

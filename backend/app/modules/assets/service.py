@@ -60,7 +60,11 @@ class S3Service:
         content_type: str,
         expires_in: int = 3600,
     ) -> str:
-        """Generate presigned URL for direct upload to S3."""
+        """Generate presigned URL for direct upload to S3.
+        
+        If S3_PUBLIC_URL is configured, the internal endpoint URL is replaced
+        with the public URL for browser access (e.g., through nginx proxy).
+        """
         try:
             url = self.client.generate_presigned_url(
                 "put_object",
@@ -71,6 +75,11 @@ class S3Service:
                 },
                 ExpiresIn=expires_in,
             )
+            
+            # Replace internal endpoint with public URL if configured
+            if settings.s3_public_url and settings.s3_endpoint_url:
+                url = url.replace(settings.s3_endpoint_url, settings.s3_public_url)
+            
             return url
         except Exception as e:
             logger.exception("s3_presign_failed", error=str(e))
