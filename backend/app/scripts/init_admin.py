@@ -126,9 +126,9 @@ async def init_roles(db, tenant_id, permissions_map: dict[str, Permission]) -> d
                     RolePermission.role_id == role.id,
                     RolePermission.permission_id.in_(permissions_to_remove)
                 )
-        )
+            )
             for rp in remove_rp_result.scalars().all():
-            await db.delete(rp)
+                await db.delete(rp)
         
         # Add new permissions
         for perm_id in permissions_to_add:
@@ -140,7 +140,7 @@ async def init_roles(db, tenant_id, permissions_map: dict[str, Permission]) -> d
             db.add(rp)
         
         if permissions_to_add or permissions_to_remove:
-        await db.flush()
+            await db.flush()
             if permissions_to_add:
                 print(f"  ✅ Added {len(permissions_to_add)} permissions to {role_name}")
             if permissions_to_remove:
