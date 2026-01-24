@@ -36,6 +36,7 @@ class InquiryStatus(str, Enum):
     CONTACTED = "contacted"
     COMPLETED = "completed"
     SPAM = "spam"
+    CANCELLED = "cancelled"
 
 
 # ============================================================================
@@ -228,7 +229,7 @@ class Inquiry(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, TenantMixin):
         Index("ix_inquiries_utm_campaign", "tenant_id", "utm_campaign"),
         Index("ix_inquiries_device", "tenant_id", "device_type"),
         CheckConstraint(
-            "status IN ('new', 'in_progress', 'contacted', 'completed', 'spam')",
+            "status IN ('new', 'in_progress', 'contacted', 'completed', 'spam', 'cancelled')",
             name="ck_inquiries_status",
         ),
         CheckConstraint(

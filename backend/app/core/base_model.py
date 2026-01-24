@@ -83,6 +83,9 @@ class VersionMixin:
     """Mixin for optimistic locking using version field.
 
     Prevents lost updates in concurrent editing scenarios.
+    
+    Usage in services:
+        entity.check_version(data.version)  # Validates and auto-increments
     """
 
     version: Mapped[int] = mapped_column(
@@ -90,6 +93,26 @@ class VersionMixin:
         default=1,
         nullable=False,
     )
+
+    def check_version(self, provided_version: int) -> None:
+        """Validate version and increment for optimistic locking.
+        
+        Args:
+            provided_version: Version from client request
+            
+        Raises:
+            VersionConflictError: If versions don't match
+        """
+        # Import here to avoid circular imports
+        from app.core.exceptions import VersionConflictError
+        
+        if self.version != provided_version:
+            raise VersionConflictError(
+                self.__class__.__name__, 
+                self.version, 
+                provided_version
+            )
+        self.version += 1
 
 
 class TenantMixin:
@@ -152,9 +175,4 @@ class PublishableMixin:
     )
 
 
-# Optimistic locking event listener
-@event.listens_for(VersionMixin, "before_update", propagate=True)
-def increment_version(mapper: Any, connection: Any, target: VersionMixin) -> None:
-    """Auto-increment version on update for optimistic locking."""
-    target.version += 1
 

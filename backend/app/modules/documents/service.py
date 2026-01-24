@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import transactional
-from app.core.exceptions import NotFoundError, VersionConflictError
+from app.core.exceptions import NotFoundError
 from app.core.locale_helpers import check_slug_unique
 from app.modules.documents.models import (
     Document,
@@ -205,6 +205,7 @@ class DocumentService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(document)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(document, ["locales"])
 
         return document
@@ -218,9 +219,7 @@ class DocumentService:
     ) -> Document:
         """Update a document."""
         document = await self.get_by_id(document_id, tenant_id)
-
-        if document.version != data.version:
-            raise VersionConflictError("Document", document.version, data.version)
+        document.check_version(data.version)
 
         # Update main fields
         if data.status is not None:
@@ -278,6 +277,7 @@ class DocumentService:
                     self.db.add(new_locale)
 
         await self.db.flush()
+        await self.db.refresh(document)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(document, ["locales"])
 
         return document
@@ -295,6 +295,7 @@ class DocumentService:
         document = await self.get_by_id(document_id, tenant_id)
         document.publish()
         await self.db.flush()
+        await self.db.refresh(document)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(document, ["locales"])
         return document
 
@@ -304,6 +305,7 @@ class DocumentService:
         document = await self.get_by_id(document_id, tenant_id)
         document.unpublish()
         await self.db.flush()
+        await self.db.refresh(document)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(document, ["locales"])
         return document
 

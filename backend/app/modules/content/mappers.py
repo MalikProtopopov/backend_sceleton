@@ -9,12 +9,15 @@ from app.modules.content.models import (
     Article,
     Case,
     FAQ,
+    Review,
     Topic,
 )
 from app.modules.content.schemas import (
     ArticlePublicResponse,
+    CaseMinimalResponse,
     CasePublicResponse,
     FAQPublicResponse,
+    ReviewMinimalResponse,
     TopicDetailPublicResponse,
     TopicPublicResponse,
     TopicWithArticlesCountPublicResponse,
@@ -249,12 +252,77 @@ def map_faqs_to_public_response(
 
 
 # ============================================================================
+# Review Mappers
+# ============================================================================
+
+
+def map_case_to_minimal_response(case: Case, locale: str) -> CaseMinimalResponse:
+    """Map a Case model to CaseMinimalResponse (for embedding in reviews).
+    
+    Args:
+        case: Case ORM model with locales loaded
+        locale: Locale code to filter by
+        
+    Returns:
+        CaseMinimalResponse with minimal data for the specified locale
+    """
+    locale_data = next(
+        (loc for loc in case.locales if loc.locale == locale),
+        case.locales[0] if case.locales else None
+    )
+    
+    if not locale_data:
+        # If no locale data, return minimal info without title
+        return CaseMinimalResponse(
+            id=case.id,
+            slug="",
+            title="",
+            cover_image_url=case.cover_image_url,
+            client_name=case.client_name,
+        )
+    
+    return CaseMinimalResponse(
+        id=case.id,
+        slug=locale_data.slug,
+        title=locale_data.title,
+        cover_image_url=case.cover_image_url,
+        client_name=case.client_name,
+    )
+
+
+def map_review_to_minimal_response(review: Review) -> ReviewMinimalResponse:
+    """Map a Review model to ReviewMinimalResponse (for embedding in cases).
+    
+    Args:
+        review: Review ORM model
+        
+    Returns:
+        ReviewMinimalResponse with minimal data
+    """
+    return ReviewMinimalResponse(
+        id=review.id,
+        rating=review.rating,
+        author_name=review.author_name,
+        author_company=review.author_company,
+        author_position=review.author_position,
+        author_photo_url=review.author_photo_url,
+        content=review.content,
+        review_date=review.review_date,
+    )
+
+
+def map_reviews_to_minimal_response(reviews: list[Review]) -> list[ReviewMinimalResponse]:
+    """Map a list of Review models to ReviewMinimalResponse list."""
+    return [map_review_to_minimal_response(r) for r in reviews]
+
+
+# ============================================================================
 # Case Mappers
 # ============================================================================
 
 
 def map_case_to_public_response(
-    case: Case, locale: str, include_full_content: bool = True
+    case: Case, locale: str, include_full_content: bool = True, reviews: list[Review] | None = None
 ) -> CasePublicResponse:
     """Map a Case model to CasePublicResponse.
     
@@ -262,6 +330,7 @@ def map_case_to_public_response(
         case: Case ORM model with locales and services loaded
         locale: Locale code to filter by
         include_full_content: Whether to include full description/results (False for lists)
+        reviews: Optional list of reviews to include (for case detail page)
         
     Returns:
         CasePublicResponse with data for the specified locale
@@ -273,6 +342,9 @@ def map_case_to_public_response(
     
     if not locale_data:
         raise LocaleDataMissingError("Case", case.id, locale)
+    
+    # Map reviews if provided
+    reviews_response = map_reviews_to_minimal_response(reviews) if reviews else []
     
     return CasePublicResponse(
         id=case.id,
@@ -290,6 +362,7 @@ def map_case_to_public_response(
         meta_title=locale_data.meta_title,
         meta_description=locale_data.meta_description,
         services=[s.service_id for s in case.services],
+        reviews=reviews_response,
     )
 
 

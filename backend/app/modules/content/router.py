@@ -59,6 +59,7 @@ from app.modules.content.schemas import (
 from app.modules.content.mappers import (
     map_article_to_public_response,
     map_articles_to_public_response,
+    map_case_to_minimal_response,
     map_case_to_public_response,
     map_cases_to_public_response,
     map_faqs_to_public_response,
@@ -850,10 +851,22 @@ async def get_case_public(
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
 ) -> CasePublicResponse:
-    """Get a published case by slug."""
+    """Get a published case by slug with approved reviews."""
     service = CaseService(db)
     case = await service.get_by_slug(slug, locale.locale, tenant_id)
-    return map_case_to_public_response(case, locale.locale, include_full_content=True)
+    
+    # Load approved reviews for this case
+    review_service = ReviewService(db)
+    reviews, _ = await review_service.list_approved(
+        tenant_id=tenant_id,
+        page=1,
+        page_size=100,  # Get up to 100 reviews for the case
+        case_id=case.id,
+    )
+    
+    return map_case_to_public_response(
+        case, locale.locale, include_full_content=True, reviews=reviews
+    )
 
 
 # ============================================================================
@@ -1146,6 +1159,7 @@ async def delete_case_locale(
 )
 async def list_reviews_public(
     pagination: Pagination,
+    locale: Locale,
     tenant_id: PublicTenantId,
     case_id: UUID | None = Query(default=None, alias="caseId"),
     featured: bool | None = Query(default=None),
@@ -1161,8 +1175,13 @@ async def list_reviews_public(
         is_featured=featured,
     )
 
-    items = [
-        ReviewPublicResponse(
+    items = []
+    for r in reviews:
+        case_data = None
+        if r.case:
+            case_data = map_case_to_minimal_response(r.case, locale.locale)
+        
+        items.append(ReviewPublicResponse(
             id=r.id,
             rating=r.rating,
             author_name=r.author_name,
@@ -1172,9 +1191,8 @@ async def list_reviews_public(
             content=r.content,
             source=r.source,
             review_date=r.review_date,
-        )
-        for r in reviews
-    ]
+            case=case_data,
+        ))
 
     return ReviewPublicListResponse(
         items=items,
@@ -1200,11 +1218,33 @@ async def list_reviews_admin(
     pagination: Pagination,
     status: str | None = Query(default=None),
     case_id: UUID | None = Query(default=None, alias="caseId"),
+    case_slug: str | None = Query(default=None, alias="caseSlug", description="Filter by case slug"),
     featured: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> ReviewListResponse:
-    """List all reviews with filters."""
+    """List all reviews with filters.
+    
+    Can filter by case_id or case_slug (if both provided, case_id takes precedence).
+    """
+    # If case_slug provided and case_id is not, find the case
+    if case_slug and not case_id:
+        case_service = CaseService(db)
+        from sqlalchemy import select
+        from app.modules.content.models import Case, CaseLocale
+        stmt = (
+            select(Case)
+            .join(CaseLocale)
+            .where(Case.tenant_id == tenant_id)
+            .where(Case.deleted_at.is_(None))
+            .where(CaseLocale.slug == case_slug)
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        case = result.scalar_one_or_none()
+        if case:
+            case_id = case.id
+    
     service = ReviewService(db)
     reviews, total = await service.list_reviews(
         tenant_id=tenant_id,
@@ -1215,8 +1255,39 @@ async def list_reviews_admin(
         is_featured=featured,
     )
 
+    # Map reviews with case data
+    items = []
+    for r in reviews:
+        review_dict = {
+            "rating": r.rating,
+            "author_name": r.author_name,
+            "author_company": r.author_company,
+            "author_position": r.author_position,
+            "content": r.content,
+            "is_featured": r.is_featured,
+            "source": r.source,
+            "source_url": r.source_url,
+            "review_date": r.review_date,
+            "sort_order": r.sort_order,
+            "id": r.id,
+            "tenant_id": r.tenant_id,
+            "author_photo_url": r.author_photo_url,
+            "status": r.status,
+            "case_id": r.case_id,
+            "case": None,
+            "version": r.version,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+            "deleted_at": r.deleted_at,
+        }
+        if r.case and r.case.locales:
+            # Use first available locale for admin
+            locale = r.case.locales[0].locale if r.case.locales else "ru"
+            review_dict["case"] = map_case_to_minimal_response(r.case, locale)
+        items.append(ReviewResponse(**review_dict))
+
     return ReviewListResponse(
-        items=[ReviewResponse.model_validate(r) for r in reviews],
+        items=items,
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,

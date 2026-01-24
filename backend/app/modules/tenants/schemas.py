@@ -178,3 +178,24 @@ class TenantListResponse(BaseModel):
     page: int
     page_size: int
 
+
+# ============================================================================
+# Public Tenant Schema
+# ============================================================================
+
+
+class TenantPublicResponse(BaseModel):
+    """Public tenant information (safe for frontend).
+    
+    This schema exposes only non-sensitive tenant data for public API.
+    Does not include: domain, contact_email, contact_phone, extra_data, settings, feature_flags.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    slug: str
+    logo_url: str | None = None
+    primary_color: str | None = None
+

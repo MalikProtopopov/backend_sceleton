@@ -100,6 +100,12 @@ class CacheHeadersMiddleware(BaseHTTPMiddleware):
         """Determine cache policy based on request path."""
         # Public API endpoints - cacheable
         if "/public/" in path:
+            # Tenant data - short cache (logo/name may change)
+            if "/public/tenants/" in path:
+                return {
+                    "cache_control": "public, max-age=60",  # 1 minute
+                    "add_etag": True,
+                }
             # Static content like sitemap, robots - longer cache
             if "/sitemap" in path or "/robots" in path:
                 return {

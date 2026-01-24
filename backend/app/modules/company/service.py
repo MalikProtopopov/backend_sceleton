@@ -12,7 +12,6 @@ from app.core.exceptions import (
     DuplicatePriceError,
     DuplicateTagError,
     NotFoundError,
-    VersionConflictError,
 )
 from app.core.locale_helpers import (
     LocaleAlreadyExistsError,
@@ -207,6 +206,7 @@ class ServiceService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(service)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(service, ["locales", "prices", "tags"])
 
         return service
@@ -215,9 +215,7 @@ class ServiceService:
     async def update(self, service_id: UUID, tenant_id: UUID, data: ServiceUpdate) -> Service:
         """Update service."""
         service = await self.get_by_id(service_id, tenant_id)
-
-        if service.version != data.version:
-            raise VersionConflictError("Service", service.version, data.version)
+        service.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
 
@@ -229,6 +227,7 @@ class ServiceService:
             setattr(service, field, value)
 
         await self.db.flush()
+        await self.db.refresh(service)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(service, ["locales", "prices", "tags"])
 
         return service
@@ -631,6 +630,7 @@ class EmployeeService:
             self.db.add(epa)
 
         await self.db.flush()
+        await self.db.refresh(employee)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(employee, ["locales", "practice_areas"])
 
         return employee
@@ -639,9 +639,7 @@ class EmployeeService:
     async def update(self, employee_id: UUID, tenant_id: UUID, data: EmployeeUpdate) -> Employee:
         """Update employee."""
         employee = await self.get_by_id(employee_id, tenant_id)
-
-        if employee.version != data.version:
-            raise VersionConflictError("Employee", employee.version, data.version)
+        employee.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version", "practice_area_ids"})
 
@@ -664,6 +662,7 @@ class EmployeeService:
                 self.db.add(epa)
 
         await self.db.flush()
+        await self.db.refresh(employee)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(employee, ["locales", "practice_areas"])
 
         return employee
@@ -828,6 +827,7 @@ class PracticeAreaService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(pa)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(pa, ["locales"])
 
         return pa
@@ -836,15 +836,14 @@ class PracticeAreaService:
     async def update(self, pa_id: UUID, tenant_id: UUID, data: PracticeAreaUpdate) -> PracticeArea:
         """Update a practice area."""
         pa = await self.get_by_id(pa_id, tenant_id)
-
-        if pa.version != data.version:
-            raise VersionConflictError("PracticeArea", pa.version, data.version)
+        pa.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():
             setattr(pa, field, value)
 
         await self.db.flush()
+        await self.db.refresh(pa)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(pa, ["locales"])
 
         return pa
@@ -1006,6 +1005,7 @@ class AdvantageService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(adv)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(adv, ["locales"])
 
         return adv
@@ -1014,15 +1014,14 @@ class AdvantageService:
     async def update(self, adv_id: UUID, tenant_id: UUID, data: AdvantageUpdate) -> Advantage:
         """Update an advantage."""
         adv = await self.get_by_id(adv_id, tenant_id)
-
-        if adv.version != data.version:
-            raise VersionConflictError("Advantage", adv.version, data.version)
+        adv.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():
             setattr(adv, field, value)
 
         await self.db.flush()
+        await self.db.refresh(adv)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(adv, ["locales"])
 
         return adv
@@ -1156,6 +1155,7 @@ class ContactService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(address)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(address, ["locales"])
 
         return address
@@ -1238,6 +1238,7 @@ class ContactService:
             setattr(address, field, value)
 
         await self.db.flush()
+        await self.db.refresh(address)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(address, ["locales"])
 
         return address

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import transactional
-from app.core.exceptions import NotFoundError, VersionConflictError
+from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.modules.leads.models import Inquiry, InquiryForm, InquiryStatus
 from app.modules.leads.schemas import (
@@ -82,9 +82,7 @@ class InquiryFormService:
     ) -> InquiryForm:
         """Update an inquiry form."""
         form = await self.get_by_id(form_id, tenant_id)
-
-        if form.version != data.version:
-            raise VersionConflictError("InquiryForm", form.version, data.version)
+        form.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():
@@ -240,6 +238,7 @@ class InquiryService:
 
         self.db.add(inquiry)
         await self.db.flush()
+        await self.db.refresh(inquiry)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(inquiry, ["form"])
 
         logger.info(
@@ -306,6 +305,7 @@ class InquiryService:
             setattr(inquiry, field, value)
 
         await self.db.flush()
+        await self.db.refresh(inquiry)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(inquiry, ["form"])
 
         return inquiry

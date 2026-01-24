@@ -368,6 +368,39 @@ class FAQListResponse(BaseModel):
 # ============================================================================
 
 
+# ============================================================================
+# Minimal Response Schemas (to avoid circular dependencies)
+# ============================================================================
+
+
+class CaseMinimalResponse(BaseModel):
+    """Minimal case information for review responses (avoids circular dependency)."""
+
+    id: UUID
+    slug: str
+    title: str
+    cover_image_url: str | None = None
+    client_name: str | None = None
+
+
+class ReviewMinimalResponse(BaseModel):
+    """Minimal review information for case responses (avoids circular dependency)."""
+
+    id: UUID
+    rating: int
+    author_name: str
+    author_company: str | None = None
+    author_position: str | None = None
+    author_photo_url: str | None = None
+    content: str
+    review_date: datetime | None = None
+
+
+# ============================================================================
+# Review Schemas
+# ============================================================================
+
+
 class ReviewStatus(str, Enum):
     """Review moderation status."""
 
@@ -431,6 +464,7 @@ class ReviewResponse(ReviewBase):
     author_photo_url: str | None = None
     status: ReviewStatus
     case_id: UUID | None = None
+    case: CaseMinimalResponse | None = None
     version: int
     created_at: datetime
     updated_at: datetime
@@ -449,6 +483,7 @@ class ReviewPublicResponse(BaseModel):
     content: str
     source: str | None = None
     review_date: datetime | None = None
+    case: CaseMinimalResponse | None = None
 
 
 class ReviewListResponse(BaseModel):
@@ -604,6 +639,7 @@ class CasePublicResponse(BaseModel):
     meta_title: str | None = None
     meta_description: str | None = None
     services: list[UUID] = []
+    reviews: list[ReviewMinimalResponse] = []
 
 
 class CaseListResponse(BaseModel):

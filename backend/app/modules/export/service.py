@@ -41,16 +41,35 @@ class ExportService:
         # Get data based on resource type
         if resource_type == ExportResourceType.INQUIRIES:
             data = await self._get_inquiries(tenant_id, status, date_from, date_to)
-            default_columns = ["name", "email", "phone", "company", "status", "utm_source", "created_at"]
+            default_columns = [
+                "id", "name", "email", "phone", "company", "message",
+                "status", "form_id", "service_id", "assigned_to", "notes",
+                "contacted_at", "notification_sent", "notification_sent_at",
+                "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+                "referrer_url", "source_url", "page_path", "page_title",
+                "user_agent", "device_type", "browser", "os", "screen_resolution",
+                "ip_address", "country", "city", "region",
+                "session_id", "session_page_views", "time_on_page",
+                "custom_fields", "created_at", "updated_at",
+            ]
         elif resource_type == ExportResourceType.EMPLOYEES:
             data = await self._get_employees(tenant_id)
-            default_columns = ["name", "position", "email", "phone", "is_published"]
+            default_columns = ["name", "position", "email", "phone", "is_published", "linkedin_url", "telegram_url"]
         elif resource_type == ExportResourceType.SEO_ROUTES:
             data = await self._get_seo_routes(tenant_id)
-            default_columns = ["path", "locale", "meta_title", "meta_description", "created_at"]
+            default_columns = [
+                "id", "path", "locale", "title",
+                "meta_title", "meta_description", "meta_keywords", "og_image",
+                "canonical_url", "robots_index", "robots_follow",
+                "structured_data", "sitemap_priority", "sitemap_changefreq", "include_in_sitemap",
+                "version", "created_at", "updated_at",
+            ]
         elif resource_type == ExportResourceType.AUDIT_LOGS:
             data = await self._get_audit_logs(tenant_id, date_from, date_to)
-            default_columns = ["timestamp", "user_email", "action", "resource_type", "resource_name"]
+            default_columns = [
+                "timestamp", "user_email", "user_name", "action",
+                "resource_type", "resource_id", "resource_name", "ip_address", "status",
+            ]
         else:
             data = []
             default_columns = []
@@ -101,18 +120,54 @@ class ExportService:
 
         return [
             {
+                # ID
+                "id": str(i.id),
+                # Contact Info
                 "name": i.name,
                 "email": i.email or "",
                 "phone": i.phone or "",
                 "company": i.company or "",
                 "message": i.message or "",
+                # Status & Processing
                 "status": i.status,
+                "form_id": str(i.form_id) if i.form_id else "",
+                "service_id": str(i.service_id) if i.service_id else "",
+                "assigned_to": str(i.assigned_to) if i.assigned_to else "",
+                "notes": i.notes or "",
+                "contacted_at": i.contacted_at.isoformat() if i.contacted_at else "",
+                "notification_sent": "Yes" if i.notification_sent else "No",
+                "notification_sent_at": i.notification_sent_at.isoformat() if i.notification_sent_at else "",
+                # UTM Tracking
                 "utm_source": i.utm_source or "",
                 "utm_medium": i.utm_medium or "",
                 "utm_campaign": i.utm_campaign or "",
-                "device_type": i.device_type or "",
+                "utm_term": i.utm_term or "",
+                "utm_content": i.utm_content or "",
+                "referrer_url": i.referrer_url or "",
+                # Page Context
                 "source_url": i.source_url or "",
+                "page_path": i.page_path or "",
+                "page_title": i.page_title or "",
+                # Device & Browser
+                "user_agent": i.user_agent or "",
+                "device_type": i.device_type or "",
+                "browser": i.browser or "",
+                "os": i.os or "",
+                "screen_resolution": i.screen_resolution or "",
+                # Location
+                "ip_address": i.ip_address or "",
+                "country": i.country or "",
+                "city": i.city or "",
+                "region": i.region or "",
+                # Session Info
+                "session_id": i.session_id or "",
+                "session_page_views": str(i.session_page_views) if i.session_page_views is not None else "",
+                "time_on_page": str(i.time_on_page) if i.time_on_page is not None else "",
+                # Custom Fields
+                "custom_fields": json.dumps(i.custom_fields, ensure_ascii=False) if i.custom_fields else "",
+                # Timestamps
                 "created_at": i.created_at.isoformat() if i.created_at else "",
+                "updated_at": i.updated_at.isoformat() if i.updated_at else "",
             }
             for i in inquiries
         ]
@@ -151,7 +206,6 @@ class ExportService:
         stmt = (
             select(SEORoute)
             .where(SEORoute.tenant_id == tenant_id)
-            .where(SEORoute.deleted_at.is_(None))
             .order_by(SEORoute.path)
         )
 
@@ -160,14 +214,32 @@ class ExportService:
 
         return [
             {
+                # ID
+                "id": str(r.id),
+                # Route Info
                 "path": r.path,
                 "locale": r.locale,
+                "title": r.title or "",
+                # SEO Meta Tags
                 "meta_title": r.meta_title or "",
                 "meta_description": r.meta_description or "",
+                "meta_keywords": r.meta_keywords or "",
+                # Open Graph
+                "og_image": r.og_image or "",
+                # Canonical & Robots
                 "canonical_url": r.canonical_url or "",
                 "robots_index": "Yes" if r.robots_index else "No",
                 "robots_follow": "Yes" if r.robots_follow else "No",
+                # Structured Data
+                "structured_data": r.structured_data or "",
+                # Sitemap
+                "sitemap_priority": str(r.sitemap_priority) if r.sitemap_priority is not None else "",
+                "sitemap_changefreq": r.sitemap_changefreq or "",
+                "include_in_sitemap": "Yes" if r.include_in_sitemap else "No",
+                # Version & Timestamps
+                "version": str(r.version),
                 "created_at": r.created_at.isoformat() if r.created_at else "",
+                "updated_at": r.updated_at.isoformat() if r.updated_at else "",
             }
             for r in routes
         ]

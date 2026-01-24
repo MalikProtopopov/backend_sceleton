@@ -164,6 +164,12 @@ class TelegramIntegrationService:
             f"bot @{bot_info.get('username')}"
         )
         
+        # Auto-register webhook if PUBLIC_API_URL is configured
+        await self._auto_set_webhook(integration, data.bot_token)
+        
+        # Refresh to get updated fields after webhook setup
+        await self.db.refresh(integration)
+        
         return integration
     
     async def update_integration(
@@ -210,6 +216,12 @@ class TelegramIntegrationService:
         
         logger.info(f"Updated Telegram integration for tenant {tenant_id}")
         
+        # Auto-register webhook if token was updated
+        if data.bot_token is not None:
+            await self._auto_set_webhook(integration, data.bot_token)
+            # Refresh to get updated fields after webhook setup
+            await self.db.refresh(integration)
+        
         return integration
     
     async def delete_integration(self, tenant_id: UUID) -> None:
@@ -240,6 +252,54 @@ class TelegramIntegrationService:
     # =========================================================================
     # Webhook Management
     # =========================================================================
+    
+    async def _auto_set_webhook(
+        self,
+        integration: TelegramIntegration,
+        bot_token: str,
+    ) -> bool:
+        """Automatically set webhook after creating/updating integration.
+        
+        Args:
+            integration: TelegramIntegration instance
+            bot_token: Decrypted bot token
+            
+        Returns:
+            True if webhook was set successfully, False otherwise
+        """
+        if not settings.public_api_url:
+            logger.warning(
+                f"PUBLIC_API_URL not configured, webhook not set for tenant {integration.tenant_id}. "
+                "Set PUBLIC_API_URL to enable automatic webhook registration."
+            )
+            return False
+        
+        webhook_url = self.get_webhook_url(integration)
+        if not webhook_url:
+            return False
+        
+        try:
+            success = await self._set_webhook(
+                bot_token,
+                webhook_url,
+                integration.webhook_secret,
+            )
+            
+            if success:
+                integration.webhook_url = webhook_url
+                integration.is_webhook_active = True
+                await self.db.commit()
+                logger.info(
+                    f"Auto-registered webhook for tenant {integration.tenant_id}: {webhook_url}"
+                )
+            return success
+            
+        except TelegramWebhookError as e:
+            logger.warning(
+                f"Failed to auto-register webhook for tenant {integration.tenant_id}: {e}. "
+                "Webhook can be set manually later."
+            )
+            return False
     
     async def set_webhook(
         self,

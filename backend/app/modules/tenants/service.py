@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import transactional
-from app.core.exceptions import AlreadyExistsError, NotFoundError, VersionConflictError
+from app.core.exceptions import AlreadyExistsError, NotFoundError
 from app.modules.tenants.models import AVAILABLE_FEATURES, FeatureFlag, Tenant, TenantSettings
 from app.modules.tenants.schemas import (
     FeatureFlagCreate,
@@ -115,6 +115,7 @@ class TenantService:
             self.db.add(flag)
 
         await self.db.flush()
+        await self.db.refresh(tenant)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(tenant, ["settings", "feature_flags"])
 
         return tenant
@@ -123,10 +124,7 @@ class TenantService:
     async def update(self, tenant_id: UUID, data: TenantUpdate) -> Tenant:
         """Update tenant with optimistic locking."""
         tenant = await self.get_by_id(tenant_id)
-
-        # Check version for optimistic locking
-        if tenant.version != data.version:
-            raise VersionConflictError("Tenant", tenant.version, data.version)
+        tenant.check_version(data.version)
 
         # Update fields
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})

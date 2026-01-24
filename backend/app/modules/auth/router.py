@@ -21,6 +21,7 @@ from app.core.security import (
 logger = get_logger(__name__)
 from app.modules.auth.models import AdminUser
 from app.modules.auth.schemas import (
+    EnabledFeaturesResponse,
     LoginRequest,
     LoginResponse,
     MeResponse,
@@ -38,6 +39,7 @@ from app.modules.auth.schemas import (
     UserResponse,
     UserUpdate,
 )
+from app.modules.tenants.service import FeatureFlagService
 from app.modules.auth.service import AuthService, RoleService, UserService
 
 router = APIRouter()
@@ -140,6 +142,43 @@ async def get_me(
         is_superuser=user.is_superuser,
         role=RoleResponse.model_validate(user.role) if user.role else None,
         permissions=permissions,
+    )
+
+
+@router.get(
+    "/me/features",
+    response_model=EnabledFeaturesResponse,
+    summary="Get enabled features",
+    description="Get list of enabled features/modules for the current tenant. Used by frontend to determine which sections to show in sidebar.",
+)
+async def get_my_features(
+    user: AdminUser = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> EnabledFeaturesResponse:
+    """Get enabled features for current user's tenant.
+    
+    - Superusers and platform_owners have all_features_enabled=True
+    - Regular users get list of actually enabled features
+    
+    Use this to conditionally show/hide sidebar items.
+    """
+    # Superusers and platform_owners have access to all features
+    is_platform_owner = user.is_superuser or (user.role and user.role.name == "platform_owner")
+    
+    if is_platform_owner:
+        return EnabledFeaturesResponse(
+            enabled_features=[],  # Not needed when all_features_enabled=True
+            all_features_enabled=True,
+        )
+    
+    # Get enabled features from database
+    service = FeatureFlagService(db)
+    flags = await service.get_flags(user.tenant_id)
+    enabled_features = [f.feature_name for f in flags if f.enabled]
+    
+    return EnabledFeaturesResponse(
+        enabled_features=enabled_features,
+        all_features_enabled=False,
     )
 
 

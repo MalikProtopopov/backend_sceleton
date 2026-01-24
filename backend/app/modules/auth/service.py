@@ -17,7 +17,6 @@ from app.core.exceptions import (
     NotFoundError,
     RoleInUseError,
     SystemRoleModificationError,
-    VersionConflictError,
 )
 from app.core.security import (
     TokenPayload,
@@ -288,6 +287,7 @@ class UserService:
         )
         self.db.add(user)
         await self.db.flush()
+        await self.db.refresh(user)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(user, ["role"])
 
         return user
@@ -298,15 +298,14 @@ class UserService:
     ) -> AdminUser:
         """Update user with optimistic locking."""
         user = await self.get_by_id(user_id, tenant_id)
-
-        if user.version != data.version:
-            raise VersionConflictError("User", user.version, data.version)
+        user.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():
             setattr(user, field, value)
 
         await self.db.flush()
+        await self.db.refresh(user)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(user, ["role"])
 
         return user
@@ -404,6 +403,7 @@ class RoleService:
             self.db.add(rp)
 
         await self.db.flush()
+        await self.db.refresh(role)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(role, ["role_permissions"])
         return role
 
@@ -449,6 +449,7 @@ class RoleService:
                 self.db.add(rp)
 
         await self.db.flush()
+        await self.db.refresh(role)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(role, ["role_permissions"])
         return role
 

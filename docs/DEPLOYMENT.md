@@ -228,11 +228,11 @@ cd your-project/backend
 
 Проверка DNS:
 
-```bash
+   ```bash
 dig +short api.your-domain.com
 dig +short admin.your-domain.com
 # Оба должны возвращать IP вашего сервера
-```
+   ```
 
 ---
 
@@ -639,7 +639,7 @@ make prod-restart
 
 ### Ошибки SSL
 
-```bash
+   ```bash
 # Проверьте DNS
 dig +short api.your-domain.com
 
@@ -648,7 +648,7 @@ curl http://api.your-domain.com/.well-known/acme-challenge/test
 
 # Логи certbot
 docker compose -f docker-compose.prod.yml --env-file .env.prod logs certbot
-```
+   ```
 
 ### CORS ошибки
 

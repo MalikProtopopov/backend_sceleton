@@ -218,6 +218,22 @@ class MeResponse(BaseModel):
     permissions: list[str] = Field(default_factory=list)
 
 
+class EnabledFeaturesResponse(BaseModel):
+    """Schema for enabled features response.
+    
+    Used by frontend to determine which sections to show in sidebar.
+    """
+    
+    enabled_features: list[str] = Field(
+        default_factory=list,
+        description="List of enabled feature names for this tenant"
+    )
+    all_features_enabled: bool = Field(
+        default=False,
+        description="True if user is superuser/platform_owner (has access to all features)"
+    )
+
+
 # Fix forward references
 LoginResponse.model_rebuild()
 UserResponse.model_rebuild()

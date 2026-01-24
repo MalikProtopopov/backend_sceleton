@@ -15,6 +15,7 @@ class InquiryStatus(str, Enum):
     CONTACTED = "contacted"
     COMPLETED = "completed"
     SPAM = "spam"
+    CANCELLED = "cancelled"
 
 
 # ============================================================================

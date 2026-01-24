@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import transactional
-from app.core.exceptions import AlreadyExistsError, NotFoundError, VersionConflictError
+from app.core.exceptions import AlreadyExistsError, NotFoundError
 from app.modules.seo.models import Redirect, SEORoute
 from app.modules.seo.schemas import RedirectCreate, RedirectUpdate, SEORouteCreate, SEORouteUpdate
 
@@ -115,9 +115,7 @@ class SEORouteService:
     ) -> SEORoute:
         """Update SEO route."""
         route = await self.get_by_id(route_id, tenant_id)
-
-        if route.version != data.version:
-            raise VersionConflictError("SEORoute", route.version, data.version)
+        route.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():

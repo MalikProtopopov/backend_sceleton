@@ -8,6 +8,29 @@ This document lists all public API endpoints that do not require authentication.
 
 ---
 
+## Site/Tenant Information
+
+### Tenant
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/public/tenants/{tenant_id}` | Get tenant public info (name, logo, branding) |
+
+**Response:**
+```json
+{
+  "id": "63d068f7-7a47-46fe-aeb0-c82588e995a4",
+  "name": "КОРП САЙТ ДЛЯ КЛИНИКИ ВОЛОС",
+  "slug": "klinika-volos",
+  "logo_url": "https://cdn.example.com/logos/logo.png",
+  "primary_color": "#1E40AF"
+}
+```
+
+**Usage:** Get site branding information for header, footer, favicon, etc.
+
+---
+
 ## Content Endpoints
 
 ### Articles
@@ -317,9 +340,11 @@ const getMediaUrl = (path: string | null) => {
 
 | Category | Endpoint | Method | Auth |
 |----------|----------|--------|------|
+| **Site** | /public/tenants/{tenant_id} | GET | No |
 | Content | /public/articles | GET | No |
 | Content | /public/articles/{slug} | GET | No |
 | Content | /public/topics | GET | No |
+| Content | /public/topics/{slug} | GET | No |
 | Content | /public/faq | GET | No |
 | Content | /public/cases | GET | No |
 | Content | /public/cases/{slug} | GET | No |
@@ -339,5 +364,5 @@ const getMediaUrl = (path: string | null) => {
 | SEO | /public/robots.txt | GET | No |
 | Media | /media/{path} | GET | No |
 
-**Total Public Endpoints:** 21
+**Total Public Endpoints:** 23
 

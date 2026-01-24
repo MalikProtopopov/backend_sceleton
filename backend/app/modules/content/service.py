@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import transactional
-from app.core.exceptions import NotFoundError, VersionConflictError
+from app.core.exceptions import NotFoundError
 from app.core.locale_helpers import (
     LocaleAlreadyExistsError,
     MinimumLocalesError,
@@ -230,6 +230,7 @@ class TopicService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(topic)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(topic, ["locales"])
 
         return topic
@@ -238,15 +239,14 @@ class TopicService:
     async def update(self, topic_id: UUID, tenant_id: UUID, data: TopicUpdate) -> Topic:
         """Update a topic."""
         topic = await self.get_by_id(topic_id, tenant_id)
-
-        if topic.version != data.version:
-            raise VersionConflictError("Topic", topic.version, data.version)
+        topic.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():
             setattr(topic, field, value)
 
         await self.db.flush()
+        await self.db.refresh(topic)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(topic, ["locales"])
 
         return topic
@@ -520,7 +520,8 @@ class ArticleService:
             self.db.add(at)
 
         await self.db.flush()
-        await self.db.refresh(article, ["locales", "topics"])
+        await self.db.refresh(article)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(article, ["locales", "topics"])  # Eager load relationships
 
         return article
 
@@ -528,9 +529,7 @@ class ArticleService:
     async def update(self, article_id: UUID, tenant_id: UUID, data: ArticleUpdate) -> Article:
         """Update an article."""
         article = await self.get_by_id(article_id, tenant_id)
-
-        if article.version != data.version:
-            raise VersionConflictError("Article", article.version, data.version)
+        article.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version", "topic_ids"})
 
@@ -557,7 +556,8 @@ class ArticleService:
                 self.db.add(at)
 
         await self.db.flush()
-        await self.db.refresh(article, ["locales", "topics"])
+        await self.db.refresh(article)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(article, ["locales", "topics"])  # Eager load relationships
 
         return article
 
@@ -567,6 +567,8 @@ class ArticleService:
         article = await self.get_by_id(article_id, tenant_id)
         article.publish()
         await self.db.flush()
+        await self.db.refresh(article)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(article, ["locales", "topics"])  # Eager load relationships
         return article
 
     @transactional
@@ -575,6 +577,8 @@ class ArticleService:
         article = await self.get_by_id(article_id, tenant_id)
         article.unpublish()
         await self.db.flush()
+        await self.db.refresh(article)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(article, ["locales", "topics"])  # Eager load relationships
         return article
 
     @transactional
@@ -771,6 +775,7 @@ class FAQService:
             self.db.add(locale)
 
         await self.db.flush()
+        await self.db.refresh(faq)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(faq, ["locales"])
 
         return faq
@@ -779,15 +784,14 @@ class FAQService:
     async def update(self, faq_id: UUID, tenant_id: UUID, data: FAQUpdate) -> FAQ:
         """Update a FAQ."""
         faq = await self.get_by_id(faq_id, tenant_id)
-
-        if faq.version != data.version:
-            raise VersionConflictError("FAQ", faq.version, data.version)
+        faq.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         for field, value in update_data.items():
             setattr(faq, field, value)
 
         await self.db.flush()
+        await self.db.refresh(faq)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(faq, ["locales"])
 
         return faq
@@ -1039,6 +1043,7 @@ class CaseService:
             self.db.add(link)
 
         await self.db.flush()
+        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(case, ["locales", "services"])
 
         return case
@@ -1047,9 +1052,7 @@ class CaseService:
     async def update(self, case_id: UUID, tenant_id: UUID, data: CaseUpdate) -> Case:
         """Update a case."""
         case = await self.get_by_id(case_id, tenant_id)
-
-        if case.version != data.version:
-            raise VersionConflictError("Case", case.version, data.version)
+        case.check_version(data.version)
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version", "service_ids"})
 
@@ -1076,6 +1079,7 @@ class CaseService:
                 self.db.add(link)
 
         await self.db.flush()
+        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(case, ["locales", "services"])
 
         return case
@@ -1088,6 +1092,8 @@ class CaseService:
         if not case.published_at:
             case.published_at = datetime.utcnow()
         await self.db.flush()
+        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(case, ["locales", "services"])
         return case
 
     @transactional
@@ -1096,6 +1102,8 @@ class CaseService:
         case = await self.get_by_id(case_id, tenant_id)
         case.status = ArticleStatus.DRAFT.value
         await self.db.flush()
+        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(case, ["locales", "services"])
         return case
 
     @transactional
@@ -1200,6 +1208,9 @@ class ReviewService:
             .where(Review.id == review_id)
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
+            .options(
+                selectinload(Review.case).selectinload(Case.locales),
+            )
         )
         result = await self.db.execute(stmt)
         review = result.scalar_one_or_none()
@@ -1241,6 +1252,9 @@ class ReviewService:
         # Get results
         stmt = (
             base_query
+            .options(
+                selectinload(Review.case).selectinload(Case.locales),
+            )
             .order_by(Review.sort_order, Review.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -1279,6 +1293,9 @@ class ReviewService:
         # Get results
         stmt = (
             base_query
+            .options(
+                selectinload(Review.case).selectinload(Case.locales),
+            )
             .order_by(Review.sort_order, Review.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -1317,11 +1334,15 @@ class ReviewService:
     async def update(self, review_id: UUID, tenant_id: UUID, data: ReviewUpdate) -> Review:
         """Update a review."""
         review = await self.get_by_id(review_id, tenant_id)
+        review.check_version(data.version)
 
-        if review.version != data.version:
-            raise VersionConflictError("Review", review.version, data.version)
-
-        update_data = data.model_dump(exclude_unset=True, exclude={"version"})
+        # Get all fields that were explicitly set (including None values)
+        # model_fields_set contains all fields that were explicitly provided in the request
+        update_data = {}
+        for field_name in data.model_fields_set:
+            if field_name != "version":
+                field_value = getattr(data, field_name, None)
+                update_data[field_name] = field_value
 
         # Handle status enum
         if "status" in update_data:
@@ -1343,6 +1364,7 @@ class ReviewService:
         review = await self.get_by_id(review_id, tenant_id)
         review.approve()
         await self.db.flush()
+        await self.db.refresh(review)
         return review
 
     @transactional
@@ -1351,6 +1373,7 @@ class ReviewService:
         review = await self.get_by_id(review_id, tenant_id)
         review.reject()
         await self.db.flush()
+        await self.db.refresh(review)
         return review
 
     @transactional
