@@ -192,7 +192,7 @@ MAX_RETRIES=30
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker compose -f "$COMPOSE_FILE" ps backend | grep -q "healthy"; then
+    if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps backend | grep -q "healthy"; then
         log_success "Backend is healthy!"
         break
     fi
@@ -233,10 +233,10 @@ log_success "Deployment Complete!"
 log_info "=========================================="
 echo ""
 log_info "Service status:"
-docker compose -f "$COMPOSE_FILE" ps
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
 echo ""
 log_info "Recent logs (last 10 lines):"
-docker compose -f "$COMPOSE_FILE" logs --tail=10 backend
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs --tail=10 backend
 echo ""
 log_info "Useful commands:"
 log_info "  make prod-logs    - View all logs"
