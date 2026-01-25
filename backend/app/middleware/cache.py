@@ -119,7 +119,15 @@ class CacheHeadersMiddleware(BaseHTTPMiddleware):
             }
         
         # Admin API - private, no cache
-        if "/admin/" in path or "/auth/" in path:
+        # Includes /admin/, /auth/, /feature-flags/, /tenants/ (non-public)
+        if "/admin/" in path or "/auth/" in path or "/feature-flags" in path:
+            return {
+                "cache_control": "private, no-cache, no-store, must-revalidate",
+                "add_etag": False,
+            }
+        
+        # Tenants management (not public) - no cache
+        if "/tenants" in path and "/public/" not in path:
             return {
                 "cache_control": "private, no-cache, no-store, must-revalidate",
                 "add_etag": False,
