@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -328,19 +328,30 @@ async def update_tenant_settings(
     "/feature-flags",
     response_model=FeatureFlagsListResponse,
     summary="List feature flags",
-    description="Get all feature flags for the current tenant. Requires platform_owner role.",
+    description="Get all feature flags for a tenant. Platform owner can specify tenant_id to manage any tenant's flags.",
 )
 async def list_feature_flags(
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant ID (platform owner only)"),
     user: AdminUser = Depends(require_platform_owner),
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> FeatureFlagsListResponse:
     """List all feature flags for a tenant.
     
-    Only platform_owner or superuser can access this endpoint.
+    Platform owner or superuser can access this endpoint.
+    If tenant_id query parameter is provided, returns flags for that tenant.
+    Otherwise, returns flags for the current user's tenant.
     """
+    # Determine which tenant to use
+    effective_tenant_id = target_tenant_id if target_tenant_id else current_tenant_id
+    
+    # Verify tenant exists if explicitly specified
+    if target_tenant_id:
+        tenant_service = TenantService(db)
+        await tenant_service.get_by_id(target_tenant_id)
+    
     service = FeatureFlagService(db)
-    flags = await service.get_flags(tenant_id)
+    flags = await service.get_flags(effective_tenant_id)
 
     return FeatureFlagsListResponse(
         items=[FeatureFlagResponse.model_validate(f) for f in flags],
@@ -352,20 +363,31 @@ async def list_feature_flags(
     "/feature-flags/{feature_name}",
     response_model=FeatureFlagResponse,
     summary="Update feature flag",
-    description="Enable or disable a feature flag. Requires platform_owner role.",
+    description="Enable or disable a feature flag. Platform owner can specify tenant_id to manage any tenant's flags.",
 )
 async def update_feature_flag(
     feature_name: str,
     data: FeatureFlagUpdate,
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant ID (platform owner only)"),
     user: AdminUser = Depends(require_platform_owner),
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> FeatureFlagResponse:
     """Update a feature flag.
     
-    Only platform_owner or superuser can enable/disable features.
+    Platform owner or superuser can enable/disable features.
+    If tenant_id query parameter is provided, updates flag for that tenant.
+    Otherwise, updates flag for the current user's tenant.
     """
+    # Determine which tenant to use
+    effective_tenant_id = target_tenant_id if target_tenant_id else current_tenant_id
+    
+    # Verify tenant exists if explicitly specified
+    if target_tenant_id:
+        tenant_service = TenantService(db)
+        await tenant_service.get_by_id(target_tenant_id)
+    
     service = FeatureFlagService(db)
-    flag = await service.update_flag(tenant_id, feature_name, data)
+    flag = await service.update_flag(effective_tenant_id, feature_name, data)
     return FeatureFlagResponse.model_validate(flag)
 

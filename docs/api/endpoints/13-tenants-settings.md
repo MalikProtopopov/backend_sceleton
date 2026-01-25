@@ -332,6 +332,8 @@ Update tenant settings.
 
 Feature flags allow enabling/disabling modules per tenant.
 
+**Access:** Only **platform_owner** or **superuser**. All other roles receive `403 Permission Denied`. Regular tenant users (e.g. content_manager, site_owner) cannot view or change feature flags.
+
 ### Available Features
 
 | Feature Name | Description |
@@ -349,13 +351,20 @@ Feature flags allow enabling/disabling modules per tenant.
 
 List all feature flags for a tenant.
 
+**Authentication:** platform_owner or superuser only.
+
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `tenant_id` | UUID | Yes | Tenant ID |
+| `tenant_id` | UUID | No | Target tenant ID. If omitted, uses tenant from JWT. Platform owner can pass any tenant to manage another organization's flags. |
 
 **Example Request:**
 ```bash
+# Own tenant (from JWT)
+GET /api/v1/feature-flags
+Authorization: Bearer {token}
+
+# Specific tenant (platform owner only)
 GET /api/v1/feature-flags?tenant_id={uuid}
 Authorization: Bearer {token}
 ```
@@ -402,10 +411,12 @@ Authorization: Bearer {token}
 
 Enable or disable a feature flag.
 
+**Authentication:** platform_owner or superuser only.
+
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `tenant_id` | UUID | Yes | Tenant ID |
+| `tenant_id` | UUID | No | Target tenant ID. If omitted, uses tenant from JWT. Platform owner can pass any tenant. |
 
 **Path Parameters:**
 | Parameter | Type | Description |
@@ -432,13 +443,25 @@ Enable or disable a feature flag.
 }
 ```
 
-**Error Response (404):**
+**Error Response (403):** User is not platform_owner/superuser.
+```json
+{
+  "type": "https://api.cms.local/errors/permission_denied",
+  "title": "Permission Denied",
+  "status": 403,
+  "detail": "Permission denied",
+  "instance": "/api/v1/feature-flags",
+  "required_permission": "platform:*"
+}
+```
+
+**Error Response (404):** Tenant or feature flag not found.
 ```json
 {
   "type": "https://api.cms.local/errors/not_found",
   "title": "Not Found",
   "status": 404,
-  "detail": "Feature flag 'unknown_feature' not found"
+  "detail": "FeatureFlag 'unknown_feature' not found"
 }
 ```
 
@@ -678,13 +701,13 @@ const FeatureFlagsManager = ({ tenant }) => {
 
 | Action | Required Permission |
 |--------|---------------------|
-| List tenants | Super admin |
-| Create tenant | Super admin |
+| List tenants | platform_owner / superuser |
+| Create tenant | platform_owner / superuser |
 | View own tenant | Any authenticated user |
-| Update tenant | `settings:update` or super admin |
-| Delete tenant | Super admin |
+| Update tenant | `settings:update` or platform_owner / superuser |
+| Delete tenant | platform_owner / superuser |
 | Update settings | `settings:update` |
-| Manage feature flags | `settings:update` |
+| Manage feature flags | **platform_owner / superuser only** (regular tenant users get 403) |
 
 ### Rate Limiting
 

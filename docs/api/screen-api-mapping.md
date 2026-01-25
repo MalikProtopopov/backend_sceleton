@@ -366,8 +366,8 @@ This document maps each admin UI screen from the UX specification to the corresp
 |-------------|-------------|----------|-------|
 | Get settings | GET | `/api/v1/admin/tenants/{id}` | ✅ |
 | Update settings | PUT | `/api/v1/admin/tenants/{id}/settings` | ✅ |
-| Feature flags | GET | `/api/v1/admin/feature-flags` | ✅ |
-| Toggle feature | PATCH | `/api/v1/admin/feature-flags/{name}` | ✅ |
+| Feature flags | GET | `/api/v1/feature-flags` | ✅ |
+| Toggle feature | PATCH | `/api/v1/feature-flags/{feature_name}` | ✅ |
 
 ---
 

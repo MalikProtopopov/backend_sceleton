@@ -68,8 +68,9 @@ Every request must include tenant context:
 |----------|-----------|-------------|
 | [10-users-rbac.md](./10-users-rbac.md) | 7 endpoints | User management, roles, permissions |
 | [11-localization.md](./11-localization.md) | - | Multi-language content structure |
-| [13-tenants-settings.md](./13-tenants-settings.md) | 8 endpoints | Tenants, settings, feature flags |
+| [13-tenants-settings.md](./endpoints/13-tenants-settings.md) | 8 endpoints | Tenants, settings, feature flags |
 | [15-audit-export-search.md](./15-audit-export-search.md) | 4+ endpoints | Audit log, export, search, roles CRUD, company info |
+| [FEATURE_FLAGS_FRONTEND.md](./FEATURE_FLAGS_FRONTEND.md) | - | **Frontend guide:** Feature Flags API (auth, tenant_id, examples) |
 
 ### Reference
 | Document | Description |
@@ -132,6 +133,7 @@ Every request must include tenant context:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.0 | 2026-01-25 | Feature Flags: optional `tenant_id` for platform_owner, 403 for non–platform_owner, [FEATURE_FLAGS_FRONTEND.md](./FEATURE_FLAGS_FRONTEND.md) frontend guide |
 | 1.4.0 | 2026-01-15 | Added Documents module (9 admin + 2 public endpoints), public-endpoints.md reference |
 | 1.3.0 | 2026-01-15 | Added 16 image upload endpoints (multipart/form-data), removed URL fields from create/update schemas |
 | 1.2.0 | 2026-01-15 | Added Cases, Dashboard, Bulk ops, Audit, Export, Search |

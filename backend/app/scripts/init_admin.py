@@ -190,31 +190,31 @@ async def init_tenant(db) -> Tenant:
             print(f"  ✅ Updated tenant: {tenant.name} (ID: {tenant.id})")
         else:
             # Create new tenant (use None for domain to avoid conflicts)
-        tenant = Tenant(
-            id=uuid4(),
-            name=settings.default_tenant_name,
-            slug=settings.default_tenant_slug,
+            tenant = Tenant(
+                id=uuid4(),
+                name=settings.default_tenant_name,
+                slug=settings.default_tenant_slug,
                 domain=None,  # Allow None to avoid unique constraint issues
-            is_active=True,
-        )
-        db.add(tenant)
-        await db.flush()
+                is_active=True,
+            )
+            db.add(tenant)
+            await db.flush()
         
             # Create tenant settings if they don't exist
             settings_result = await db.execute(
                 select(TenantSettings).where(TenantSettings.tenant_id == tenant.id)
             )
             if not settings_result.scalar_one_or_none():
-        tenant_settings = TenantSettings(
-            id=uuid4(),
-            tenant_id=tenant.id,
-            default_locale="ru",
-            timezone="Europe/Moscow",
-        )
-        db.add(tenant_settings)
-        await db.flush()
+                tenant_settings = TenantSettings(
+                    id=uuid4(),
+                    tenant_id=tenant.id,
+                    default_locale="ru",
+                    timezone="Europe/Moscow",
+                )
+                db.add(tenant_settings)
+                await db.flush()
         
-        print(f"  ✅ Created tenant: {tenant.name} (ID: {tenant.id})")
+            print(f"  ✅ Created tenant: {tenant.name} (ID: {tenant.id})")
     else:
         # Tenant exists, ensure settings exist
         settings_result = await db.execute(
