@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from app.modules.company.schemas import ServiceResponse
+from app.modules.company.schemas import ServiceResponse
 
 
 class ArticleStatus(str, Enum):
