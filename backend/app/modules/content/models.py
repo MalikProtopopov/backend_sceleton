@@ -443,6 +443,7 @@ class CaseServiceLink(Base, UUIDMixin):
 
     # Relations
     case: Mapped["Case"] = relationship("Case", back_populates="services")
+    service: Mapped["Service"] = relationship("Service", foreign_keys=[service_id])
 
     __table_args__ = (
         UniqueConstraint("case_id", "service_id", name="uq_case_service_links"),

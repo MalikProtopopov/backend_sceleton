@@ -1,10 +1,16 @@
 """Pydantic schemas for content module."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from app.modules.company.schemas import ServiceResponse
 
 
 class ArticleStatus(str, Enum):
@@ -566,6 +572,7 @@ class CaseServiceLinkResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     service_id: UUID
+    service: "ServiceResponse | None" = None
 
 
 class CaseBase(BaseModel):

@@ -297,8 +297,9 @@ class InquiryService:
         if "status" in update_data:
             new_status = update_data["status"]
             if isinstance(new_status, InquiryStatus):
-                update_data["status"] = new_status.value
-            if new_status == InquiryStatus.CONTACTED and inquiry.status != InquiryStatus.CONTACTED.value:
+                new_status = new_status.value
+            update_data["status"] = new_status
+            if new_status == InquiryStatus.CONTACTED.value and inquiry.status != InquiryStatus.CONTACTED.value:
                 inquiry.contacted_at = datetime.utcnow()
 
         for field, value in update_data.items():

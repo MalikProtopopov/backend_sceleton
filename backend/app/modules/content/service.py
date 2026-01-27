@@ -537,8 +537,9 @@ class ArticleService:
         if "status" in update_data:
             new_status = update_data["status"]
             if isinstance(new_status, ArticleStatus):
-                update_data["status"] = new_status.value
-            if new_status == ArticleStatus.PUBLISHED and article.status != ArticleStatus.PUBLISHED.value:
+                new_status = new_status.value
+            update_data["status"] = new_status
+            if new_status == ArticleStatus.PUBLISHED.value and article.status != ArticleStatus.PUBLISHED.value:
                 article.published_at = datetime.utcnow()
 
         for field, value in update_data.items():
@@ -546,14 +547,18 @@ class ArticleService:
 
         # Update topics if provided
         if data.topic_ids is not None:
-            # Remove existing
+            # Remove existing topics first and flush to avoid unique constraint violation
             for at in article.topics:
                 await self.db.delete(at)
+            await self.db.flush()  # Flush deletions before adding new topics
 
-            # Add new
+            # Add new (only unique topic_ids)
+            seen_topic_ids = set()
             for topic_id in data.topic_ids:
-                at = ArticleTopic(article_id=article.id, topic_id=topic_id)
-                self.db.add(at)
+                if topic_id not in seen_topic_ids:
+                    seen_topic_ids.add(topic_id)
+                    at = ArticleTopic(article_id=article.id, topic_id=topic_id)
+                    self.db.add(at)
 
         await self.db.flush()
         await self.db.refresh(article)  # Full refresh for scalar fields (updated_at, etc.)
@@ -884,7 +889,7 @@ class CaseService:
             .where(Case.deleted_at.is_(None))
             .options(
                 selectinload(Case.locales),
-                selectinload(Case.services),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
             )
         )
         result = await self.db.execute(stmt)
@@ -907,7 +912,7 @@ class CaseService:
             .where(CaseLocale.slug == slug)
             .options(
                 selectinload(Case.locales),
-                selectinload(Case.services),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
             )
         )
         result = await self.db.execute(stmt)
@@ -954,7 +959,10 @@ class CaseService:
 
         # Get results
         stmt = (
-            base_query.options(selectinload(Case.locales), selectinload(Case.services))
+            base_query.options(
+                selectinload(Case.locales),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
+            )
             .order_by(Case.published_at.desc().nullsfirst(), Case.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -994,7 +1002,7 @@ class CaseService:
         stmt = (
             base_query.options(
                 selectinload(Case.locales),
-                selectinload(Case.services),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
             )
             .order_by(Case.sort_order, Case.published_at.desc())
             .offset((page - 1) * page_size)
@@ -1060,8 +1068,9 @@ class CaseService:
         if "status" in update_data:
             new_status = update_data["status"]
             if hasattr(new_status, "value"):
-                update_data["status"] = new_status.value
-            if new_status == ArticleStatus.PUBLISHED and case.status != ArticleStatus.PUBLISHED.value:
+                new_status = new_status.value
+            update_data["status"] = new_status
+            if new_status == ArticleStatus.PUBLISHED.value and case.status != ArticleStatus.PUBLISHED.value:
                 case.published_at = datetime.utcnow()
 
         for field, value in update_data.items():
@@ -1069,14 +1078,18 @@ class CaseService:
 
         # Update service links if provided
         if data.service_ids is not None:
-            # Remove existing
+            # Remove existing links first and flush to avoid unique constraint violation
             for link in case.services:
                 await self.db.delete(link)
+            await self.db.flush()  # Flush deletions before adding new links
 
-            # Add new
+            # Add new (only unique service_ids)
+            seen_service_ids = set()
             for service_id in data.service_ids:
-                link = CaseServiceLink(case_id=case.id, service_id=service_id)
-                self.db.add(link)
+                if service_id not in seen_service_ids:
+                    seen_service_ids.add(service_id)
+                    link = CaseServiceLink(case_id=case.id, service_id=service_id)
+                    self.db.add(link)
 
         await self.db.flush()
         await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
