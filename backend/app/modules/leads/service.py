@@ -275,6 +275,7 @@ class InquiryService:
                 inquiry.notification_sent = True
                 inquiry.notification_sent_at = datetime.utcnow()
                 await self.db.flush()
+                await self.db.refresh(inquiry)  # Refresh to update all attributes including updated_at
                 
         except Exception as e:
             logger.warning(
