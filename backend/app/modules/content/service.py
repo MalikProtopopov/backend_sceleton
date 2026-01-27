@@ -537,9 +537,8 @@ class ArticleService:
         if "status" in update_data:
             new_status = update_data["status"]
             if isinstance(new_status, ArticleStatus):
-                new_status = new_status.value
-            update_data["status"] = new_status
-            if new_status == ArticleStatus.PUBLISHED.value and article.status != ArticleStatus.PUBLISHED.value:
+                update_data["status"] = new_status.value
+            if new_status == ArticleStatus.PUBLISHED and article.status != ArticleStatus.PUBLISHED.value:
                 article.published_at = datetime.utcnow()
 
         for field, value in update_data.items():
@@ -912,7 +911,7 @@ class CaseService:
             .where(CaseLocale.slug == slug)
             .options(
                 selectinload(Case.locales),
-                selectinload(Case.services).selectinload(CaseServiceLink.service),
+                selectinload(Case.services),
             )
         )
         result = await self.db.execute(stmt)
@@ -959,10 +958,7 @@ class CaseService:
 
         # Get results
         stmt = (
-            base_query.options(
-                selectinload(Case.locales),
-                selectinload(Case.services).selectinload(CaseServiceLink.service),
-            )
+            base_query.options(selectinload(Case.locales), selectinload(Case.services))
             .order_by(Case.published_at.desc().nullsfirst(), Case.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -1002,7 +998,7 @@ class CaseService:
         stmt = (
             base_query.options(
                 selectinload(Case.locales),
-                selectinload(Case.services).selectinload(CaseServiceLink.service),
+                selectinload(Case.services),
             )
             .order_by(Case.sort_order, Case.published_at.desc())
             .offset((page - 1) * page_size)
@@ -1051,10 +1047,8 @@ class CaseService:
             self.db.add(link)
 
         await self.db.flush()
-        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
-        await self.db.refresh(case, ["locales", "services"])
-
-        return case
+        # Re-fetch with proper eager loading for nested relations
+        return await self.get_by_id(case.id, tenant_id)
 
     @transactional
     async def update(self, case_id: UUID, tenant_id: UUID, data: CaseUpdate) -> Case:
@@ -1068,9 +1062,8 @@ class CaseService:
         if "status" in update_data:
             new_status = update_data["status"]
             if hasattr(new_status, "value"):
-                new_status = new_status.value
-            update_data["status"] = new_status
-            if new_status == ArticleStatus.PUBLISHED.value and case.status != ArticleStatus.PUBLISHED.value:
+                update_data["status"] = new_status.value
+            if new_status == ArticleStatus.PUBLISHED and case.status != ArticleStatus.PUBLISHED.value:
                 case.published_at = datetime.utcnow()
 
         for field, value in update_data.items():
@@ -1092,10 +1085,8 @@ class CaseService:
                     self.db.add(link)
 
         await self.db.flush()
-        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
-        await self.db.refresh(case, ["locales", "services"])
-
-        return case
+        # Re-fetch with proper eager loading for nested relations
+        return await self.get_by_id(case_id, tenant_id)
 
     @transactional
     async def publish(self, case_id: UUID, tenant_id: UUID) -> Case:
@@ -1105,9 +1096,8 @@ class CaseService:
         if not case.published_at:
             case.published_at = datetime.utcnow()
         await self.db.flush()
-        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
-        await self.db.refresh(case, ["locales", "services"])
-        return case
+        # Re-fetch with proper eager loading for nested relations
+        return await self.get_by_id(case_id, tenant_id)
 
     @transactional
     async def unpublish(self, case_id: UUID, tenant_id: UUID) -> Case:
@@ -1115,9 +1105,8 @@ class CaseService:
         case = await self.get_by_id(case_id, tenant_id)
         case.status = ArticleStatus.DRAFT.value
         await self.db.flush()
-        await self.db.refresh(case)  # Full refresh for scalar fields (updated_at, etc.)
-        await self.db.refresh(case, ["locales", "services"])
-        return case
+        # Re-fetch with proper eager loading for nested relations
+        return await self.get_by_id(case_id, tenant_id)
 
     @transactional
     async def soft_delete(self, case_id: UUID, tenant_id: UUID) -> None:
