@@ -962,7 +962,7 @@ class CaseService:
                 selectinload(Case.locales),
                 selectinload(Case.services).selectinload(CaseServiceLink.service),
             )
-            .order_by(Case.published_at.desc().nullsfirst(), Case.created_at.desc())
+            .order_by(Case.sort_order, Case.published_at.desc().nullsfirst())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
