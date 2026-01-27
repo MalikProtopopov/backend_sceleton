@@ -911,7 +911,7 @@ class CaseService:
             .where(CaseLocale.slug == slug)
             .options(
                 selectinload(Case.locales),
-                selectinload(Case.services),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
             )
         )
         result = await self.db.execute(stmt)
@@ -958,7 +958,10 @@ class CaseService:
 
         # Get results
         stmt = (
-            base_query.options(selectinload(Case.locales), selectinload(Case.services))
+            base_query.options(
+                selectinload(Case.locales),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
+            )
             .order_by(Case.published_at.desc().nullsfirst(), Case.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -998,7 +1001,7 @@ class CaseService:
         stmt = (
             base_query.options(
                 selectinload(Case.locales),
-                selectinload(Case.services),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
             )
             .order_by(Case.sort_order, Case.published_at.desc())
             .offset((page - 1) * page_size)
