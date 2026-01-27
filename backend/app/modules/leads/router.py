@@ -66,10 +66,15 @@ async def create_inquiry_public(
     service = InquiryService(db)
     inquiry = await service.create_from_public(tenant_id, data, ip_address)
 
-    # Send notifications if enabled for this tenant
+    # Build response BEFORE any additional db operations to avoid MissingGreenlet
+    # (the @transactional decorator already committed, accessing attributes after
+    # more db operations can trigger lazy loading outside async context)
+    response = InquiryResponse.model_validate(inquiry)
+
+    # Send notifications if enabled for this tenant (fire-and-forget)
     await _send_inquiry_notification(db, tenant_id, inquiry)
 
-    return InquiryResponse.model_validate(inquiry)
+    return response
 
 
 async def _send_inquiry_notification(
@@ -110,8 +115,8 @@ async def _send_inquiry_notification(
         source_parts = []
         if inquiry.utm_source:
             source_parts.append(f"utm_source={inquiry.utm_source}")
-        if inquiry.page_url:
-            source_parts.append(inquiry.page_url)
+        if inquiry.source_url:
+            source_parts.append(inquiry.source_url)
         source = ", ".join(source_parts) if source_parts else None
         
         results = await notification_service.notify_inquiry(
