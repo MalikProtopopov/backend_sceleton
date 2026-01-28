@@ -81,13 +81,13 @@ def create_access_token(
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+        expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
 
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(UTC),
         "type": "access",
         "jti": str(uuid4()),  # Unique token ID for blacklist
     })
@@ -103,13 +103,13 @@ def create_refresh_token(
     to_encode = data.copy()
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_token_expire_days)
+        expire = datetime.now(UTC) + timedelta(days=settings.jwt_refresh_token_expire_days)
 
     to_encode.update({
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(UTC),
         "type": "refresh",
         "jti": str(uuid4()),  # Unique token ID for blacklist
     })
@@ -148,13 +148,13 @@ class TokenPayload:
         self.permissions: list[str] = payload.get("permissions", [])
         self.is_superuser: bool = payload.get("is_superuser", False)
         self.token_type: str = payload.get("type", "access")
-        self.exp: datetime = datetime.fromtimestamp(payload["exp"])
+        self.exp: datetime = datetime.fromtimestamp(payload["exp"], tz=UTC)
         self.jti: str | None = payload.get("jti")  # Token ID for blacklist
     
     @property
     def expires_in_seconds(self) -> int:
         """Get remaining TTL in seconds."""
-        remaining = self.exp - datetime.utcnow()
+        remaining = self.exp - datetime.now(UTC)
         return max(0, int(remaining.total_seconds()))
 
 

@@ -1,7 +1,7 @@
 """Base SQLAlchemy models with common mixins."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Column, DateTime, Integer, String, Text, event
@@ -72,7 +72,7 @@ class SoftDeleteMixin:
 
     def soft_delete(self) -> None:
         """Mark record as deleted."""
-        self.deleted_at = datetime.utcnow()
+        self.deleted_at = datetime.now(UTC)
 
     def restore(self) -> None:
         """Restore soft-deleted record."""

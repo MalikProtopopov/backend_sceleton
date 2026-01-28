@@ -1,6 +1,6 @@
 """Dashboard module service layer."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import case, func, literal_column, select, union_all
@@ -138,8 +138,8 @@ class DashboardService:
 
     async def _get_inquiry_summary_optimized(self, tenant_id: UUID) -> InquirySummary:
         """Get inquiry statistics in a single query using conditional aggregation."""
-        now = datetime.utcnow()
-        month_start = datetime(now.year, now.month, 1)
+        now = datetime.now(UTC)
+        month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
         
         # Use conditional aggregation to get all counts in one query
         stmt = (

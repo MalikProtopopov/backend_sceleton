@@ -1,6 +1,6 @@
 """Documents module database models."""
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import Enum
 from uuid import UUID
 
@@ -111,7 +111,7 @@ class Document(
         """Publish the document."""
         self.status = DocumentStatus.PUBLISHED.value
         if not self.published_at:
-            self.published_at = datetime.utcnow()
+            self.published_at = datetime.now(UTC)
 
     def unpublish(self) -> None:
         """Move document to draft."""

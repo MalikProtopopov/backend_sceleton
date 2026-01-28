@@ -1,6 +1,6 @@
 """Content module database models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from uuid import UUID
 
@@ -184,7 +184,7 @@ class Article(
         """Publish the article."""
         self.status = ArticleStatus.PUBLISHED.value
         if not self.published_at:
-            self.published_at = datetime.utcnow()
+            self.published_at = datetime.now(UTC)
 
     def unpublish(self) -> None:
         """Move article to draft."""
@@ -447,6 +447,8 @@ class CaseServiceLink(Base, UUIDMixin):
 
     __table_args__ = (
         UniqueConstraint("case_id", "service_id", name="uq_case_service_links"),
+        Index("ix_case_service_links_case", "case_id"),
+        Index("ix_case_service_links_service", "service_id"),
     )
 
 

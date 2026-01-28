@@ -1,6 +1,6 @@
 """Leads module database models."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from uuid import UUID
 
@@ -250,7 +250,7 @@ class Inquiry(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, TenantMixin):
     def mark_contacted(self) -> None:
         """Mark inquiry as contacted."""
         self.status = InquiryStatus.CONTACTED.value
-        self.contacted_at = datetime.utcnow()
+        self.contacted_at = datetime.now(UTC)
 
     def mark_completed(self) -> None:
         """Mark inquiry as completed."""

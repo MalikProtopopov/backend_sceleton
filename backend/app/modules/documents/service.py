@@ -1,12 +1,14 @@
 """Documents module service layer."""
 
 from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.base_service import BaseService
 from app.core.database import transactional
 from app.core.exceptions import NotFoundError
 from app.core.locale_helpers import check_slug_unique
@@ -21,28 +23,21 @@ from app.modules.documents.schemas import (
 )
 
 
-class DocumentService:
-    """Service for managing documents."""
+class DocumentService(BaseService[Document]):
+    """Service for managing documents.
+    
+    Extends BaseService for common CRUD operations.
+    """
 
-    def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+    model = Document
+
+    def _get_default_options(self) -> list[Any]:
+        """Default eager loading for documents."""
+        return [selectinload(Document.locales)]
 
     async def get_by_id(self, document_id: UUID, tenant_id: UUID) -> Document:
         """Get document by ID."""
-        stmt = (
-            select(Document)
-            .where(Document.id == document_id)
-            .where(Document.tenant_id == tenant_id)
-            .where(Document.deleted_at.is_(None))
-            .options(selectinload(Document.locales))
-        )
-        result = await self.db.execute(stmt)
-        document = result.scalar_one_or_none()
-
-        if not document:
-            raise NotFoundError("Document", document_id)
-
-        return document
+        return await self._get_by_id(document_id, tenant_id)
 
     async def get_by_slug(self, slug: str, locale: str, tenant_id: UUID) -> Document:
         """Get published document by slug."""
@@ -77,50 +72,33 @@ class DocumentService:
         sort_direction: str = "desc",
     ) -> tuple[list[Document], int]:
         """List documents with pagination and filters."""
-        base_query = (
-            select(Document)
-            .where(Document.tenant_id == tenant_id)
-            .where(Document.deleted_at.is_(None))
-        )
-
+        # Build filters
+        filters: list[Any] = []
         if status:
-            base_query = base_query.where(Document.status == status)
-
+            filters.append(Document.status == status)
         if document_date_from:
-            base_query = base_query.where(Document.document_date >= document_date_from)
-
+            filters.append(Document.document_date >= document_date_from)
         if document_date_to:
-            base_query = base_query.where(Document.document_date <= document_date_to)
+            filters.append(Document.document_date <= document_date_to)
 
+        # Build base query
+        base_query = self._build_base_query(tenant_id, filters=filters)
+
+        # Handle search (requires join)
         if search:
             search_pattern = f"%{search}%"
             base_query = base_query.outerjoin(DocumentLocale).where(
                 DocumentLocale.title.ilike(search_pattern)
             )
 
-        # Count total
-        count_query = select(func.count()).select_from(base_query.subquery())
-        count_result = await self.db.execute(count_query)
-        total = count_result.scalar() or 0
-
-        # Sort
+        # Build sort order
         sort_column = getattr(Document, sort_by, Document.created_at)
         if sort_direction == "asc":
-            base_query = base_query.order_by(sort_column.asc())
+            order_by = [sort_column.asc()]
         else:
-            base_query = base_query.order_by(sort_column.desc())
+            order_by = [sort_column.desc()]
 
-        # Paginate
-        stmt = (
-            base_query
-            .options(selectinload(Document.locales))
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        )
-        result = await self.db.execute(stmt)
-        documents = list(result.scalars().unique().all())
-
-        return documents, total
+        return await self._paginate(base_query, page, page_size, order_by=order_by)
 
     async def list_published(
         self,
@@ -285,9 +263,7 @@ class DocumentService:
     @transactional
     async def soft_delete(self, document_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a document."""
-        document = await self.get_by_id(document_id, tenant_id)
-        document.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(document_id, tenant_id)
 
     @transactional
     async def publish(self, document_id: UUID, tenant_id: UUID) -> Document:
