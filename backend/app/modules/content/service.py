@@ -1,14 +1,16 @@
 """Content module service layer."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.base_service import BaseService, update_many_to_many
 from app.core.database import transactional
 from app.core.exceptions import NotFoundError
+from app.core.pagination import paginate_query
 from app.core.locale_helpers import (
     LocaleAlreadyExistsError,
     MinimumLocalesError,
@@ -60,28 +62,21 @@ from app.modules.content.schemas import (
 )
 
 
-class TopicService:
+class TopicService(BaseService[Topic]):
     """Service for managing topics."""
 
+    model = Topic
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(Topic.locales)]
 
     async def get_by_id(self, topic_id: UUID, tenant_id: UUID) -> Topic:
         """Get topic by ID."""
-        stmt = (
-            select(Topic)
-            .where(Topic.id == topic_id)
-            .where(Topic.tenant_id == tenant_id)
-            .where(Topic.deleted_at.is_(None))
-            .options(selectinload(Topic.locales))
-        )
-        result = await self.db.execute(stmt)
-        topic = result.scalar_one_or_none()
-
-        if not topic:
-            raise NotFoundError("Topic", topic_id)
-
-        return topic
+        return await self._get_by_id(topic_id, tenant_id)
 
     async def list_topics(self, tenant_id: UUID, locale: str | None = None) -> list[Topic]:
         """List all topics for a tenant.
@@ -254,9 +249,7 @@ class TopicService:
     @transactional
     async def soft_delete(self, topic_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a topic."""
-        topic = await self.get_by_id(topic_id, tenant_id)
-        topic.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(topic_id, tenant_id)
 
     # ========== Locale Management ==========
 
@@ -340,31 +333,24 @@ class TopicService:
         await self.db.flush()
 
 
-class ArticleService:
+class ArticleService(BaseService[Article]):
     """Service for managing articles."""
 
+    model = Article
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [
+            selectinload(Article.locales),
+            selectinload(Article.topics).selectinload(ArticleTopic.topic),
+        ]
 
     async def get_by_id(self, article_id: UUID, tenant_id: UUID) -> Article:
         """Get article by ID."""
-        stmt = (
-            select(Article)
-            .where(Article.id == article_id)
-            .where(Article.tenant_id == tenant_id)
-            .where(Article.deleted_at.is_(None))
-            .options(
-                selectinload(Article.locales),
-                selectinload(Article.topics).selectinload(ArticleTopic.topic),
-            )
-        )
-        result = await self.db.execute(stmt)
-        article = result.scalar_one_or_none()
-
-        if not article:
-            raise NotFoundError("Article", article_id)
-
-        return article
+        return await self._get_by_id(article_id, tenant_id)
 
     async def get_by_slug(self, slug: str, locale: str, tenant_id: UUID) -> Article:
         """Get published article by slug."""
@@ -399,14 +385,11 @@ class ArticleService:
         search: str | None = None,
     ) -> tuple[list[Article], int]:
         """List articles with pagination and filters."""
-        base_query = (
-            select(Article)
-            .where(Article.tenant_id == tenant_id)
-            .where(Article.deleted_at.is_(None))
-        )
-
+        filters = []
         if status:
-            base_query = base_query.where(Article.status == status)
+            filters.append(Article.status == status)
+
+        base_query = self._build_base_query(tenant_id, filters=filters)
 
         if topic_id:
             base_query = base_query.join(ArticleTopic).where(ArticleTopic.topic_id == topic_id)
@@ -419,21 +402,14 @@ class ArticleService:
                 ArticleLocale.slug.ilike(search_pattern)
             ).distinct()
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
-
-        # Get results
-        stmt = (
-            base_query.options(selectinload(Article.locales), selectinload(Article.topics))
-            .order_by(Article.published_at.desc().nullsfirst(), Article.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=[selectinload(Article.locales), selectinload(Article.topics)],
+            order_by=[Article.published_at.desc().nullsfirst(), Article.created_at.desc()],
         )
-        result = await self.db.execute(stmt)
-        articles = list(result.scalars().all())
-
-        return articles, total
 
     async def list_published(
         self,
@@ -468,12 +444,13 @@ class ArticleService:
         total = (await self.db.execute(count_stmt)).scalar() or 0
 
         # Get results
+        # Sort by sort_order first (priority), then by published_at (newest first)
         stmt = (
             base_query.options(
                 selectinload(Article.locales),
                 selectinload(Article.topics).selectinload(ArticleTopic.topic).selectinload(Topic.locales),
             )
-            .order_by(Article.published_at.desc())
+            .order_by(Article.sort_order, Article.published_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -504,7 +481,7 @@ class ArticleService:
         )
 
         if data.status == ArticleStatus.PUBLISHED:
-            article.published_at = datetime.utcnow()
+            article.published_at = datetime.now(UTC)
 
         self.db.add(article)
         await self.db.flush()
@@ -539,25 +516,22 @@ class ArticleService:
             if isinstance(new_status, ArticleStatus):
                 update_data["status"] = new_status.value
             if new_status == ArticleStatus.PUBLISHED and article.status != ArticleStatus.PUBLISHED.value:
-                article.published_at = datetime.utcnow()
+                article.published_at = datetime.now(UTC)
 
         for field, value in update_data.items():
             setattr(article, field, value)
 
         # Update topics if provided
         if data.topic_ids is not None:
-            # Remove existing topics first and flush to avoid unique constraint violation
-            for at in article.topics:
-                await self.db.delete(at)
-            await self.db.flush()  # Flush deletions before adding new topics
-
-            # Add new (only unique topic_ids)
-            seen_topic_ids = set()
-            for topic_id in data.topic_ids:
-                if topic_id not in seen_topic_ids:
-                    seen_topic_ids.add(topic_id)
-                    at = ArticleTopic(article_id=article.id, topic_id=topic_id)
-                    self.db.add(at)
+            await update_many_to_many(
+                self.db,
+                article,
+                "topics",
+                data.topic_ids,
+                ArticleTopic,
+                "article_id",
+                "topic_id",
+            )
 
         await self.db.flush()
         await self.db.refresh(article)  # Full refresh for scalar fields (updated_at, etc.)
@@ -588,9 +562,7 @@ class ArticleService:
     @transactional
     async def soft_delete(self, article_id: UUID, tenant_id: UUID) -> None:
         """Soft delete an article."""
-        article = await self.get_by_id(article_id, tenant_id)
-        article.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(article_id, tenant_id)
 
     async def increment_view(self, article_id: UUID, tenant_id: UUID) -> None:
         """Increment article view count."""
@@ -680,28 +652,21 @@ class ArticleService:
         await self.db.flush()
 
 
-class FAQService:
+class FAQService(BaseService[FAQ]):
     """Service for managing FAQ."""
 
+    model = FAQ
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(FAQ.locales)]
 
     async def get_by_id(self, faq_id: UUID, tenant_id: UUID) -> FAQ:
         """Get FAQ by ID."""
-        stmt = (
-            select(FAQ)
-            .where(FAQ.id == faq_id)
-            .where(FAQ.tenant_id == tenant_id)
-            .where(FAQ.deleted_at.is_(None))
-            .options(selectinload(FAQ.locales))
-        )
-        result = await self.db.execute(stmt)
-        faq = result.scalar_one_or_none()
-
-        if not faq:
-            raise NotFoundError("FAQ", faq_id)
-
-        return faq
+        return await self._get_by_id(faq_id, tenant_id)
 
     async def list_faqs(
         self,
@@ -712,33 +677,22 @@ class FAQService:
         is_published: bool | None = None,
     ) -> tuple[list[FAQ], int]:
         """List FAQs with pagination."""
-        base_query = (
-            select(FAQ)
-            .where(FAQ.tenant_id == tenant_id)
-            .where(FAQ.deleted_at.is_(None))
-        )
-
+        filters = []
         if category:
-            base_query = base_query.where(FAQ.category == category)
-
+            filters.append(FAQ.category == category)
         if is_published is not None:
-            base_query = base_query.where(FAQ.is_published == is_published)
+            filters.append(FAQ.is_published == is_published)
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
+        base_query = self._build_base_query(tenant_id, filters=filters)
 
-        # Get results
-        stmt = (
-            base_query.options(selectinload(FAQ.locales))
-            .order_by(FAQ.category.nullsfirst(), FAQ.sort_order)
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=self._get_default_options(),
+            order_by=[FAQ.category.nullsfirst(), FAQ.sort_order],
         )
-        result = await self.db.execute(stmt)
-        faqs = list(result.scalars().all())
-
-        return faqs, total
 
     async def list_published(
         self, tenant_id: UUID, locale: str, category: str | None = None
@@ -803,9 +757,7 @@ class FAQService:
     @transactional
     async def soft_delete(self, faq_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a FAQ."""
-        faq = await self.get_by_id(faq_id, tenant_id)
-        faq.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(faq_id, tenant_id)
 
     # ========== Locale Management ==========
 
@@ -873,31 +825,24 @@ class FAQService:
         await self.db.flush()
 
 
-class CaseService:
+class CaseService(BaseService[Case]):
     """Service for managing cases (portfolio / case studies)."""
 
+    model = Case
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [
+            selectinload(Case.locales),
+            selectinload(Case.services).selectinload(CaseServiceLink.service),
+        ]
 
     async def get_by_id(self, case_id: UUID, tenant_id: UUID) -> Case:
         """Get case by ID."""
-        stmt = (
-            select(Case)
-            .where(Case.id == case_id)
-            .where(Case.tenant_id == tenant_id)
-            .where(Case.deleted_at.is_(None))
-            .options(
-                selectinload(Case.locales),
-                selectinload(Case.services).selectinload(CaseServiceLink.service),
-            )
-        )
-        result = await self.db.execute(stmt)
-        case = result.scalar_one_or_none()
-
-        if not case:
-            raise NotFoundError("Case", case_id)
-
-        return case
+        return await self._get_by_id(case_id, tenant_id)
 
     async def get_by_slug(self, slug: str, locale: str, tenant_id: UUID) -> Case:
         """Get published case by slug."""
@@ -1034,7 +979,7 @@ class CaseService:
         )
 
         if data.status.value == ArticleStatus.PUBLISHED.value:
-            case.published_at = datetime.utcnow()
+            case.published_at = datetime.now(UTC)
 
         self.db.add(case)
         await self.db.flush()
@@ -1067,25 +1012,22 @@ class CaseService:
             if hasattr(new_status, "value"):
                 update_data["status"] = new_status.value
             if new_status == ArticleStatus.PUBLISHED and case.status != ArticleStatus.PUBLISHED.value:
-                case.published_at = datetime.utcnow()
+                case.published_at = datetime.now(UTC)
 
         for field, value in update_data.items():
             setattr(case, field, value)
 
         # Update service links if provided
         if data.service_ids is not None:
-            # Remove existing links first and flush to avoid unique constraint violation
-            for link in case.services:
-                await self.db.delete(link)
-            await self.db.flush()  # Flush deletions before adding new links
-
-            # Add new (only unique service_ids)
-            seen_service_ids = set()
-            for service_id in data.service_ids:
-                if service_id not in seen_service_ids:
-                    seen_service_ids.add(service_id)
-                    link = CaseServiceLink(case_id=case.id, service_id=service_id)
-                    self.db.add(link)
+            await update_many_to_many(
+                self.db,
+                case,
+                "services",
+                data.service_ids,
+                CaseServiceLink,
+                "case_id",
+                "service_id",
+            )
 
         await self.db.flush()
         # Re-fetch with proper eager loading for nested relations
@@ -1097,7 +1039,7 @@ class CaseService:
         case = await self.get_by_id(case_id, tenant_id)
         case.status = ArticleStatus.PUBLISHED.value
         if not case.published_at:
-            case.published_at = datetime.utcnow()
+            case.published_at = datetime.now(UTC)
         await self.db.flush()
         # Re-fetch with proper eager loading for nested relations
         return await self.get_by_id(case_id, tenant_id)
@@ -1114,9 +1056,7 @@ class CaseService:
     @transactional
     async def soft_delete(self, case_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a case."""
-        case = await self.get_by_id(case_id, tenant_id)
-        case.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(case_id, tenant_id)
 
     # ========== Locale Management ==========
 
@@ -1200,30 +1140,21 @@ class CaseService:
         await self.db.flush()
 
 
-class ReviewService:
+class ReviewService(BaseService[Review]):
     """Service for managing reviews."""
 
+    model = Review
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(Review.case).selectinload(Case.locales)]
 
     async def get_by_id(self, review_id: UUID, tenant_id: UUID) -> Review:
         """Get review by ID."""
-        stmt = (
-            select(Review)
-            .where(Review.id == review_id)
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .options(
-                selectinload(Review.case).selectinload(Case.locales),
-            )
-        )
-        result = await self.db.execute(stmt)
-        review = result.scalar_one_or_none()
-
-        if not review:
-            raise NotFoundError("Review", review_id)
-
-        return review
+        return await self._get_by_id(review_id, tenant_id)
 
     async def list_reviews(
         self,
@@ -1235,39 +1166,24 @@ class ReviewService:
         is_featured: bool | None = None,
     ) -> tuple[list[Review], int]:
         """List reviews with pagination and filters."""
-        base_query = (
-            select(Review)
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-        )
-
+        filters = []
         if status:
-            base_query = base_query.where(Review.status == status)
-
+            filters.append(Review.status == status)
         if case_id:
-            base_query = base_query.where(Review.case_id == case_id)
-
+            filters.append(Review.case_id == case_id)
         if is_featured is not None:
-            base_query = base_query.where(Review.is_featured == is_featured)
+            filters.append(Review.is_featured == is_featured)
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
+        base_query = self._build_base_query(tenant_id, filters=filters)
 
-        # Get results
-        stmt = (
-            base_query
-            .options(
-                selectinload(Review.case).selectinload(Case.locales),
-            )
-            .order_by(Review.sort_order, Review.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=self._get_default_options(),
+            order_by=[Review.sort_order, Review.created_at.desc()],
         )
-        result = await self.db.execute(stmt)
-        reviews = list(result.scalars().all())
-
-        return reviews, total
 
     async def list_approved(
         self,
@@ -1278,37 +1194,22 @@ class ReviewService:
         is_featured: bool | None = None,
     ) -> tuple[list[Review], int]:
         """List approved reviews for public API."""
-        base_query = (
-            select(Review)
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .where(Review.status == ReviewStatus.APPROVED.value)
-        )
-
+        filters = [Review.status == ReviewStatus.APPROVED.value]
         if case_id:
-            base_query = base_query.where(Review.case_id == case_id)
-
+            filters.append(Review.case_id == case_id)
         if is_featured is not None:
-            base_query = base_query.where(Review.is_featured == is_featured)
+            filters.append(Review.is_featured == is_featured)
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
+        base_query = self._build_base_query(tenant_id, filters=filters)
 
-        # Get results
-        stmt = (
-            base_query
-            .options(
-                selectinload(Review.case).selectinload(Case.locales),
-            )
-            .order_by(Review.sort_order, Review.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=self._get_default_options(),
+            order_by=[Review.sort_order, Review.created_at.desc()],
         )
-        result = await self.db.execute(stmt)
-        reviews = list(result.scalars().all())
-
-        return reviews, total
 
     @transactional
     async def create(self, tenant_id: UUID, data: ReviewCreate) -> Review:
@@ -1384,9 +1285,7 @@ class ReviewService:
     @transactional
     async def soft_delete(self, review_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a review."""
-        review = await self.get_by_id(review_id, tenant_id)
-        review.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(review_id, tenant_id)
 
 
 class BulkOperationService:
