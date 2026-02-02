@@ -26,11 +26,13 @@ from app.modules.content.models import (
     ArticleStatus,
     ArticleTopic,
     Case,
+    CaseContact,
     CaseLocale,
     CaseServiceLink,
     FAQ,
     FAQLocale,
     Review,
+    ReviewAuthorContact,
     ReviewStatus,
     Topic,
     TopicLocale,
@@ -45,6 +47,8 @@ from app.modules.content.schemas import (
     BulkOperationRequest,
     BulkOperationSummary,
     BulkResourceType,
+    CaseContactCreate,
+    CaseContactUpdate,
     CaseCreate,
     CaseLocaleCreate,
     CaseLocaleUpdate,
@@ -53,6 +57,8 @@ from app.modules.content.schemas import (
     FAQLocaleCreate,
     FAQLocaleUpdate,
     FAQUpdate,
+    ReviewAuthorContactCreate,
+    ReviewAuthorContactUpdate,
     ReviewCreate,
     ReviewUpdate,
     TopicCreate,
@@ -1139,6 +1145,82 @@ class CaseService(BaseService[Case]):
         await self.db.delete(locale)
         await self.db.flush()
 
+    # ========== Contact Management ==========
+
+    @transactional
+    async def add_contact(
+        self, case_id: UUID, tenant_id: UUID, data: CaseContactCreate
+    ) -> CaseContact:
+        """Add a contact to a case."""
+        # Verify case exists
+        await self.get_by_id(case_id, tenant_id)
+
+        contact = CaseContact(
+            case_id=case_id,
+            contact_type=data.contact_type,
+            value=data.value,
+            sort_order=data.sort_order,
+        )
+        self.db.add(contact)
+        await self.db.flush()
+        await self.db.refresh(contact)
+
+        return contact
+
+    @transactional
+    async def update_contact(
+        self, contact_id: UUID, case_id: UUID, tenant_id: UUID, data: CaseContactUpdate
+    ) -> CaseContact:
+        """Update a case contact."""
+        # Verify case exists
+        await self.get_by_id(case_id, tenant_id)
+
+        # Get contact
+        stmt = select(CaseContact).where(
+            CaseContact.id == contact_id,
+            CaseContact.case_id == case_id,
+        )
+        result = await self.db.execute(stmt)
+        contact = result.scalar_one_or_none()
+
+        if not contact:
+            raise NotFoundError("CaseContact", contact_id)
+
+        # Update fields
+        if data.contact_type is not None:
+            contact.contact_type = data.contact_type
+        if data.value is not None:
+            contact.value = data.value
+        if data.sort_order is not None:
+            contact.sort_order = data.sort_order
+
+        await self.db.flush()
+        await self.db.refresh(contact)
+
+        return contact
+
+    @transactional
+    async def delete_contact(
+        self, contact_id: UUID, case_id: UUID, tenant_id: UUID
+    ) -> None:
+        """Delete a case contact."""
+        # Verify case exists
+        await self.get_by_id(case_id, tenant_id)
+
+        # Get and delete contact
+        stmt = select(CaseContact).where(
+            CaseContact.id == contact_id,
+            CaseContact.case_id == case_id,
+        )
+        result = await self.db.execute(stmt)
+        contact = result.scalar_one_or_none()
+
+        if not contact:
+            raise NotFoundError("CaseContact", contact_id)
+
+        await self.db.delete(contact)
+        await self.db.flush()
+
     async def list_published_by_service(
         self,
         service_id: UUID,
@@ -1339,6 +1421,82 @@ class ReviewService(BaseService[Review]):
     async def soft_delete(self, review_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a review."""
         await self._soft_delete(review_id, tenant_id)
+
+    # ========== Author Contact Management ==========
+
+    @transactional
+    async def add_author_contact(
+        self, review_id: UUID, tenant_id: UUID, data: ReviewAuthorContactCreate
+    ) -> ReviewAuthorContact:
+        """Add an author contact to a review."""
+        # Verify review exists
+        await self.get_by_id(review_id, tenant_id)
+
+        contact = ReviewAuthorContact(
+            review_id=review_id,
+            contact_type=data.contact_type,
+            value=data.value,
+            sort_order=data.sort_order,
+        )
+        self.db.add(contact)
+        await self.db.flush()
+        await self.db.refresh(contact)
+
+        return contact
+
+    @transactional
+    async def update_author_contact(
+        self, contact_id: UUID, review_id: UUID, tenant_id: UUID, data: ReviewAuthorContactUpdate
+    ) -> ReviewAuthorContact:
+        """Update a review author contact."""
+        # Verify review exists
+        await self.get_by_id(review_id, tenant_id)
+
+        # Get contact
+        stmt = select(ReviewAuthorContact).where(
+            ReviewAuthorContact.id == contact_id,
+            ReviewAuthorContact.review_id == review_id,
+        )
+        result = await self.db.execute(stmt)
+        contact = result.scalar_one_or_none()
+
+        if not contact:
+            raise NotFoundError("ReviewAuthorContact", contact_id)
+
+        # Update fields
+        if data.contact_type is not None:
+            contact.contact_type = data.contact_type
+        if data.value is not None:
+            contact.value = data.value
+        if data.sort_order is not None:
+            contact.sort_order = data.sort_order
+
+        await self.db.flush()
+        await self.db.refresh(contact)
+
+        return contact
+
+    @transactional
+    async def delete_author_contact(
+        self, contact_id: UUID, review_id: UUID, tenant_id: UUID
+    ) -> None:
+        """Delete a review author contact."""
+        # Verify review exists
+        await self.get_by_id(review_id, tenant_id)
+
+        # Get and delete contact
+        stmt = select(ReviewAuthorContact).where(
+            ReviewAuthorContact.id == contact_id,
+            ReviewAuthorContact.review_id == review_id,
+        )
+        result = await self.db.execute(stmt)
+        contact = result.scalar_one_or_none()
+
+        if not contact:
+            raise NotFoundError("ReviewAuthorContact", contact_id)
+
+        await self.db.delete(contact)
+        await self.db.flush()
 
 
 class BulkOperationService:

@@ -14,6 +14,9 @@ from app.modules.content.mappers import (
     map_cases_to_public_response,
 )
 from app.modules.content.schemas import (
+    CaseContactCreate,
+    CaseContactResponse,
+    CaseContactUpdate,
     CaseCreate,
     CaseListResponse,
     CaseLocaleCreate,
@@ -361,3 +364,66 @@ async def delete_case_locale(
     """Delete a locale from case (minimum 1 locale required)."""
     service = CaseService(db)
     await service.delete_locale(locale_id, case_id, tenant_id)
+
+
+# ============================================================================
+# Admin Routes - Case Contacts
+# ============================================================================
+
+
+@router.post(
+    "/admin/cases/{case_id}/contacts",
+    response_model=CaseContactResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add case contact",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def add_case_contact(
+    case_id: UUID,
+    data: CaseContactCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> CaseContactResponse:
+    """Add a contact to a case (website, social media, email, phone, etc.)."""
+    service = CaseService(db)
+    contact = await service.add_contact(case_id, tenant_id, data)
+    return CaseContactResponse.model_validate(contact)
+
+
+@router.patch(
+    "/admin/cases/{case_id}/contacts/{contact_id}",
+    response_model=CaseContactResponse,
+    summary="Update case contact",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def update_case_contact(
+    case_id: UUID,
+    contact_id: UUID,
+    data: CaseContactUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> CaseContactResponse:
+    """Update a case contact."""
+    service = CaseService(db)
+    contact = await service.update_contact(contact_id, case_id, tenant_id, data)
+    return CaseContactResponse.model_validate(contact)
+
+
+@router.delete(
+    "/admin/cases/{case_id}/contacts/{contact_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete case contact",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def delete_case_contact(
+    case_id: UUID,
+    contact_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a contact from a case."""
+    service = CaseService(db)
+    await service.delete_contact(contact_id, case_id, tenant_id)

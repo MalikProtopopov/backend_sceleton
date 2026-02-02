@@ -372,6 +372,12 @@ class Case(
         back_populates="case",
         lazy="noload",
     )
+    contacts: Mapped[list["CaseContact"]] = relationship(
+        "CaseContact",
+        back_populates="case",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("ix_cases_tenant", "tenant_id"),
@@ -532,6 +538,12 @@ class Review(
 
     # Relations
     case: Mapped["Case | None"] = relationship("Case", back_populates="reviews")
+    author_contacts: Mapped[list["ReviewAuthorContact"]] = relationship(
+        "ReviewAuthorContact",
+        back_populates="review",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("ix_reviews_tenant", "tenant_id"),
@@ -575,4 +587,75 @@ class Review(
 
     def __repr__(self) -> str:
         return f"<Review {self.id} status={self.status} rating={self.rating}>"
+
+
+# ============================================================================
+# Contacts for Cases and Reviews
+# ============================================================================
+
+
+class CaseContact(Base, UUIDMixin, SortOrderMixin):
+    """Contact links for case client (company website, social media).
+    
+    Used to store contact information for the client/company featured in a case study.
+    Supports various contact types: website, social media, email, phone, etc.
+    """
+
+    __tablename__ = "case_contacts"
+
+    case_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    
+    # Contact type: website, instagram, telegram, linkedin, facebook, twitter, 
+    # youtube, tiktok, email, phone, whatsapp, viber, other
+    contact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    
+    # Contact value: URL, phone number, email, username, etc.
+    value: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    # Relations
+    case: Mapped["Case"] = relationship("Case", back_populates="contacts")
+
+    __table_args__ = (
+        Index("ix_case_contacts_case", "case_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<CaseContact {self.id} type={self.contact_type}>"
+
+
+class ReviewAuthorContact(Base, UUIDMixin, SortOrderMixin):
+    """Contact links for review author.
+    
+    Used to store contact information for the person who wrote the review.
+    Supports various contact types: website, social media, email, phone, etc.
+    """
+
+    __tablename__ = "review_author_contacts"
+
+    review_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("reviews.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    
+    # Contact type: website, instagram, telegram, linkedin, facebook, twitter,
+    # youtube, tiktok, email, phone, whatsapp, viber, other
+    contact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    
+    # Contact value: URL, phone number, email, username, etc.
+    value: Mapped[str] = mapped_column(String(500), nullable=False)
+
+    # Relations
+    review: Mapped["Review"] = relationship("Review", back_populates="author_contacts")
+
+    __table_args__ = (
+        Index("ix_review_author_contacts_review", "review_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReviewAuthorContact {self.id} type={self.contact_type}>"
 

@@ -17,9 +17,11 @@ from app.modules.company.models import (
 )
 from app.modules.company.schemas import (
     AdvantagePublicResponse,
+    CaseContactForServiceResponse,
     CaseMinimalForServiceResponse,
     EmployeePublicResponse,
     PracticeAreaPublicResponse,
+    ReviewAuthorContactForServiceResponse,
     ReviewMinimalForServiceResponse,
     ServicePricePublic,
     ServicePublicResponse,
@@ -111,6 +113,17 @@ def _map_cases_for_service(cases: list[Case], locale: str) -> list[CaseMinimalFo
             case.locales[0] if case.locales else None
         )
         if locale_data:
+            # Map contacts
+            contacts = [
+                CaseContactForServiceResponse(
+                    id=c.id,
+                    contact_type=c.contact_type,
+                    value=c.value,
+                    sort_order=c.sort_order,
+                )
+                for c in case.contacts
+            ] if case.contacts else []
+            
             result.append(CaseMinimalForServiceResponse(
                 id=case.id,
                 slug=locale_data.slug,
@@ -122,6 +135,7 @@ def _map_cases_for_service(cases: list[Case], locale: str) -> list[CaseMinimalFo
                 project_duration=case.project_duration,
                 is_featured=case.is_featured,
                 published_at=case.published_at,
+                contacts=contacts,
             ))
     return result
 
@@ -135,8 +149,20 @@ def _map_reviews_for_service(reviews: list[Review]) -> list[ReviewMinimalForServ
     Returns:
         List of ReviewMinimalForServiceResponse
     """
-    return [
-        ReviewMinimalForServiceResponse(
+    result = []
+    for review in reviews:
+        # Map author contacts
+        author_contacts = [
+            ReviewAuthorContactForServiceResponse(
+                id=c.id,
+                contact_type=c.contact_type,
+                value=c.value,
+                sort_order=c.sort_order,
+            )
+            for c in review.author_contacts
+        ] if review.author_contacts else []
+        
+        result.append(ReviewMinimalForServiceResponse(
             id=review.id,
             rating=review.rating,
             author_name=review.author_name,
@@ -145,9 +171,9 @@ def _map_reviews_for_service(reviews: list[Review]) -> list[ReviewMinimalForServ
             author_photo_url=review.author_photo_url,
             content=review.content,
             review_date=review.review_date,
-        )
-        for review in reviews
-    ]
+            author_contacts=author_contacts,
+        ))
+    return result
 
 
 def map_services_to_public_response(

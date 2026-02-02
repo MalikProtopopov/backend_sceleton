@@ -368,6 +368,71 @@ class FAQListResponse(BaseModel):
 
 
 # ============================================================================
+# Contact Schemas (for Cases and Reviews)
+# ============================================================================
+
+
+class ContactBase(BaseModel):
+    """Base schema for contacts."""
+
+    contact_type: str = Field(
+        ...,
+        max_length=50,
+        description="Contact type: website, instagram, telegram, linkedin, facebook, twitter, youtube, tiktok, email, phone, whatsapp, viber, other",
+    )
+    value: str = Field(
+        ...,
+        max_length=500,
+        description="Contact value: URL, phone number, email, username, etc.",
+    )
+    sort_order: int = Field(default=0, description="Display order")
+
+
+class CaseContactCreate(ContactBase):
+    """Schema for creating a case contact."""
+
+    pass
+
+
+class CaseContactUpdate(BaseModel):
+    """Schema for updating a case contact."""
+
+    contact_type: str | None = Field(default=None, max_length=50)
+    value: str | None = Field(default=None, max_length=500)
+    sort_order: int | None = None
+
+
+class CaseContactResponse(ContactBase):
+    """Schema for case contact response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+
+
+class ReviewAuthorContactCreate(ContactBase):
+    """Schema for creating a review author contact."""
+
+    pass
+
+
+class ReviewAuthorContactUpdate(BaseModel):
+    """Schema for updating a review author contact."""
+
+    contact_type: str | None = Field(default=None, max_length=50)
+    value: str | None = Field(default=None, max_length=500)
+    sort_order: int | None = None
+
+
+class ReviewAuthorContactResponse(ContactBase):
+    """Schema for review author contact response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+
+
+# ============================================================================
 # Review Schemas
 # ============================================================================
 
@@ -387,6 +452,7 @@ class CaseMinimalResponse(BaseModel):
     title: str
     cover_image_url: str | None = None
     client_name: str | None = None
+    contacts: list[CaseContactResponse] = Field(default_factory=list)
 
 
 class ReviewMinimalResponse(BaseModel):
@@ -402,6 +468,7 @@ class ReviewMinimalResponse(BaseModel):
     author_photo_url: str | None = None
     content: str
     review_date: datetime | None = None
+    author_contacts: list[ReviewAuthorContactResponse] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -476,6 +543,7 @@ class ReviewResponse(ReviewBase):
     status: ReviewStatus
     case_id: UUID | None = None
     case: CaseMinimalResponse | None = None
+    author_contacts: list[ReviewAuthorContactResponse] = Field(default_factory=list)
     version: int
     created_at: datetime
     updated_at: datetime
@@ -495,6 +563,7 @@ class ReviewPublicResponse(BaseModel):
     source: str | None = None
     review_date: datetime | None = None
     case: CaseMinimalResponse | None = None
+    author_contacts: list[ReviewAuthorContactResponse] = Field(default_factory=list)
 
 
 class ReviewListResponse(BaseModel):
@@ -631,6 +700,7 @@ class CaseResponse(CaseBase):
     updated_at: datetime
     locales: list[CaseLocaleResponse] = []
     services: list[CaseServiceLinkResponse] = []
+    contacts: list[CaseContactResponse] = Field(default_factory=list)
 
 
 class CasePublicResponse(BaseModel):
@@ -652,6 +722,7 @@ class CasePublicResponse(BaseModel):
     meta_description: str | None = None
     services: list[UUID] = []
     reviews: list[ReviewMinimalResponse] = []
+    contacts: list[CaseContactResponse] = Field(default_factory=list)
 
 
 class CaseListResponse(BaseModel):

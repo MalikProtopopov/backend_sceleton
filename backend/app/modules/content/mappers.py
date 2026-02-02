@@ -14,9 +14,11 @@ from app.modules.content.models import (
 )
 from app.modules.content.schemas import (
     ArticlePublicResponse,
+    CaseContactResponse,
     CaseMinimalResponse,
     CasePublicResponse,
     FAQPublicResponse,
+    ReviewAuthorContactResponse,
     ReviewMinimalResponse,
     TopicDetailPublicResponse,
     TopicPublicResponse,
@@ -271,6 +273,17 @@ def map_case_to_minimal_response(case: Case, locale: str) -> CaseMinimalResponse
         case.locales[0] if case.locales else None
     )
     
+    # Map contacts
+    contacts = [
+        CaseContactResponse(
+            id=c.id,
+            contact_type=c.contact_type,
+            value=c.value,
+            sort_order=c.sort_order,
+        )
+        for c in case.contacts
+    ] if case.contacts else []
+    
     if not locale_data:
         # If no locale data, return minimal info without title
         return CaseMinimalResponse(
@@ -279,6 +292,7 @@ def map_case_to_minimal_response(case: Case, locale: str) -> CaseMinimalResponse
             title="",
             cover_image_url=case.cover_image_url,
             client_name=case.client_name,
+            contacts=contacts,
         )
     
     return CaseMinimalResponse(
@@ -287,6 +301,7 @@ def map_case_to_minimal_response(case: Case, locale: str) -> CaseMinimalResponse
         title=locale_data.title,
         cover_image_url=case.cover_image_url,
         client_name=case.client_name,
+        contacts=contacts,
     )
 
 
@@ -299,6 +314,17 @@ def map_review_to_minimal_response(review: Review) -> ReviewMinimalResponse:
     Returns:
         ReviewMinimalResponse with minimal data
     """
+    # Map author contacts
+    author_contacts = [
+        ReviewAuthorContactResponse(
+            id=c.id,
+            contact_type=c.contact_type,
+            value=c.value,
+            sort_order=c.sort_order,
+        )
+        for c in review.author_contacts
+    ] if review.author_contacts else []
+    
     return ReviewMinimalResponse(
         id=review.id,
         rating=review.rating,
@@ -308,6 +334,7 @@ def map_review_to_minimal_response(review: Review) -> ReviewMinimalResponse:
         author_photo_url=review.author_photo_url,
         content=review.content,
         review_date=review.review_date,
+        author_contacts=author_contacts,
     )
 
 
@@ -346,6 +373,17 @@ def map_case_to_public_response(
     # Map reviews if provided
     reviews_response = map_reviews_to_minimal_response(reviews) if reviews else []
     
+    # Map contacts
+    contacts = [
+        CaseContactResponse(
+            id=c.id,
+            contact_type=c.contact_type,
+            value=c.value,
+            sort_order=c.sort_order,
+        )
+        for c in case.contacts
+    ] if case.contacts else []
+    
     return CasePublicResponse(
         id=case.id,
         slug=locale_data.slug,
@@ -363,6 +401,7 @@ def map_case_to_public_response(
         meta_description=locale_data.meta_description,
         services=[s.service_id for s in case.services],
         reviews=reviews_response,
+        contacts=contacts,
     )
 
 

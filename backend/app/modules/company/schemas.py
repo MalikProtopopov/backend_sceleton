@@ -184,6 +184,24 @@ class ServicePricePublic(BaseModel):
     currency: str
 
 
+class CaseContactForServiceResponse(BaseModel):
+    """Contact information for case in service response."""
+
+    id: UUID
+    contact_type: str
+    value: str
+    sort_order: int = 0
+
+
+class ReviewAuthorContactForServiceResponse(BaseModel):
+    """Contact information for review author in service response."""
+
+    id: UUID
+    contact_type: str
+    value: str
+    sort_order: int = 0
+
+
 class CaseMinimalForServiceResponse(BaseModel):
     """Minimal case information for service detail page.
     
@@ -200,6 +218,7 @@ class CaseMinimalForServiceResponse(BaseModel):
     project_duration: str | None = None
     is_featured: bool = False
     published_at: datetime | None = None
+    contacts: list[CaseContactForServiceResponse] = Field(default_factory=list)
 
 
 class ReviewMinimalForServiceResponse(BaseModel):
@@ -213,6 +232,7 @@ class ReviewMinimalForServiceResponse(BaseModel):
     author_photo_url: str | None = None
     content: str
     review_date: datetime | None = None
+    author_contacts: list[ReviewAuthorContactForServiceResponse] = Field(default_factory=list)
 
 
 class ServicePublicResponse(BaseModel):

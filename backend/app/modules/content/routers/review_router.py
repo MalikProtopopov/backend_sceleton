@@ -13,6 +13,9 @@ from app.core.security import PermissionChecker, get_current_tenant_id
 from app.modules.content.mappers import map_case_to_minimal_response
 from app.modules.content.models import Case, CaseLocale
 from app.modules.content.schemas import (
+    ReviewAuthorContactCreate,
+    ReviewAuthorContactResponse,
+    ReviewAuthorContactUpdate,
     ReviewCreate,
     ReviewListResponse,
     ReviewPublicListResponse,
@@ -326,3 +329,66 @@ async def delete_review_author_photo(
         await image_upload_service.delete_image(review.author_photo_url)
         review.author_photo_url = None
         await db.commit()
+
+
+# ============================================================================
+# Admin Routes - Review Author Contacts
+# ============================================================================
+
+
+@router.post(
+    "/admin/reviews/{review_id}/author-contacts",
+    response_model=ReviewAuthorContactResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add review author contact",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("reviews:update"))],
+)
+async def add_review_author_contact(
+    review_id: UUID,
+    data: ReviewAuthorContactCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ReviewAuthorContactResponse:
+    """Add a contact for review author (website, social media, email, phone, etc.)."""
+    service = ReviewService(db)
+    contact = await service.add_author_contact(review_id, tenant_id, data)
+    return ReviewAuthorContactResponse.model_validate(contact)
+
+
+@router.patch(
+    "/admin/reviews/{review_id}/author-contacts/{contact_id}",
+    response_model=ReviewAuthorContactResponse,
+    summary="Update review author contact",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("reviews:update"))],
+)
+async def update_review_author_contact(
+    review_id: UUID,
+    contact_id: UUID,
+    data: ReviewAuthorContactUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ReviewAuthorContactResponse:
+    """Update a review author contact."""
+    service = ReviewService(db)
+    contact = await service.update_author_contact(contact_id, review_id, tenant_id, data)
+    return ReviewAuthorContactResponse.model_validate(contact)
+
+
+@router.delete(
+    "/admin/reviews/{review_id}/author-contacts/{contact_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete review author contact",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("reviews:update"))],
+)
+async def delete_review_author_contact(
+    review_id: UUID,
+    contact_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a contact from a review author."""
+    service = ReviewService(db)
+    await service.delete_author_contact(contact_id, review_id, tenant_id)
