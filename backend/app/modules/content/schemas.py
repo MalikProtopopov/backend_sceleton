@@ -380,6 +380,8 @@ class FAQListResponse(BaseModel):
 class CaseMinimalResponse(BaseModel):
     """Minimal case information for review responses (avoids circular dependency)."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     slug: str
     title: str
@@ -389,6 +391,8 @@ class CaseMinimalResponse(BaseModel):
 
 class ReviewMinimalResponse(BaseModel):
     """Minimal review information for case responses (avoids circular dependency)."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     rating: int
