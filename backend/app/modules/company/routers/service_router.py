@@ -29,6 +29,7 @@ from app.modules.company.schemas import (
     ServiceUpdate,
 )
 from app.modules.company.service import ServiceService
+from app.modules.content.service import CaseService, ReviewService
 
 router = APIRouter()
 
@@ -67,10 +68,22 @@ async def get_service_public(
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
 ) -> ServicePublicResponse:
-    """Get a published service by slug."""
+    """Get a published service by slug with related cases and reviews."""
     service = ServiceService(db)
     svc = await service.get_by_slug(slug, locale.locale, tenant_id)
-    return map_service_to_public_response(svc, locale.locale)
+    
+    # Get published cases linked to this service
+    case_service = CaseService(db)
+    cases = await case_service.list_published_by_service(svc.id, tenant_id, locale.locale)
+    
+    # Get approved reviews from cases linked to this service
+    reviews = []
+    if cases:
+        review_service = ReviewService(db)
+        case_ids = [c.id for c in cases]
+        reviews = await review_service.list_approved_by_case_ids(case_ids, tenant_id)
+    
+    return map_service_to_public_response(svc, locale.locale, cases=cases, reviews=reviews)
 
 
 # ============================================================================

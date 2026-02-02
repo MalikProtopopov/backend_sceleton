@@ -1139,6 +1139,38 @@ class CaseService(BaseService[Case]):
         await self.db.delete(locale)
         await self.db.flush()
 
+    async def list_published_by_service(
+        self,
+        service_id: UUID,
+        tenant_id: UUID,
+        locale: str,
+    ) -> list[Case]:
+        """Get published cases linked to a service.
+        
+        Returns cases that:
+        - Are linked to the specified service
+        - Have status = published
+        - Have the specified locale
+        - Are not deleted
+        """
+        stmt = (
+            select(Case)
+            .join(CaseServiceLink, Case.id == CaseServiceLink.case_id)
+            .join(CaseLocale, Case.id == CaseLocale.case_id)
+            .where(CaseServiceLink.service_id == service_id)
+            .where(Case.tenant_id == tenant_id)
+            .where(Case.deleted_at.is_(None))
+            .where(Case.status == ArticleStatus.PUBLISHED.value)
+            .where(CaseLocale.locale == locale)
+            .options(
+                selectinload(Case.locales),
+                selectinload(Case.services).selectinload(CaseServiceLink.service),
+            )
+            .order_by(Case.sort_order, Case.published_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
+
 
 class ReviewService(BaseService[Review]):
     """Service for managing reviews."""
@@ -1210,6 +1242,30 @@ class ReviewService(BaseService[Review]):
             options=self._get_default_options(),
             order_by=[Review.sort_order, Review.created_at.desc()],
         )
+
+    async def list_approved_by_case_ids(
+        self,
+        case_ids: list[UUID],
+        tenant_id: UUID,
+    ) -> list[Review]:
+        """Get approved reviews for multiple cases.
+        
+        Used for service detail page to show reviews from all related cases.
+        """
+        if not case_ids:
+            return []
+
+        stmt = (
+            select(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.status == ReviewStatus.APPROVED.value)
+            .where(Review.case_id.in_(case_ids))
+            .options(*self._get_default_options())
+            .order_by(Review.sort_order, Review.created_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
 
     @transactional
     async def create(self, tenant_id: UUID, data: ReviewCreate) -> Review:

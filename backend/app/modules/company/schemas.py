@@ -184,6 +184,37 @@ class ServicePricePublic(BaseModel):
     currency: str
 
 
+class CaseMinimalForServiceResponse(BaseModel):
+    """Minimal case information for service detail page.
+    
+    Contains fields needed for case card display without full content.
+    """
+
+    id: UUID
+    slug: str
+    title: str
+    excerpt: str | None = None
+    cover_image_url: str | None = None
+    client_name: str | None = None
+    project_year: int | None = None
+    project_duration: str | None = None
+    is_featured: bool = False
+    published_at: datetime | None = None
+
+
+class ReviewMinimalForServiceResponse(BaseModel):
+    """Minimal review information for service detail page."""
+
+    id: UUID
+    rating: int
+    author_name: str
+    author_company: str | None = None
+    author_position: str | None = None
+    author_photo_url: str | None = None
+    content: str
+    review_date: datetime | None = None
+
+
 class ServicePublicResponse(BaseModel):
     """Schema for public service response (single locale)."""
 
@@ -202,6 +233,8 @@ class ServicePublicResponse(BaseModel):
     tags: list[str] = Field(default_factory=list, description="List of tags for this locale")
     meta_title: str | None = None
     meta_description: str | None = None
+    cases: list[CaseMinimalForServiceResponse] = Field(default_factory=list, description="Published cases linked to this service")
+    reviews: list[ReviewMinimalForServiceResponse] = Field(default_factory=list, description="Approved reviews from cases linked to this service")
 
 
 class ServiceListResponse(BaseModel):

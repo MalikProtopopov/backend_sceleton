@@ -4,6 +4,10 @@ This module provides functions to map SQLAlchemy models to Pydantic response sch
 Keeps business logic (data transformation) out of routers.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from app.core.exceptions import LocaleDataMissingError
 from app.modules.company.models import (
     Advantage,
@@ -13,11 +17,16 @@ from app.modules.company.models import (
 )
 from app.modules.company.schemas import (
     AdvantagePublicResponse,
+    CaseMinimalForServiceResponse,
     EmployeePublicResponse,
     PracticeAreaPublicResponse,
+    ReviewMinimalForServiceResponse,
     ServicePricePublic,
     ServicePublicResponse,
 )
+
+if TYPE_CHECKING:
+    from app.modules.content.models import Case, Review
 
 
 # ============================================================================
@@ -25,12 +34,19 @@ from app.modules.company.schemas import (
 # ============================================================================
 
 
-def map_service_to_public_response(service: Service, locale: str) -> ServicePublicResponse:
+def map_service_to_public_response(
+    service: Service,
+    locale: str,
+    cases: list[Case] | None = None,
+    reviews: list[Review] | None = None,
+) -> ServicePublicResponse:
     """Map a Service model to ServicePublicResponse.
     
     Args:
         service: Service ORM model with locales, prices, and tags loaded
         locale: Locale code to filter by (e.g., 'ru', 'en')
+        cases: Optional list of published cases linked to this service
+        reviews: Optional list of approved reviews from cases linked to this service
         
     Returns:
         ServicePublicResponse with data for the specified locale
@@ -53,6 +69,12 @@ def map_service_to_public_response(service: Service, locale: str) -> ServicePubl
     # Filter tags for this locale
     tags_for_locale = [t.tag for t in service.tags if t.locale == locale]
     
+    # Map cases to minimal response
+    cases_response = _map_cases_for_service(cases or [], locale) if cases else []
+    
+    # Map reviews to minimal response
+    reviews_response = _map_reviews_for_service(reviews or []) if reviews else []
+    
     return ServicePublicResponse(
         id=service.id,
         slug=locale_data.slug,
@@ -67,7 +89,65 @@ def map_service_to_public_response(service: Service, locale: str) -> ServicePubl
         tags=tags_for_locale,
         meta_title=locale_data.meta_title,
         meta_description=locale_data.meta_description,
+        cases=cases_response,
+        reviews=reviews_response,
     )
+
+
+def _map_cases_for_service(cases: list[Case], locale: str) -> list[CaseMinimalForServiceResponse]:
+    """Map cases to minimal response for service detail page.
+    
+    Args:
+        cases: List of Case ORM models with locales loaded
+        locale: Locale code to filter by
+        
+    Returns:
+        List of CaseMinimalForServiceResponse
+    """
+    result = []
+    for case in cases:
+        locale_data = next(
+            (loc for loc in case.locales if loc.locale == locale),
+            case.locales[0] if case.locales else None
+        )
+        if locale_data:
+            result.append(CaseMinimalForServiceResponse(
+                id=case.id,
+                slug=locale_data.slug,
+                title=locale_data.title,
+                excerpt=locale_data.excerpt,
+                cover_image_url=case.cover_image_url,
+                client_name=case.client_name,
+                project_year=case.project_year,
+                project_duration=case.project_duration,
+                is_featured=case.is_featured,
+                published_at=case.published_at,
+            ))
+    return result
+
+
+def _map_reviews_for_service(reviews: list[Review]) -> list[ReviewMinimalForServiceResponse]:
+    """Map reviews to minimal response for service detail page.
+    
+    Args:
+        reviews: List of Review ORM models
+        
+    Returns:
+        List of ReviewMinimalForServiceResponse
+    """
+    return [
+        ReviewMinimalForServiceResponse(
+            id=review.id,
+            rating=review.rating,
+            author_name=review.author_name,
+            author_company=review.author_company,
+            author_position=review.author_position,
+            author_photo_url=review.author_photo_url,
+            content=review.content,
+            review_date=review.review_date,
+        )
+        for review in reviews
+    ]
 
 
 def map_services_to_public_response(
