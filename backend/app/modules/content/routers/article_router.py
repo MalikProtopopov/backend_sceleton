@@ -24,8 +24,12 @@ from app.modules.content.schemas import (
     ArticlePublicResponse,
     ArticleResponse,
     ArticleUpdate,
+    ContentBlockCreate,
+    ContentBlockReorderRequest,
+    ContentBlockResponse,
+    ContentBlockUpdate,
 )
-from app.modules.content.service import ArticleService
+from app.modules.content.service import ArticleService, ContentBlockService
 
 router = APIRouter()
 
@@ -80,14 +84,23 @@ async def get_article_public(
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
 ) -> ArticlePublicResponse:
-    """Get a published article by slug."""
+    """Get a published article by slug with content blocks."""
     service = ArticleService(db)
     article = await service.get_by_slug(slug, locale.locale, tenant_id)
 
     # Increment view count (fire and forget)
     await service.increment_view(article.id, tenant_id)
+    
+    # Load content blocks for this article and locale
+    content_block_service = ContentBlockService(db)
+    content_blocks = await content_block_service.list_blocks("article", article.id, tenant_id, locale.locale)
 
-    return map_article_to_public_response(article, locale.locale, include_content=True)
+    return map_article_to_public_response(
+        article,
+        locale.locale,
+        include_content=True,
+        content_blocks=content_blocks,
+    )
 
 
 # ============================================================================
@@ -356,3 +369,116 @@ async def delete_article_locale(
     """Delete a locale from article (minimum 1 locale required)."""
     service = ArticleService(db)
     await service.delete_locale(locale_id, article_id, tenant_id)
+
+
+# ============================================================================
+# Admin Routes - Article Content Blocks
+# ============================================================================
+
+
+@router.get(
+    "/admin/articles/{article_id}/content-blocks",
+    response_model=list[ContentBlockResponse],
+    summary="List article content blocks",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("articles:read"))],
+)
+async def list_article_content_blocks(
+    article_id: UUID,
+    locale: str | None = Query(default=None, description="Filter by locale"),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """List content blocks for an article, optionally filtered by locale."""
+    # Verify article exists
+    article_service = ArticleService(db)
+    await article_service.get_by_id(article_id, tenant_id)
+    
+    service = ContentBlockService(db)
+    blocks = await service.list_blocks("article", article_id, tenant_id, locale)
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
+
+
+@router.post(
+    "/admin/articles/{article_id}/content-blocks",
+    response_model=ContentBlockResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add article content block",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("articles:update"))],
+)
+async def add_article_content_block(
+    article_id: UUID,
+    data: ContentBlockCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Add a content block to an article (text, image, video, gallery, link)."""
+    # Verify article exists
+    article_service = ArticleService(db)
+    await article_service.get_by_id(article_id, tenant_id)
+    
+    service = ContentBlockService(db)
+    block = await service.add_block("article", article_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.patch(
+    "/admin/articles/{article_id}/content-blocks/{block_id}",
+    response_model=ContentBlockResponse,
+    summary="Update article content block",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("articles:update"))],
+)
+async def update_article_content_block(
+    article_id: UUID,
+    block_id: UUID,
+    data: ContentBlockUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Update an article content block."""
+    service = ContentBlockService(db)
+    block = await service.update_block(block_id, "article", article_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.delete(
+    "/admin/articles/{article_id}/content-blocks/{block_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete article content block",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("articles:update"))],
+)
+async def delete_article_content_block(
+    article_id: UUID,
+    block_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a content block from an article."""
+    service = ContentBlockService(db)
+    await service.delete_block(block_id, "article", article_id, tenant_id)
+    await db.commit()
+
+
+@router.post(
+    "/admin/articles/{article_id}/content-blocks/reorder",
+    response_model=list[ContentBlockResponse],
+    summary="Reorder article content blocks",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("articles:update"))],
+)
+async def reorder_article_content_blocks(
+    article_id: UUID,
+    data: ContentBlockReorderRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """Reorder content blocks for an article in a specific locale."""
+    service = ContentBlockService(db)
+    blocks = await service.reorder_blocks("article", article_id, tenant_id, data.locale, data.block_ids)
+    await db.commit()
+    return [ContentBlockResponse.model_validate(b) for b in blocks]

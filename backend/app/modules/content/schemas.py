@@ -231,6 +231,7 @@ class ArticleResponse(ArticleBase):
     updated_at: datetime
     locales: list[ArticleLocaleResponse] = []
     topics: list["ArticleTopicResponse"] = []
+    content_blocks: list["ContentBlockResponse"] = Field(default_factory=list)
 
 
 class ArticleTopicResponse(BaseModel):
@@ -255,6 +256,7 @@ class ArticlePublicResponse(BaseModel):
     meta_title: str | None = None
     meta_description: str | None = None
     topics: list[TopicPublicResponse] = []
+    content_blocks: list["ContentBlockResponse"] = Field(default_factory=list)
 
 
 class ArticleListResponse(BaseModel):
@@ -430,6 +432,88 @@ class ReviewAuthorContactResponse(ContactBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+
+
+# ============================================================================
+# Content Block Schemas
+# ============================================================================
+
+
+class ContentBlockType(str, Enum):
+    """Type of content block."""
+
+    TEXT = "text"
+    IMAGE = "image"
+    VIDEO = "video"
+    GALLERY = "gallery"
+    LINK = "link"
+    RESULT = "result"
+
+
+class DeviceType(str, Enum):
+    """Device type for responsive content."""
+
+    MOBILE = "mobile"
+    DESKTOP = "desktop"
+    BOTH = "both"
+
+
+class ContentBlockCreate(BaseModel):
+    """Schema for creating a content block."""
+
+    locale: str = Field(..., min_length=2, max_length=5)
+    block_type: ContentBlockType
+    sort_order: int = Field(default=0, description="Display order")
+    title: str | None = Field(default=None, max_length=255, description="Block title/heading")
+    content: str | None = Field(default=None, description="HTML content for text blocks")
+    media_url: str | None = Field(default=None, max_length=500, description="URL for image or video")
+    thumbnail_url: str | None = Field(default=None, max_length=500, description="Thumbnail URL for video")
+    link_url: str | None = Field(default=None, max_length=500, description="Link URL")
+    link_label: str | None = Field(default=None, max_length=255, description="Link button text")
+    device_type: DeviceType = Field(default=DeviceType.BOTH, description="Device type: mobile, desktop, both")
+    metadata: dict | None = Field(default=None, description="Additional metadata (alt, caption, images[], provider, icon)")
+
+
+class ContentBlockUpdate(BaseModel):
+    """Schema for updating a content block."""
+
+    locale: str | None = Field(default=None, min_length=2, max_length=5)
+    block_type: ContentBlockType | None = None
+    sort_order: int | None = None
+    title: str | None = Field(default=None, max_length=255)
+    content: str | None = None
+    media_url: str | None = Field(default=None, max_length=500)
+    thumbnail_url: str | None = Field(default=None, max_length=500)
+    link_url: str | None = Field(default=None, max_length=500)
+    link_label: str | None = Field(default=None, max_length=255)
+    device_type: DeviceType | None = None
+    metadata: dict | None = None
+
+
+class ContentBlockResponse(BaseModel):
+    """Schema for content block response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    locale: str
+    block_type: str
+    sort_order: int
+    title: str | None = None
+    content: str | None = None
+    media_url: str | None = None
+    thumbnail_url: str | None = None
+    link_url: str | None = None
+    link_label: str | None = None
+    device_type: str | None = None
+    metadata: dict | None = None
+
+
+class ContentBlockReorderRequest(BaseModel):
+    """Schema for reordering content blocks."""
+
+    locale: str = Field(..., min_length=2, max_length=5)
+    block_ids: list[UUID] = Field(..., description="Ordered list of block IDs")
 
 
 # ============================================================================
@@ -701,6 +785,7 @@ class CaseResponse(CaseBase):
     locales: list[CaseLocaleResponse] = []
     services: list[CaseServiceLinkResponse] = []
     contacts: list[CaseContactResponse] = Field(default_factory=list)
+    content_blocks: list[ContentBlockResponse] = Field(default_factory=list)
 
 
 class CasePublicResponse(BaseModel):
@@ -723,6 +808,7 @@ class CasePublicResponse(BaseModel):
     services: list[UUID] = []
     reviews: list[ReviewMinimalResponse] = []
     contacts: list[CaseContactResponse] = Field(default_factory=list)
+    content_blocks: list[ContentBlockResponse] = Field(default_factory=list)
 
 
 class CaseListResponse(BaseModel):

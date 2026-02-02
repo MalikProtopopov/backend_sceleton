@@ -26,8 +26,12 @@ from app.modules.content.schemas import (
     CasePublicResponse,
     CaseResponse,
     CaseUpdate,
+    ContentBlockCreate,
+    ContentBlockReorderRequest,
+    ContentBlockResponse,
+    ContentBlockUpdate,
 )
-from app.modules.content.service import CaseService, ReviewService
+from app.modules.content.service import CaseService, ContentBlockService, ReviewService
 
 router = APIRouter()
 
@@ -82,7 +86,7 @@ async def get_case_public(
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
 ) -> CasePublicResponse:
-    """Get a published case by slug with approved reviews."""
+    """Get a published case by slug with approved reviews and content blocks."""
     service = CaseService(db)
     case = await service.get_by_slug(slug, locale.locale, tenant_id)
     
@@ -94,8 +98,16 @@ async def get_case_public(
         case_id=case.id,
     )
     
+    # Load content blocks for this case and locale
+    content_block_service = ContentBlockService(db)
+    content_blocks = await content_block_service.list_blocks("case", case.id, tenant_id, locale.locale)
+    
     return map_case_to_public_response(
-        case, locale.locale, include_full_content=True, reviews=reviews
+        case,
+        locale.locale,
+        include_full_content=True,
+        reviews=reviews,
+        content_blocks=content_blocks,
     )
 
 
@@ -427,3 +439,116 @@ async def delete_case_contact(
     """Delete a contact from a case."""
     service = CaseService(db)
     await service.delete_contact(contact_id, case_id, tenant_id)
+
+
+# ============================================================================
+# Admin Routes - Case Content Blocks
+# ============================================================================
+
+
+@router.get(
+    "/admin/cases/{case_id}/content-blocks",
+    response_model=list[ContentBlockResponse],
+    summary="List case content blocks",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:read"))],
+)
+async def list_case_content_blocks(
+    case_id: UUID,
+    locale: str | None = Query(default=None, description="Filter by locale"),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """List content blocks for a case, optionally filtered by locale."""
+    # Verify case exists
+    case_service = CaseService(db)
+    await case_service.get_by_id(case_id, tenant_id)
+    
+    service = ContentBlockService(db)
+    blocks = await service.list_blocks("case", case_id, tenant_id, locale)
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
+
+
+@router.post(
+    "/admin/cases/{case_id}/content-blocks",
+    response_model=ContentBlockResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add case content block",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def add_case_content_block(
+    case_id: UUID,
+    data: ContentBlockCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Add a content block to a case (text, image, video, gallery, link, result)."""
+    # Verify case exists
+    case_service = CaseService(db)
+    await case_service.get_by_id(case_id, tenant_id)
+    
+    service = ContentBlockService(db)
+    block = await service.add_block("case", case_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.patch(
+    "/admin/cases/{case_id}/content-blocks/{block_id}",
+    response_model=ContentBlockResponse,
+    summary="Update case content block",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def update_case_content_block(
+    case_id: UUID,
+    block_id: UUID,
+    data: ContentBlockUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Update a case content block."""
+    service = ContentBlockService(db)
+    block = await service.update_block(block_id, "case", case_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.delete(
+    "/admin/cases/{case_id}/content-blocks/{block_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete case content block",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def delete_case_content_block(
+    case_id: UUID,
+    block_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a content block from a case."""
+    service = ContentBlockService(db)
+    await service.delete_block(block_id, "case", case_id, tenant_id)
+    await db.commit()
+
+
+@router.post(
+    "/admin/cases/{case_id}/content-blocks/reorder",
+    response_model=list[ContentBlockResponse],
+    summary="Reorder case content blocks",
+    tags=["Admin - Content"],
+    dependencies=[Depends(PermissionChecker("cases:update"))],
+)
+async def reorder_case_content_blocks(
+    case_id: UUID,
+    data: ContentBlockReorderRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """Reorder content blocks for a case in a specific locale."""
+    service = ContentBlockService(db)
+    blocks = await service.reorder_blocks("case", case_id, tenant_id, data.locale, data.block_ids)
+    await db.commit()
+    return [ContentBlockResponse.model_validate(b) for b in blocks]

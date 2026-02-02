@@ -160,6 +160,23 @@ class ServiceUpdate(BaseModel):
     version: int = Field(..., description="Current version for optimistic locking")
 
 
+class ContentBlockForServiceResponse(BaseModel):
+    """Content block information for service response."""
+
+    id: UUID
+    locale: str
+    block_type: str
+    sort_order: int
+    title: str | None = None
+    content: str | None = None
+    media_url: str | None = None
+    thumbnail_url: str | None = None
+    link_url: str | None = None
+    link_label: str | None = None
+    device_type: str | None = None
+    metadata: dict | None = None
+
+
 class ServiceResponse(ServiceBase):
     """Schema for service response."""
 
@@ -175,6 +192,7 @@ class ServiceResponse(ServiceBase):
     locales: list[ServiceLocaleResponse] = []
     prices: list[ServicePriceResponse] = []
     tags: list[ServiceTagResponse] = []
+    content_blocks: list[ContentBlockForServiceResponse] = Field(default_factory=list)
 
 
 class ServicePricePublic(BaseModel):
@@ -255,6 +273,7 @@ class ServicePublicResponse(BaseModel):
     meta_description: str | None = None
     cases: list[CaseMinimalForServiceResponse] = Field(default_factory=list, description="Published cases linked to this service")
     reviews: list[ReviewMinimalForServiceResponse] = Field(default_factory=list, description="Approved reviews from cases linked to this service")
+    content_blocks: list[ContentBlockForServiceResponse] = Field(default_factory=list, description="Content blocks for this service")
 
 
 class ServiceListResponse(BaseModel):

@@ -8,6 +8,7 @@ from app.core.exceptions import LocaleDataMissingError
 from app.modules.content.models import (
     Article,
     Case,
+    ContentBlock,
     FAQ,
     Review,
     Topic,
@@ -17,6 +18,7 @@ from app.modules.content.schemas import (
     CaseContactResponse,
     CaseMinimalResponse,
     CasePublicResponse,
+    ContentBlockResponse,
     FAQPublicResponse,
     ReviewAuthorContactResponse,
     ReviewMinimalResponse,
@@ -150,7 +152,10 @@ def map_topic_to_detail_public_response(
 
 
 def map_article_to_public_response(
-    article: Article, locale: str, include_content: bool = True
+    article: Article,
+    locale: str,
+    include_content: bool = True,
+    content_blocks: list[ContentBlock] | None = None,
 ) -> ArticlePublicResponse:
     """Map an Article model to ArticlePublicResponse.
     
@@ -158,6 +163,7 @@ def map_article_to_public_response(
         article: Article ORM model with locales and topics loaded
         locale: Locale code to filter by
         include_content: Whether to include full content (False for list views)
+        content_blocks: Optional list of content blocks to include
         
     Returns:
         ArticlePublicResponse with data for the specified locale
@@ -187,6 +193,11 @@ def map_article_to_public_response(
                 color=topic.color,
             ))
     
+    # Map content blocks
+    blocks_response = [
+        ContentBlockResponse.model_validate(b) for b in content_blocks
+    ] if content_blocks else []
+    
     return ArticlePublicResponse(
         id=article.id,
         slug=locale_data.slug,
@@ -199,6 +210,7 @@ def map_article_to_public_response(
         meta_title=locale_data.meta_title,
         meta_description=locale_data.meta_description,
         topics=topics_response,
+        content_blocks=blocks_response,
     )
 
 
@@ -349,7 +361,11 @@ def map_reviews_to_minimal_response(reviews: list[Review]) -> list[ReviewMinimal
 
 
 def map_case_to_public_response(
-    case: Case, locale: str, include_full_content: bool = True, reviews: list[Review] | None = None
+    case: Case,
+    locale: str,
+    include_full_content: bool = True,
+    reviews: list[Review] | None = None,
+    content_blocks: list[ContentBlock] | None = None,
 ) -> CasePublicResponse:
     """Map a Case model to CasePublicResponse.
     
@@ -358,6 +374,7 @@ def map_case_to_public_response(
         locale: Locale code to filter by
         include_full_content: Whether to include full description/results (False for lists)
         reviews: Optional list of reviews to include (for case detail page)
+        content_blocks: Optional list of content blocks to include
         
     Returns:
         CasePublicResponse with data for the specified locale
@@ -384,6 +401,11 @@ def map_case_to_public_response(
         for c in case.contacts
     ] if case.contacts else []
     
+    # Map content blocks
+    blocks_response = [
+        ContentBlockResponse.model_validate(b) for b in content_blocks
+    ] if content_blocks else []
+    
     return CasePublicResponse(
         id=case.id,
         slug=locale_data.slug,
@@ -402,6 +424,7 @@ def map_case_to_public_response(
         services=[s.service_id for s in case.services],
         reviews=reviews_response,
         contacts=contacts,
+        content_blocks=blocks_response,
     )
 
 

@@ -19,6 +19,7 @@ from app.modules.company.schemas import (
     AdvantagePublicResponse,
     CaseContactForServiceResponse,
     CaseMinimalForServiceResponse,
+    ContentBlockForServiceResponse,
     EmployeePublicResponse,
     PracticeAreaPublicResponse,
     ReviewAuthorContactForServiceResponse,
@@ -28,7 +29,7 @@ from app.modules.company.schemas import (
 )
 
 if TYPE_CHECKING:
-    from app.modules.content.models import Case, Review
+    from app.modules.content.models import Case, ContentBlock, Review
 
 
 # ============================================================================
@@ -41,6 +42,7 @@ def map_service_to_public_response(
     locale: str,
     cases: list[Case] | None = None,
     reviews: list[Review] | None = None,
+    content_blocks: list[ContentBlock] | None = None,
 ) -> ServicePublicResponse:
     """Map a Service model to ServicePublicResponse.
     
@@ -49,6 +51,7 @@ def map_service_to_public_response(
         locale: Locale code to filter by (e.g., 'ru', 'en')
         cases: Optional list of published cases linked to this service
         reviews: Optional list of approved reviews from cases linked to this service
+        content_blocks: Optional list of content blocks to include
         
     Returns:
         ServicePublicResponse with data for the specified locale
@@ -77,6 +80,25 @@ def map_service_to_public_response(
     # Map reviews to minimal response
     reviews_response = _map_reviews_for_service(reviews or []) if reviews else []
     
+    # Map content blocks
+    blocks_response = [
+        ContentBlockForServiceResponse(
+            id=b.id,
+            locale=b.locale,
+            block_type=b.block_type,
+            sort_order=b.sort_order,
+            title=b.title,
+            content=b.content,
+            media_url=b.media_url,
+            thumbnail_url=b.thumbnail_url,
+            link_url=b.link_url,
+            link_label=b.link_label,
+            device_type=b.device_type,
+            metadata=b.metadata,
+        )
+        for b in content_blocks
+    ] if content_blocks else []
+    
     return ServicePublicResponse(
         id=service.id,
         slug=locale_data.slug,
@@ -93,6 +115,7 @@ def map_service_to_public_response(
         meta_description=locale_data.meta_description,
         cases=cases_response,
         reviews=reviews_response,
+        content_blocks=blocks_response,
     )
 
 

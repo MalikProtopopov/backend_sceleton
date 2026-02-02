@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -29,7 +29,13 @@ from app.modules.company.schemas import (
     ServiceUpdate,
 )
 from app.modules.company.service import ServiceService
-from app.modules.content.service import CaseService, ReviewService
+from app.modules.content.schemas import (
+    ContentBlockCreate,
+    ContentBlockReorderRequest,
+    ContentBlockResponse,
+    ContentBlockUpdate,
+)
+from app.modules.content.service import CaseService, ContentBlockService, ReviewService
 
 router = APIRouter()
 
@@ -68,7 +74,7 @@ async def get_service_public(
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
 ) -> ServicePublicResponse:
-    """Get a published service by slug with related cases and reviews."""
+    """Get a published service by slug with related cases, reviews, and content blocks."""
     service = ServiceService(db)
     svc = await service.get_by_slug(slug, locale.locale, tenant_id)
     
@@ -83,7 +89,17 @@ async def get_service_public(
         case_ids = [c.id for c in cases]
         reviews = await review_service.list_approved_by_case_ids(case_ids, tenant_id)
     
-    return map_service_to_public_response(svc, locale.locale, cases=cases, reviews=reviews)
+    # Load content blocks for this service and locale
+    content_block_service = ContentBlockService(db)
+    content_blocks = await content_block_service.list_blocks("service", svc.id, tenant_id, locale.locale)
+    
+    return map_service_to_public_response(
+        svc,
+        locale.locale,
+        cases=cases,
+        reviews=reviews,
+        content_blocks=content_blocks,
+    )
 
 
 # ============================================================================
@@ -436,3 +452,116 @@ async def delete_service_locale(
     """Delete a locale from service (minimum 1 locale required)."""
     service = ServiceService(db)
     await service.delete_locale(locale_id, service_id, tenant_id)
+
+
+# ============================================================================
+# Admin Routes - Service Content Blocks
+# ============================================================================
+
+
+@router.get(
+    "/admin/services/{service_id}/content-blocks",
+    response_model=list[ContentBlockResponse],
+    summary="List service content blocks",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("services:read"))],
+)
+async def list_service_content_blocks(
+    service_id: UUID,
+    locale: str | None = Query(default=None, description="Filter by locale"),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """List content blocks for a service, optionally filtered by locale."""
+    # Verify service exists
+    service_service = ServiceService(db)
+    await service_service.get_by_id(service_id, tenant_id)
+    
+    service = ContentBlockService(db)
+    blocks = await service.list_blocks("service", service_id, tenant_id, locale)
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
+
+
+@router.post(
+    "/admin/services/{service_id}/content-blocks",
+    response_model=ContentBlockResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add service content block",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("services:update"))],
+)
+async def add_service_content_block(
+    service_id: UUID,
+    data: ContentBlockCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Add a content block to a service (text, image, video, gallery, link)."""
+    # Verify service exists
+    service_service = ServiceService(db)
+    await service_service.get_by_id(service_id, tenant_id)
+    
+    service = ContentBlockService(db)
+    block = await service.add_block("service", service_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.patch(
+    "/admin/services/{service_id}/content-blocks/{block_id}",
+    response_model=ContentBlockResponse,
+    summary="Update service content block",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("services:update"))],
+)
+async def update_service_content_block(
+    service_id: UUID,
+    block_id: UUID,
+    data: ContentBlockUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Update a service content block."""
+    service = ContentBlockService(db)
+    block = await service.update_block(block_id, "service", service_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.delete(
+    "/admin/services/{service_id}/content-blocks/{block_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete service content block",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("services:update"))],
+)
+async def delete_service_content_block(
+    service_id: UUID,
+    block_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a content block from a service."""
+    service = ContentBlockService(db)
+    await service.delete_block(block_id, "service", service_id, tenant_id)
+    await db.commit()
+
+
+@router.post(
+    "/admin/services/{service_id}/content-blocks/reorder",
+    response_model=list[ContentBlockResponse],
+    summary="Reorder service content blocks",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("services:update"))],
+)
+async def reorder_service_content_blocks(
+    service_id: UUID,
+    data: ContentBlockReorderRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """Reorder content blocks for a service in a specific locale."""
+    service = ContentBlockService(db)
+    blocks = await service.reorder_blocks("service", service_id, tenant_id, data.locale, data.block_ids)
+    await db.commit()
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
