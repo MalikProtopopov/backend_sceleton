@@ -1741,7 +1741,7 @@ class ContentBlockService:
             link_url=data.link_url,
             link_label=data.link_label,
             device_type=data.device_type.value if data.device_type else None,
-            metadata=data.metadata,
+            block_metadata=data.block_metadata,
         )
         self.db.add(block)
         await self.db.flush()
@@ -1791,8 +1791,8 @@ class ContentBlockService:
             block.link_label = data.link_label
         if data.device_type is not None:
             block.device_type = data.device_type.value
-        if data.metadata is not None:
-            block.metadata = data.metadata
+        if data.block_metadata is not None:
+            block.block_metadata = data.block_metadata
         
         await self.db.flush()
         await self.db.refresh(block)

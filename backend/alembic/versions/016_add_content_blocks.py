@@ -99,7 +99,7 @@ def upgrade() -> None:
             comment="Device type: mobile, desktop, both",
         ),
         sa.Column(
-            "metadata",
+            "block_metadata",
             postgresql.JSONB,
             nullable=True,
             comment="Additional metadata (alt, caption, images[], provider, icon)",

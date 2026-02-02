@@ -471,7 +471,7 @@ class ContentBlockCreate(BaseModel):
     link_url: str | None = Field(default=None, max_length=500, description="Link URL")
     link_label: str | None = Field(default=None, max_length=255, description="Link button text")
     device_type: DeviceType = Field(default=DeviceType.BOTH, description="Device type: mobile, desktop, both")
-    metadata: dict | None = Field(default=None, description="Additional metadata (alt, caption, images[], provider, icon)")
+    block_metadata: dict | None = Field(default=None, description="Additional metadata (alt, caption, images[], provider, icon)")
 
 
 class ContentBlockUpdate(BaseModel):
@@ -487,7 +487,7 @@ class ContentBlockUpdate(BaseModel):
     link_url: str | None = Field(default=None, max_length=500)
     link_label: str | None = Field(default=None, max_length=255)
     device_type: DeviceType | None = None
-    metadata: dict | None = None
+    block_metadata: dict | None = None
 
 
 class ContentBlockResponse(BaseModel):
@@ -506,7 +506,7 @@ class ContentBlockResponse(BaseModel):
     link_url: str | None = None
     link_label: str | None = None
     device_type: str | None = None
-    metadata: dict | None = None
+    block_metadata: dict | None = None
 
 
 class ContentBlockReorderRequest(BaseModel):

@@ -174,7 +174,7 @@ class ContentBlockForServiceResponse(BaseModel):
     link_url: str | None = None
     link_label: str | None = None
     device_type: str | None = None
-    metadata: dict | None = None
+    block_metadata: dict | None = None
 
 
 class ServiceResponse(ServiceBase):

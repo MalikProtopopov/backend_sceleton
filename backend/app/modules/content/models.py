@@ -769,7 +769,7 @@ class ContentBlock(Base, UUIDMixin, TimestampMixin, TenantMixin, SortOrderMixin)
         default=DeviceType.BOTH.value,
         comment="Device type: mobile, desktop, both",
     )
-    metadata: Mapped[dict | None] = mapped_column(
+    block_metadata: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,
         comment="Additional metadata (alt, caption, images[], provider, icon)",

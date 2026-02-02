@@ -94,7 +94,7 @@ def map_service_to_public_response(
             link_url=b.link_url,
             link_label=b.link_label,
             device_type=b.device_type,
-            metadata=b.metadata,
+            block_metadata=b.block_metadata,
         )
         for b in content_blocks
     ] if content_blocks else []

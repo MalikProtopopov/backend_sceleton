@@ -42,7 +42,7 @@
       "link_url": null,
       "link_label": null,
       "device_type": "both",
-      "metadata": null
+      "block_metadata": null
     },
     {
       "id": "uuid-блока-2",
@@ -56,7 +56,7 @@
       "link_url": null,
       "link_label": null,
       "device_type": "both",
-      "metadata": {"provider": "youtube"}
+      "block_metadata": {"provider": "youtube"}
     }
   ]
 }
@@ -129,7 +129,7 @@ interface ContentBlockResponse {
   link_url: string | null;       // URL ссылки
   link_label: string | null;     // Текст ссылки/кнопки
   device_type: DeviceType;       // Тип устройства
-  metadata: object | null;       // Дополнительные данные
+  block_metadata: object | null; // Дополнительные данные
 }
 
 type ContentBlockType = "text" | "image" | "video" | "gallery" | "link" | "result";
@@ -161,7 +161,7 @@ type DeviceType = "mobile" | "desktop" | "both";
   "block_type": "image",
   "media_url": "/media/cases/image.jpg",
   "device_type": "both",
-  "metadata": {
+  "block_metadata": {
     "alt": "Описание изображения",
     "caption": "Подпись под изображением"
   }
@@ -170,8 +170,8 @@ type DeviceType = "mobile" | "desktop" | "both";
 
 **Рендеринг:**
 - `device_type`: показывать только на указанных устройствах
-- `metadata.alt`: атрибут alt для `<img>`
-- `metadata.caption`: подпись под изображением
+- `block_metadata.alt`: атрибут alt для `<img>`
+- `block_metadata.caption`: подпись под изображением
 
 ---
 
@@ -182,14 +182,14 @@ type DeviceType = "mobile" | "desktop" | "both";
   "block_type": "video",
   "media_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
   "thumbnail_url": "https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
-  "metadata": {
+  "block_metadata": {
     "provider": "youtube"
   }
 }
 ```
 
 **Рендеринг:**
-- `metadata.provider`: определяет способ встраивания (youtube, rutube, vimeo, other)
+- `block_metadata.provider`: определяет способ встраивания (youtube, rutube, vimeo, other)
 - `thumbnail_url`: превью до начала воспроизведения
 - Для YouTube: конвертировать URL в embed URL
 
@@ -208,7 +208,7 @@ function getYouTubeEmbedUrl(url: string): string {
 ```json
 {
   "block_type": "gallery",
-  "metadata": {
+  "block_metadata": {
     "images": [
       {
         "url": "/media/cases/slide1.jpg",
@@ -232,7 +232,7 @@ function getYouTubeEmbedUrl(url: string): string {
 
 **Рендеринг:**
 - Использовать библиотеку слайдера (Swiper, Embla, и др.)
-- Фильтровать `metadata.images` по `device_type`
+- Фильтровать `block_metadata.images` по `device_type`
 
 ---
 
@@ -243,7 +243,7 @@ function getYouTubeEmbedUrl(url: string): string {
   "block_type": "link",
   "link_url": "https://t.me/mybot",
   "link_label": "Открыть в Telegram",
-  "metadata": {
+  "block_metadata": {
     "icon": "telegram"
   }
 }
@@ -251,7 +251,7 @@ function getYouTubeEmbedUrl(url: string): string {
 
 **Рендеринг:**
 - Отображать как кнопку или ссылку
-- `metadata.icon`: иконка (telegram, website, play_store, app_store, и др.)
+- `block_metadata.icon`: иконка (telegram, website, play_store, app_store, и др.)
 
 ---
 
@@ -312,13 +312,13 @@ function renderContentBlocks(blocks: ContentBlockResponse[]) {
       case 'text':
         return <TextBlock content={block.content} title={block.title} />;
       case 'image':
-        return <ImageBlock url={block.media_url} metadata={block.metadata} />;
+        return <ImageBlock url={block.media_url} blockMetadata={block.block_metadata} />;
       case 'video':
-        return <VideoBlock url={block.media_url} thumbnail={block.thumbnail_url} metadata={block.metadata} />;
+        return <VideoBlock url={block.media_url} thumbnail={block.thumbnail_url} blockMetadata={block.block_metadata} />;
       case 'gallery':
-        return <GalleryBlock images={block.metadata?.images} />;
+        return <GalleryBlock images={block.block_metadata?.images} />;
       case 'link':
-        return <LinkBlock url={block.link_url} label={block.link_label} icon={block.metadata?.icon} />;
+        return <LinkBlock url={block.link_url} label={block.link_label} icon={block.block_metadata?.icon} />;
       case 'result':
         return <ResultBlock {...block} />;
       default:
@@ -363,14 +363,14 @@ function TextBlock({ content, title }: { content: string | null; title: string |
 ### VideoBlock
 
 ```tsx
-function VideoBlock({ url, thumbnail, metadata }: { 
+function VideoBlock({ url, thumbnail, blockMetadata }: { 
   url: string | null; 
   thumbnail: string | null; 
-  metadata: any 
+  blockMetadata: any 
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   
-  const embedUrl = metadata?.provider === 'youtube' 
+  const embedUrl = blockMetadata?.provider === 'youtube' 
     ? getYouTubeEmbedUrl(url!)
     : url;
   

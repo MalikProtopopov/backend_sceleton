@@ -17,10 +17,10 @@ Content Blocks — система гибких блоков контента, п
 | block_type | Описание | Ключевые поля |
 |------------|----------|---------------|
 | `text` | HTML-текст | `content` |
-| `image` | Изображение | `media_url`, `device_type`, `metadata.alt/caption` |
-| `video` | Видео (YouTube/RuTube) | `media_url`, `thumbnail_url`, `metadata.provider` |
-| `gallery` | Слайдер/галерея | `metadata.images[]` |
-| `link` | Ссылка | `link_url`, `link_label`, `metadata.icon` |
+| `image` | Изображение | `media_url`, `device_type`, `block_metadata.alt/caption` |
+| `video` | Видео (YouTube/RuTube) | `media_url`, `thumbnail_url`, `block_metadata.provider` |
+| `gallery` | Слайдер/галерея | `block_metadata.images[]` |
+| `link` | Ссылка | `link_url`, `link_label`, `block_metadata.icon` |
 | `result` | Блок результата | `title`, `content`, `media_url`, `link_url` |
 
 ## Device Types
@@ -67,7 +67,7 @@ POST /api/v1/admin/cases/{case_id}/content-blocks
   "link_url": null,
   "link_label": null,
   "device_type": "both",
-  "metadata": null
+  "block_metadata": null
 }
 ```
 
@@ -91,7 +91,7 @@ POST /api/v1/admin/cases/{case_id}/content-blocks
   "sort_order": 1,
   "media_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
   "thumbnail_url": "https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
-  "metadata": {
+  "block_metadata": {
     "provider": "youtube"
   }
 }
@@ -105,7 +105,7 @@ POST /api/v1/admin/cases/{case_id}/content-blocks
   "sort_order": 2,
   "media_url": "/media/cases/image.jpg",
   "device_type": "both",
-  "metadata": {
+  "block_metadata": {
     "alt": "Описание изображения",
     "caption": "Подпись к изображению"
   }
@@ -118,7 +118,7 @@ POST /api/v1/admin/cases/{case_id}/content-blocks
   "locale": "ru",
   "block_type": "gallery",
   "sort_order": 3,
-  "metadata": {
+  "block_metadata": {
     "images": [
       {"url": "/media/cases/slide1.jpg", "alt": "Слайд 1", "device_type": "both"},
       {"url": "/media/cases/slide2.jpg", "alt": "Слайд 2", "device_type": "both"},
@@ -136,7 +136,7 @@ POST /api/v1/admin/cases/{case_id}/content-blocks
   "sort_order": 4,
   "link_url": "https://t.me/mybot",
   "link_label": "Открыть в Telegram",
-  "metadata": {
+  "block_metadata": {
     "icon": "telegram"
   }
 }
@@ -240,7 +240,7 @@ interface ContentBlockCreate {
   link_url?: string;        // URL ссылки
   link_label?: string;      // Текст кнопки/ссылки
   device_type?: DeviceType; // default: "both"
-  metadata?: object;        // Доп. данные (alt, caption, images[], provider, icon)
+  block_metadata?: object;  // Доп. данные (alt, caption, images[], provider, icon)
 }
 
 type ContentBlockType = "text" | "image" | "video" | "gallery" | "link" | "result";
@@ -262,7 +262,7 @@ interface ContentBlockResponse {
   link_url: string | null;
   link_label: string | null;
   device_type: string | null;
-  metadata: object | null;
+  block_metadata: object | null;
 }
 ```
 
