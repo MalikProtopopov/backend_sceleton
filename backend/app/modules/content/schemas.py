@@ -445,19 +445,22 @@ class ReviewUpdate(BaseModel):
     """Schema for updating a review.
     
     Note: author_photo_url is managed via POST/DELETE /admin/reviews/{id}/author-photo endpoints.
+    Accepts both snake_case and camelCase for frontend compatibility.
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     rating: int | None = Field(default=None, ge=1, le=5)
-    author_name: str | None = Field(default=None, min_length=2, max_length=255)
-    author_company: str | None = None
-    author_position: str | None = None
+    author_name: str | None = Field(default=None, min_length=2, max_length=255, alias="authorName")
+    author_company: str | None = Field(default=None, max_length=255, alias="authorCompany")
+    author_position: str | None = Field(default=None, max_length=255, alias="authorPosition")
     content: str | None = Field(default=None, min_length=10)
-    case_id: UUID | None = None
-    is_featured: bool | None = None
+    case_id: UUID | None = Field(default=None, alias="caseId")
+    is_featured: bool | None = Field(default=None, alias="isFeatured")
     source: str | None = None
-    source_url: str | None = None
-    review_date: datetime | None = None
-    sort_order: int | None = None
+    source_url: str | None = Field(default=None, alias="sourceUrl")
+    review_date: datetime | None = Field(default=None, alias="reviewDate")
+    sort_order: int | None = Field(default=None, alias="sortOrder")
     status: ReviewStatus | None = None
     version: int = Field(..., description="Current version for optimistic locking")
 

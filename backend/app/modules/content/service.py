@@ -1242,13 +1242,9 @@ class ReviewService(BaseService[Review]):
         review = await self.get_by_id(review_id, tenant_id)
         review.check_version(data.version)
 
-        # Get all fields that were explicitly set (including None values)
-        # model_fields_set contains all fields that were explicitly provided in the request
-        update_data = {}
-        for field_name in data.model_fields_set:
-            if field_name != "version":
-                field_value = getattr(data, field_name, None)
-                update_data[field_name] = field_value
+        # Use model_dump(exclude_unset=True) to get only fields sent in the request
+        # (works for both snake_case and camelCase when populate_by_name=True)
+        update_data = data.model_dump(exclude_unset=True, exclude={"version"}, by_alias=False)
 
         # Handle status enum
         if "status" in update_data:
