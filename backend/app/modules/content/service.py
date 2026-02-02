@@ -1234,7 +1234,8 @@ class ReviewService(BaseService[Review]):
         await self.db.flush()
         await self.db.refresh(review)
 
-        return review
+        # Re-fetch with case relationship loaded to avoid lazy loading issues
+        return await self.get_by_id(review.id, tenant_id)
 
     @transactional
     async def update(self, review_id: UUID, tenant_id: UUID, data: ReviewUpdate) -> Review:
@@ -1256,9 +1257,9 @@ class ReviewService(BaseService[Review]):
             setattr(review, field, value)
 
         await self.db.flush()
-        await self.db.refresh(review)
 
-        return review
+        # Re-fetch with case relationship loaded to avoid lazy loading issues
+        return await self.get_by_id(review_id, tenant_id)
 
     @transactional
     async def approve(self, review_id: UUID, tenant_id: UUID) -> Review:
@@ -1266,8 +1267,8 @@ class ReviewService(BaseService[Review]):
         review = await self.get_by_id(review_id, tenant_id)
         review.approve()
         await self.db.flush()
-        await self.db.refresh(review)
-        return review
+        # Re-fetch with case relationship loaded
+        return await self.get_by_id(review_id, tenant_id)
 
     @transactional
     async def reject(self, review_id: UUID, tenant_id: UUID) -> Review:
@@ -1275,8 +1276,8 @@ class ReviewService(BaseService[Review]):
         review = await self.get_by_id(review_id, tenant_id)
         review.reject()
         await self.db.flush()
-        await self.db.refresh(review)
-        return review
+        # Re-fetch with case relationship loaded
+        return await self.get_by_id(review_id, tenant_id)
 
     @transactional
     async def soft_delete(self, review_id: UUID, tenant_id: UUID) -> None:
