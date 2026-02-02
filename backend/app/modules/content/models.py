@@ -392,6 +392,20 @@ class Case(
     def is_published(self) -> bool:
         return self.status == ArticleStatus.PUBLISHED.value
 
+    @property
+    def slug(self) -> str:
+        """Get slug from default locale (first available)."""
+        if self.locales:
+            return self.locales[0].slug
+        return ""
+
+    @property
+    def title(self) -> str:
+        """Get title from default locale (first available)."""
+        if self.locales:
+            return self.locales[0].title
+        return ""
+
     def __repr__(self) -> str:
         return f"<Case {self.id} status={self.status}>"
 
