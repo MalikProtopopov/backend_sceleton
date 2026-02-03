@@ -134,7 +134,7 @@ async def get_seo_meta(
     locale: str = Query(default="ru", description="Locale"),
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
     db: AsyncSession = Depends(get_db),
-) -> SEOMetaResponse | Response:
+):
     """Get SEO metadata for a specific path.
     
     Returns semantic ETag and Last-Modified headers for efficient caching.
@@ -196,7 +196,7 @@ async def get_sitemap(
     locale: str = Query(default="ru", description="Locale"),
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
     db: AsyncSession = Depends(get_db),
-) -> PlainTextResponse | Response:
+):
     """Generate and return sitemap.xml.
     
     Returns semantic ETag and Last-Modified headers for efficient caching.
@@ -287,7 +287,7 @@ async def get_segment_sitemap(
     locale: str,
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
     db: AsyncSession = Depends(get_db),
-) -> PlainTextResponse | Response:
+):
     """Generate and return sitemap for a specific segment and locale.
     
     Segments:
@@ -359,7 +359,7 @@ async def get_robots(
     tenant_id: PublicTenantId,
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
     db: AsyncSession = Depends(get_db),
-) -> PlainTextResponse | Response:
+):
     """Generate and return robots.txt.
     
     Returns ETag header for efficient caching.
@@ -420,7 +420,7 @@ async def get_redirects_export(
     tenant_id: PublicTenantId,
     if_none_match: str | None = Header(default=None, alias="If-None-Match"),
     db: AsyncSession = Depends(get_db),
-) -> RedirectExportResponse | Response:
+):
     """Get all active redirects for edge/proxy consumption.
     
     This endpoint is designed to be polled by edge workers, proxies,
@@ -488,7 +488,7 @@ async def get_indexnow_key_file(
     key: str,
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
-) -> PlainTextResponse | Response:
+):
     """Serve IndexNow key verification file.
     
     IndexNow requires the key file to be accessible at /{key}.txt
@@ -526,7 +526,7 @@ async def get_llms_txt(
     tenant_id: PublicTenantId,
     locale: str = Query(default="en", description="Locale for content"),
     db: AsyncSession = Depends(get_db),
-) -> PlainTextResponse | Response:
+):
     """Generate and return llms.txt for AI discovery.
     
     llms.txt is a curated markdown file that helps AI systems
