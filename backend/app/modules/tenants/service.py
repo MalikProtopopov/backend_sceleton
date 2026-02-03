@@ -143,6 +143,18 @@ class TenantService:
         tenant.soft_delete()
         await self.db.flush()
 
+    async def get_settings(self, tenant_id: UUID) -> TenantSettings | None:
+        """Get tenant settings by tenant ID.
+        
+        Returns None if tenant or settings don't exist.
+        """
+        stmt = (
+            select(TenantSettings)
+            .where(TenantSettings.tenant_id == tenant_id)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def update_settings(
         self, tenant_id: UUID, data: TenantSettingsUpdate
     ) -> TenantSettings:

@@ -54,6 +54,14 @@ class FeatureFlagsListResponse(BaseModel):
 # ============================================================================
 
 
+class SitemapStaticPage(BaseModel):
+    """Schema for static page in sitemap configuration."""
+    
+    path: str = Field(..., min_length=1, max_length=500)
+    priority: float = Field(default=0.5, ge=0.0, le=1.0)
+    changefreq: str = Field(default="weekly", max_length=20)
+
+
 class TenantSettingsBase(BaseModel):
     """Base tenant settings schema."""
 
@@ -67,6 +75,47 @@ class TenantSettingsBase(BaseModel):
     default_og_image: str | None = None
     ga_tracking_id: str | None = None
     ym_counter_id: str | None = None
+    
+    # SEO domain validation
+    allowed_domains: list[str] | None = Field(
+        default=None,
+        description="List of allowed domains for sitemap/robots base_url validation",
+    )
+    
+    # SEO sitemap configuration
+    sitemap_static_pages: list[SitemapStaticPage] | None = Field(
+        default=None,
+        description="Static pages for sitemap",
+    )
+    
+    # SEO robots.txt customization
+    robots_txt_custom_rules: str | None = Field(
+        default=None,
+        max_length=5000,
+        description="Custom rules to append to robots.txt",
+    )
+    
+    # IndexNow integration
+    indexnow_key: str | None = Field(
+        default=None,
+        max_length=64,
+        description="IndexNow API key for search engine notification",
+    )
+    indexnow_enabled: bool = Field(
+        default=False,
+        description="Enable IndexNow URL submission",
+    )
+    
+    # AI discovery (llms.txt)
+    llms_txt_enabled: bool = Field(
+        default=False,
+        description="Enable llms.txt generation for AI discovery",
+    )
+    llms_txt_custom_content: str | None = Field(
+        default=None,
+        max_length=10000,
+        description="Custom content to include in llms.txt",
+    )
 
 
 class TenantSettingsUpdate(TenantSettingsBase):

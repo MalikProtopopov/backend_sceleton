@@ -1,5 +1,6 @@
 """Pydantic schemas for SEO module."""
 
+import json
 from datetime import datetime
 from uuid import UUID
 
@@ -78,6 +79,18 @@ class SEOMetaResponse(BaseModel):
     canonical_url: str | None = None
     robots: str = "index, follow"
     structured_data: str | None = None
+    normalized_path: str | None = None
+    
+    @field_validator("structured_data")
+    @classmethod
+    def validate_structured_data(cls, v: str | None) -> str | None:
+        """Validate that structured_data is valid JSON."""
+        if v is not None:
+            try:
+                json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"structured_data must be valid JSON: {e}")
+        return v
 
 
 # ============================================================================
@@ -161,4 +174,78 @@ class RobotsResponse(BaseModel):
     """Robots.txt content."""
 
     content: str
+
+
+# ============================================================================
+# Redirect Export Schemas (for edge/proxy consumption)
+# ============================================================================
+
+
+class RedirectExportItem(BaseModel):
+    """Single redirect item for export."""
+
+    source_path: str
+    target_url: str
+    type: int = Field(alias="redirect_type")
+    is_active: bool = True
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RedirectExportResponse(BaseModel):
+    """Response schema for public redirects export endpoint."""
+
+    generated_at: datetime
+    etag: str
+    redirects: list[RedirectExportItem]
+
+
+# ============================================================================
+# Sitemap Metadata Schema
+# ============================================================================
+
+
+class SitemapMetadata(BaseModel):
+    """Metadata for sitemap caching."""
+
+    last_modified: datetime | None = None
+    total_count: int = 0
+    etag: str | None = None
+
+
+# ============================================================================
+# Admin Revalidation Schemas
+# ============================================================================
+
+
+class RevalidateRequest(BaseModel):
+    """Request schema for cache revalidation."""
+
+    targets: list[str] = Field(
+        default=["all"],
+        description="Targets to revalidate: 'sitemap', 'robots', 'redirects', 'meta', 'all'",
+    )
+    notify_frontend: bool = Field(
+        default=False,
+        description="Whether to notify frontend of revalidation",
+    )
+    
+    @field_validator("targets")
+    @classmethod
+    def validate_targets(cls, v: list[str]) -> list[str]:
+        """Validate revalidation targets."""
+        valid_targets = {"sitemap", "robots", "redirects", "meta", "all"}
+        for target in v:
+            if target not in valid_targets:
+                raise ValueError(f"Invalid target '{target}'. Valid targets: {', '.join(valid_targets)}")
+        return v
+
+
+class RevalidateResponse(BaseModel):
+    """Response schema for cache revalidation."""
+
+    success: bool = True
+    message: str = "Cache revalidation triggered"
+    targets: list[str]
+    timestamp: datetime
 

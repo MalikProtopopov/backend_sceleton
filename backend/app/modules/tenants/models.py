@@ -102,6 +102,54 @@ class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):
 
     # SEO defaults
     default_og_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    
+    # SEO domain validation
+    allowed_domains: Mapped[list[str] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=list,
+        comment="List of allowed domains for sitemap/robots base_url validation (e.g., ['mediann.dev', '*.mediann.dev'])",
+    )
+    
+    # SEO sitemap configuration
+    sitemap_static_pages: Mapped[list[dict] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Static pages for sitemap [{path, priority, changefreq}]",
+    )
+    
+    # SEO robots.txt customization
+    robots_txt_custom_rules: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Custom rules to append to robots.txt",
+    )
+    
+    # IndexNow integration
+    indexnow_key: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="IndexNow API key for search engine notification",
+    )
+    indexnow_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Enable IndexNow URL submission",
+    )
+    
+    # AI discovery (llms.txt)
+    llms_txt_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Enable llms.txt generation for AI discovery",
+    )
+    llms_txt_custom_content: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Custom content to include in llms.txt",
+    )
 
     # Analytics
     ga_tracking_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
