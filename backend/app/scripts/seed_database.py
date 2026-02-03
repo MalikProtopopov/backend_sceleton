@@ -876,17 +876,57 @@ async def create_documents(db, tenant_id: UUID, count: int = 5) -> list[Document
     return documents
 
 
-async def create_inquiries(db, tenant_id: UUID, services: list[Service], count: int = 10) -> list[Inquiry]:
+async def create_inquiry_forms(db, tenant_id: UUID) -> list[InquiryForm]:
+    """Create inquiry forms: quick (short) and mvp-brief (full brief)."""
+    print("📋 Creating inquiry forms (quick, mvp-brief)...")
+    forms_data = [
+        (
+            "quick",
+            "Короткая заявка",
+            "Минимум полей: имя, email, сообщение, согласие",
+            {"ru": "Спасибо! Мы свяжемся с вами в ближайшее время.", "en": "Thank you! We will contact you soon."},
+        ),
+        (
+            "mvp-brief",
+            "Полный бриф (MVP Brief)",
+            "Развёрнутый бриф: идея, аудитория, технологии, бюджет, контакты",
+            {"ru": "Спасибо за заявку! Мы изучим бриф и свяжемся с вами.", "en": "Thank you for your brief! We will review it and get in touch."},
+        ),
+    ]
+    forms = []
+    for slug, name, description, success_message in forms_data:
+        form = InquiryForm(
+            tenant_id=tenant_id,
+            slug=slug,
+            name=name,
+            description=description,
+            is_active=True,
+            notification_email=None,
+            success_message=success_message,
+            fields_config=None,
+            sort_order=len(forms),
+        )
+        db.add(form)
+        forms.append(form)
+    await db.flush()
+    print(f"  ✅ Created {len(forms)} inquiry forms")
+    return forms
+
+
+async def create_inquiries(db, tenant_id: UUID, services: list[Service], inquiry_forms: list[InquiryForm] | None = None, count: int = 10) -> list[Inquiry]:
     """Create inquiries."""
     print(f"📧 Creating {count} inquiries...")
-    
+    form_by_slug = {f.slug: f for f in (inquiry_forms or [])}
     inquiries = []
     statuses = ["new", "in_progress", "contacted", "completed", "spam"]
-    
+
     for i in range(count):
+        form_slug = fake.random_element(elements=("quick", "mvp-brief", None)) if form_by_slug else None
+        form_id = form_by_slug.get(form_slug).id if form_slug else None
         inquiry = Inquiry(
             id=uuid4(),
             tenant_id=tenant_id,
+            form_id=form_id,
             status=fake.random_element(elements=statuses),
             name=fake.name(),
             email=fake.email(),
@@ -904,7 +944,7 @@ async def create_inquiries(db, tenant_id: UUID, services: list[Service], count: 
         )
         db.add(inquiry)
         inquiries.append(inquiry)
-    
+
     await db.flush()
     print(f"  ✅ Created {len(inquiries)} inquiries")
     return inquiries
@@ -967,7 +1007,7 @@ async def export_to_sql(db, output_file: str, tenant_id: UUID | None = None):
     sql_content.append("BEGIN;")
     sql_content.append("")
     
-    # Get all tables in order
+    # Get all tables in order - this serves as whitelist for valid table names
     tables = [
         ("tenants", "tenant_id"),
         ("tenant_settings", "tenant_id"),
@@ -1005,14 +1045,32 @@ async def export_to_sql(db, output_file: str, tenant_id: UUID | None = None):
         ("inquiries", "tenant_id"),
     ]
     
+    # Build whitelist of valid table names for security
+    valid_tables = {t[0] for t in tables}
+    # Valid column names for filtering (used as identifiers, not values)
+    valid_filter_cols = {"tenant_id", "topic_id", "article_id", "service_id", "case_id", 
+                         "faq_id", "employee_id", "advantage_id", "practice_area_id", 
+                         "address_id", "document_id", "role_id"}
+    
     for table_name, filter_col, filter_by_tenant in tables:
+        # Security: validate table_name against whitelist
+        if table_name not in valid_tables:
+            print(f"  ⚠️  Warning: Skipping invalid table name: {table_name}")
+            continue
+            
+        # Security: validate filter_col against whitelist
+        if filter_col and filter_col not in valid_filter_cols:
+            print(f"  ⚠️  Warning: Skipping invalid filter column: {filter_col}")
+            continue
+            
         try:
             # Use SAVEPOINT to isolate errors
             savepoint = await db.begin_nested()
             try:
-                # Try to get table columns first
+                # Try to get table columns first - using parameterized query
                 result = await db.execute(
-                    text(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}' ORDER BY ordinal_position")
+                    text("SELECT column_name FROM information_schema.columns WHERE table_name = :table_name ORDER BY ordinal_position"),
+                    {"table_name": table_name}
                 )
                 column_names = [row[0] for row in result.fetchall()]
                 
@@ -1021,19 +1079,25 @@ async def export_to_sql(db, output_file: str, tenant_id: UUID | None = None):
                     continue
                 
                 # Build SELECT query with tenant filter if needed
+                # Note: column_names come from DB metadata, table_name is whitelisted
                 columns_str = ", ".join(column_names)
                 order_by = "created_at" if "created_at" in column_names else column_names[0]
                 
+                # Build query with parameterized values for tenant_id
+                query_params = {}
                 where_clause = ""
                 if tenant_id and filter_by_tenant and filter_col:
-                    where_clause = f"WHERE {filter_col} = '{tenant_id}'"
+                    # filter_col is validated against whitelist, safe to use as identifier
+                    where_clause = f"WHERE {filter_col} = :tenant_id"
+                    query_params["tenant_id"] = str(tenant_id)
                 elif tenant_id and not filter_by_tenant and filter_col:
                     # For tables without direct tenant_id, filter through parent
                     # This is simplified - in practice might need joins
                     where_clause = ""
                 
+                # table_name is whitelisted, order_by comes from column_names (from DB)
                 query = f"SELECT {columns_str} FROM {table_name} {where_clause} ORDER BY {order_by}"
-                result = await db.execute(text(query))
+                result = await db.execute(text(query), query_params)
                 rows = result.fetchall()
                 
                 if not rows:
@@ -1165,9 +1229,13 @@ async def main():
             # 6. Create documents
             documents = await create_documents(db, tenant.id, count=5)
             await db.commit()
+
+            # 6b. Create inquiry forms (quick, mvp-brief)
+            inquiry_forms = await create_inquiry_forms(db, tenant.id)
+            await db.commit()
             
             # 7. Create inquiries
-            inquiries = await create_inquiries(db, tenant.id, services, count=10)
+            inquiries = await create_inquiries(db, tenant.id, services, inquiry_forms=inquiry_forms, count=10)
             await db.commit()
             
             # 8. Create feature flags

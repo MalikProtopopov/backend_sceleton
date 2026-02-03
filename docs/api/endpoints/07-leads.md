@@ -156,6 +156,7 @@ List all inquiries with pagination and filters.
 | `pageSize` | integer | 20 | Items per page |
 | `status` | string | - | Filter by status |
 | `formId` | UUID | - | Filter by form |
+| `formSlug` | string | - | Filter by form slug: `quick`, `mvp-brief` |
 | `assignedTo` | UUID | - | Filter by assigned user |
 | `utmSource` | string | - | Filter by UTM source |
 
@@ -173,6 +174,7 @@ Authorization: Bearer {token}
       "id": "inquiry-uuid",
       "tenant_id": "tenant-uuid",
       "form_id": "form-uuid",
+      "form_slug": "quick",
       "status": "new",
         "name": "Иван Петров",
         "email": "ivan@example.com",
@@ -322,19 +324,21 @@ Submit an inquiry (public form submission).
 |-----------|------|----------|-------------|
 | `tenant_id` | UUID | Yes | Tenant ID |
 
-**Request Body:**
+**Request Body (application/json):**
 ```json
 {
-  "form_slug": "contact",
-    "name": "Иван Петров",
-    "email": "ivan@example.com",
-    "phone": "+7 999 123-45-67",
+  "form_slug": "quick",
+  "name": "Иван Петров",
+  "email": "ivan@example.com",
+  "phone": "+7 999 123-45-67",
   "company": "ООО Компания",
   "message": "Хочу узнать о ваших услугах...",
+  "telegram": "@ivan_dev",
+  "consent": true,
   "service_id": "service-uuid",
   "analytics": {
-  "utm_source": "google",
-  "utm_medium": "cpc",
+    "utm_source": "google",
+    "utm_medium": "cpc",
     "utm_campaign": "brand",
     "referrer_url": "https://google.com",
     "source_url": "https://company.com/services",
@@ -345,32 +349,40 @@ Submit an inquiry (public form submission).
     "browser": "Chrome",
     "os": "Windows"
   },
-  "custom_fields": {
-    "preferred_time": "morning",
-    "budget": "100000"
-  }
+  "custom_fields": {}
 }
 ```
+
+**Form types:**
+| `form_slug` | Description | Required fields |
+|-------------|-------------|-----------------|
+| `quick` | Short form | name, email, message, consent |
+| `mvp-brief` | Full brief | name, email, idea, consent; optional: market, audience, audienceSize, aiRequired, appTypes, integrations, budget, urgency, telegram, source |
 
 **Field Validation:**
 | Field | Type | Required | Constraints |
 |-------|------|----------|-------------|
-| `form_slug` | string | No | Max 100 chars |
+| `form_slug` | string | No | Max 100 chars; `quick` or `mvp-brief` for typed forms |
 | `name` | string | Yes | 1-255 chars |
 | `email` | string | No | Valid email format |
 | `phone` | string | No | Max 50 chars |
 | `company` | string | No | Max 255 chars |
-| `message` | string | No | - |
+| `message` | string | If form_slug=quick | 10-2000 chars |
+| `telegram` | string | No | Max 255 |
+| `consent` | boolean | No | true required for submission |
+| `idea` | string | If form_slug=mvp-brief | 10-2000 chars |
+| `market`, `audience`, `audienceSize`, `aiRequired`, `appTypes`, `integrations`, `budget`, `urgency`, `source` | various | No | Stored in custom_fields |
 | `service_id` | UUID | No | Link to service |
 | `analytics` | object | No | Analytics data |
-| `custom_fields` | object | No | Custom form fields |
+| `custom_fields` | object | No | Custom form fields (merged with brief fields) |
 
 **Success Response (201):**
 ```json
 {
   "id": "inquiry-uuid",
   "tenant_id": "tenant-uuid",
-  "form_id": null,
+  "form_id": "form-uuid",
+  "form_slug": "quick",
   "status": "new",
   "name": "Иван Петров",
   "email": "ivan@example.com",
@@ -381,35 +393,32 @@ Submit an inquiry (public form submission).
   "utm_source": "google",
   "utm_medium": "cpc",
   "utm_campaign": "brand",
-  "utm_term": null,
-  "utm_content": null,
   "referrer_url": "https://google.com",
   "source_url": "https://company.com/services",
   "page_path": "/services",
   "page_title": "Services",
   "device_type": "desktop",
-  "browser": "Chrome",
-  "os": "Windows",
-  "ip_address": "192.168.1.1",
-  "country": null,
-  "city": null,
-  "session_id": null,
-  "session_page_views": null,
-  "time_on_page": null,
-  "assigned_to": null,
-  "notes": null,
-  "contacted_at": null,
-  "notification_sent": false,
-  "custom_fields": {
-    "preferred_time": "morning",
-    "budget": "100000"
-  },
+  "custom_fields": {},
   "created_at": "2026-01-14T10:00:00Z",
   "updated_at": "2026-01-14T10:00:00Z"
 }
 ```
 
-**Error Response (422):**
+---
+
+### POST /api/v1/public/inquiries/upload
+
+Submit an inquiry via **multipart/form-data** (for forms with optional file upload).
+
+**Query Parameters:** `tenant_id` (UUID, required)
+
+**Form fields:** Same as POST /public/inquiries; all values as strings. `appTypes` as repeated fields (`appTypes=website&appTypes=webapp`) or comma-separated. `analytics` as JSON string. `consent` as `"true"` or `"false"`. Optional `files` for attachments (handling TBD).
+
+**Success Response (201):** Same as POST /public/inquiries (includes `form_slug` when form is linked).
+
+---
+
+**Error Response (422)** (for POST /public/inquiries):
 ```json
 {
   "type": "https://api.cms.local/errors/validation_error",

@@ -1,17 +1,21 @@
 """Leads module service layer."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.base_service import BaseService
 from app.core.database import transactional
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
+from app.core.pagination import paginate_query
 from app.modules.leads.models import Inquiry, InquiryForm, InquiryStatus
 from app.modules.leads.schemas import (
+    FORM_SLUG_MVP_BRIEF,
+    FORM_SLUG_QUICK,
     InquiryAnalytics,
     InquiryCreatePublic,
     InquiryFormCreate,
@@ -22,27 +26,17 @@ from app.modules.leads.schemas import (
 logger = get_logger(__name__)
 
 
-class InquiryFormService:
+class InquiryFormService(BaseService[InquiryForm]):
     """Service for managing inquiry forms."""
 
+    model = InquiryForm
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
 
     async def get_by_id(self, form_id: UUID, tenant_id: UUID) -> InquiryForm:
         """Get inquiry form by ID."""
-        stmt = (
-            select(InquiryForm)
-            .where(InquiryForm.id == form_id)
-            .where(InquiryForm.tenant_id == tenant_id)
-            .where(InquiryForm.deleted_at.is_(None))
-        )
-        result = await self.db.execute(stmt)
-        form = result.scalar_one_or_none()
-
-        if not form:
-            raise NotFoundError("InquiryForm", form_id)
-
-        return form
+        return await self._get_by_id(form_id, tenant_id)
 
     async def get_by_slug(self, slug: str, tenant_id: UUID) -> InquiryForm | None:
         """Get inquiry form by slug."""
@@ -58,14 +52,10 @@ class InquiryFormService:
 
     async def list_forms(self, tenant_id: UUID) -> list[InquiryForm]:
         """List all inquiry forms."""
-        stmt = (
-            select(InquiryForm)
-            .where(InquiryForm.tenant_id == tenant_id)
-            .where(InquiryForm.deleted_at.is_(None))
-            .order_by(InquiryForm.sort_order)
+        return await self._list_all(
+            tenant_id,
+            order_by=[InquiryForm.sort_order],
         )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
 
     @transactional
     async def create(self, tenant_id: UUID, data: InquiryFormCreate) -> InquiryForm:
@@ -95,33 +85,24 @@ class InquiryFormService:
     @transactional
     async def soft_delete(self, form_id: UUID, tenant_id: UUID) -> None:
         """Soft delete an inquiry form."""
-        form = await self.get_by_id(form_id, tenant_id)
-        form.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(form_id, tenant_id)
 
 
-class InquiryService:
+class InquiryService(BaseService[Inquiry]):
     """Service for managing inquiries (leads)."""
 
+    model = Inquiry
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(Inquiry.form)]
 
     async def get_by_id(self, inquiry_id: UUID, tenant_id: UUID) -> Inquiry:
         """Get inquiry by ID."""
-        stmt = (
-            select(Inquiry)
-            .where(Inquiry.id == inquiry_id)
-            .where(Inquiry.tenant_id == tenant_id)
-            .where(Inquiry.deleted_at.is_(None))
-            .options(selectinload(Inquiry.form))
-        )
-        result = await self.db.execute(stmt)
-        inquiry = result.scalar_one_or_none()
-
-        if not inquiry:
-            raise NotFoundError("Inquiry", inquiry_id)
-
-        return inquiry
+        return await self._get_by_id(inquiry_id, tenant_id)
 
     async def list_inquiries(
         self,
@@ -130,25 +111,30 @@ class InquiryService:
         page_size: int = 20,
         status: str | None = None,
         form_id: UUID | None = None,
+        form_slug: str | None = None,
         assigned_to: UUID | None = None,
         utm_source: str | None = None,
         search: str | None = None,
     ) -> tuple[list[Inquiry], int]:
         """List inquiries with filtering and pagination."""
-        base_query = (
-            select(Inquiry)
-            .where(Inquiry.tenant_id == tenant_id)
-            .where(Inquiry.deleted_at.is_(None))
-        )
-
+        filters = []
         if status:
-            base_query = base_query.where(Inquiry.status == status)
+            filters.append(Inquiry.status == status)
         if form_id:
-            base_query = base_query.where(Inquiry.form_id == form_id)
+            filters.append(Inquiry.form_id == form_id)
+        if form_slug:
+            form_service = InquiryFormService(self.db)
+            form = await form_service.get_by_slug(form_slug, tenant_id)
+            if form:
+                filters.append(Inquiry.form_id == form.id)
         if assigned_to:
-            base_query = base_query.where(Inquiry.assigned_to == assigned_to)
+            filters.append(Inquiry.assigned_to == assigned_to)
         if utm_source:
-            base_query = base_query.where(Inquiry.utm_source == utm_source)
+            filters.append(Inquiry.utm_source == utm_source)
+
+        base_query = self._build_base_query(tenant_id, filters=filters)
+
+        # Add search filter separately (complex OR condition)
         if search:
             search_pattern = f"%{search}%"
             base_query = base_query.where(
@@ -158,21 +144,57 @@ class InquiryService:
                 (Inquiry.phone.ilike(search_pattern))
             )
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
-
-        # Get results
-        stmt = (
-            base_query.options(selectinload(Inquiry.form))
-            .order_by(Inquiry.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=self._get_default_options(),
+            order_by=[Inquiry.created_at.desc()],
         )
-        result = await self.db.execute(stmt)
-        inquiries = list(result.scalars().all())
 
-        return inquiries, total
+    def _build_custom_fields_and_message(
+        self, data: InquiryCreatePublic
+    ) -> tuple[dict | None, str | None]:
+        """Merge brief fields into custom_fields and pick message for inquiry.
+
+        - quick: message from data.message; custom_fields = { telegram?, consent }
+        - mvp-brief: message = data.idea; custom_fields = idea, market, audience, ...
+        """
+        custom = dict(data.custom_fields or {})
+
+        if data.form_slug == FORM_SLUG_QUICK:
+            if data.telegram is not None:
+                custom["telegram"] = data.telegram
+            if data.consent is not None:
+                custom["consent"] = data.consent
+            return custom if custom else None, data.message
+
+        if data.form_slug == FORM_SLUG_MVP_BRIEF or data.idea is not None:
+            brief = {
+                "idea": data.idea,
+                "market": data.market,
+                "audience": data.audience,
+                "audienceSize": data.audienceSize,
+                "aiRequired": data.aiRequired,
+                "appTypes": data.appTypes,
+                "integrations": data.integrations,
+                "budget": data.budget,
+                "urgency": data.urgency,
+                "source": data.source,
+                "telegram": data.telegram,
+                "consent": data.consent,
+            }
+            brief = {k: v for k, v in brief.items() if v is not None}
+            custom.update(brief)
+            message = data.idea or data.message
+            return custom if custom else None, message
+
+        if data.telegram is not None:
+            custom["telegram"] = data.telegram
+        if data.consent is not None:
+            custom["consent"] = data.consent
+        return custom if custom else None, data.message
 
     @transactional
     async def create_from_public(
@@ -184,6 +206,7 @@ class InquiryService:
         """Create inquiry from public form submission.
 
         This is the main entry point for public lead capture.
+        Supports form_slug quick (short form) and mvp-brief (full brief).
         """
         # Find form if specified
         form_id = None
@@ -193,47 +216,38 @@ class InquiryService:
             if form:
                 form_id = form.id
 
-        # Extract analytics data
+        custom_fields, message = self._build_custom_fields_and_message(data)
         analytics = data.analytics or InquiryAnalytics()
 
-        # Create inquiry
         inquiry = Inquiry(
             tenant_id=tenant_id,
             form_id=form_id,
             status=InquiryStatus.NEW.value,
-            # Contact info
             name=data.name,
             email=data.email,
             phone=data.phone,
             company=data.company,
-            message=data.message,
-            # Service context
+            message=message,
             service_id=data.service_id,
-            # UTM
             utm_source=analytics.utm_source,
             utm_medium=analytics.utm_medium,
             utm_campaign=analytics.utm_campaign,
             utm_term=analytics.utm_term,
             utm_content=analytics.utm_content,
-            # Source
             referrer_url=analytics.referrer_url,
             source_url=analytics.source_url,
             page_path=analytics.page_path,
             page_title=analytics.page_title,
-            # Device
             user_agent=analytics.user_agent,
             device_type=analytics.device_type,
             browser=analytics.browser,
             os=analytics.os,
             screen_resolution=analytics.screen_resolution,
-            # Location
             ip_address=ip_address,
-            # Session
             session_id=analytics.session_id,
             session_page_views=analytics.session_page_views,
             time_on_page=analytics.time_on_page,
-            # Custom
-            custom_fields=data.custom_fields,
+            custom_fields=custom_fields,
         )
 
         self.db.add(inquiry)
@@ -273,7 +287,7 @@ class InquiryService:
             
             if sent:
                 inquiry.notification_sent = True
-                inquiry.notification_sent_at = datetime.utcnow()
+                inquiry.notification_sent_at = datetime.now(UTC)
                 await self.db.flush()
                 await self.db.refresh(inquiry)  # Refresh to update all attributes including updated_at
                 
@@ -301,7 +315,7 @@ class InquiryService:
                 new_status = new_status.value
             update_data["status"] = new_status
             if new_status == InquiryStatus.CONTACTED.value and inquiry.status != InquiryStatus.CONTACTED.value:
-                inquiry.contacted_at = datetime.utcnow()
+                inquiry.contacted_at = datetime.now(UTC)
 
         for field, value in update_data.items():
             setattr(inquiry, field, value)
@@ -317,15 +331,13 @@ class InquiryService:
         """Mark inquiry notification as sent."""
         inquiry = await self.get_by_id(inquiry_id, tenant_id)
         inquiry.notification_sent = True
-        inquiry.notification_sent_at = datetime.utcnow()
+        inquiry.notification_sent_at = datetime.now(UTC)
         await self.db.flush()
 
     @transactional
     async def soft_delete(self, inquiry_id: UUID, tenant_id: UUID) -> None:
         """Soft delete an inquiry."""
-        inquiry = await self.get_by_id(inquiry_id, tenant_id)
-        inquiry.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(inquiry_id, tenant_id)
 
     async def get_analytics_summary(
         self,
@@ -338,7 +350,7 @@ class InquiryService:
         """
         from datetime import timedelta
 
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(UTC) - timedelta(days=days)
 
         # Base query for period
         base_query = (

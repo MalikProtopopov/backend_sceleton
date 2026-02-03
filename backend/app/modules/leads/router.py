@@ -1,8 +1,9 @@
 """API routes for leads module."""
 
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -14,6 +15,7 @@ from app.modules.tenants.models import Tenant
 
 logger = get_logger(__name__)
 from app.modules.leads.schemas import (
+    InquiryAnalytics,
     InquiryAnalyticsSummary,
     InquiryCreatePublic,
     InquiryFormCreate,
@@ -67,12 +69,111 @@ async def create_inquiry_public(
     inquiry = await service.create_from_public(tenant_id, data, ip_address)
 
     # Build response BEFORE any additional db operations to avoid MissingGreenlet
-    # (the @transactional decorator already committed, accessing attributes after
-    # more db operations can trigger lazy loading outside async context)
     response = InquiryResponse.model_validate(inquiry)
+    if inquiry.form:
+        response = response.model_copy(update={"form_slug": inquiry.form.slug})
 
     # Send notifications if enabled for this tenant (fire-and-forget)
     await _send_inquiry_notification(db, tenant_id, inquiry)
+
+    return response
+
+
+@router.post(
+    "/public/inquiries/upload",
+    response_model=InquiryResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit inquiry (multipart/form-data)",
+    description="Submit an inquiry from FormData. Same fields as POST /public/inquiries. Optional file attachments (future). Rate limited.",
+    tags=["Public - Leads"],
+)
+async def create_inquiry_public_multipart(
+    request: Request,
+    tenant_id: PublicTenantId,
+    db: AsyncSession = Depends(get_db),
+    form_slug: str = Form(..., description="quick | mvp-brief"),
+    name: str = Form(..., min_length=1, max_length=255),
+    email: str = Form(None),
+    phone: str = Form(None),
+    company: str = Form(None),
+    message: str = Form(None),
+    telegram: str = Form(None),
+    consent: str = Form(None),
+    service_id: str | None = Form(None),
+    analytics: str | None = Form(None, description="JSON: utm_source, source_url, etc."),
+    idea: str | None = Form(None),
+    market: str | None = Form(None),
+    audience: str | None = Form(None),
+    audienceSize: str | None = Form(None),
+    aiRequired: str | None = Form(None),
+    appTypes: list[str] | None = Form(None),
+    integrations: str | None = Form(None),
+    budget: str | None = Form(None),
+    urgency: str | None = Form(None),
+    source: str | None = Form(None),
+    files: list[UploadFile] = File(default=[]),
+) -> InquiryResponse:
+    """Submit a public inquiry via multipart/form-data (for forms with file upload)."""
+    analytics_obj = None
+    if analytics:
+        try:
+            analytics_obj = json.loads(analytics)
+        except json.JSONDecodeError:
+            pass
+
+    service_id_uuid = None
+    if service_id:
+        try:
+            service_id_uuid = UUID(service_id)
+        except ValueError:
+            pass
+
+    consent_bool = None
+    if consent is not None:
+        consent_bool = consent.strip().lower() in ("1", "true", "yes")
+
+    data = InquiryCreatePublic(
+        form_slug=form_slug,
+        name=name,
+        email=email or None,
+        phone=phone or None,
+        company=company or None,
+        message=message or None,
+        telegram=telegram or None,
+        consent=consent_bool,
+        service_id=service_id_uuid,
+        analytics=InquiryAnalytics(**analytics_obj) if analytics_obj else None,
+        idea=idea or None,
+        market=market or None,
+        audience=audience or None,
+        audienceSize=audienceSize or None,
+        aiRequired=aiRequired or None,
+        appTypes=appTypes or None,
+        integrations=integrations or None,
+        budget=budget or None,
+        urgency=urgency or None,
+        source=source or None,
+    )
+
+    ip_address = None
+    if request.client:
+        ip_address = request.client.host
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        ip_address = forwarded.split(",")[0].strip()
+
+    service = InquiryService(db)
+    inquiry = await service.create_from_public(tenant_id, data, ip_address)
+
+    response = InquiryResponse.model_validate(inquiry)
+    if inquiry.form:
+        response = response.model_copy(update={"form_slug": inquiry.form.slug})
+
+    await _send_inquiry_notification(db, tenant_id, inquiry)
+
+    # TODO: handle files (upload to S3, add URLs to custom_fields.attachments)
+    for f in files:
+        await f.close()
 
     return response
 
@@ -256,6 +357,7 @@ async def list_inquiries(
     pagination: Pagination,
     status: str | None = Query(default=None),
     form_id: UUID | None = Query(default=None, alias="formId"),
+    form_slug: str | None = Query(default=None, alias="formSlug", description="Filter by form slug: quick, mvp-brief"),
     assigned_to: UUID | None = Query(default=None, alias="assignedTo"),
     utm_source: str | None = Query(default=None, alias="utmSource"),
     search: str | None = Query(default=None, description="Search in name, email, company, phone"),
@@ -270,13 +372,20 @@ async def list_inquiries(
         page_size=pagination.page_size,
         status=status,
         form_id=form_id,
+        form_slug=form_slug,
         assigned_to=assigned_to,
         utm_source=utm_source,
         search=search,
     )
 
+    def _inquiry_response(inquiry) -> InquiryResponse:
+        r = InquiryResponse.model_validate(inquiry)
+        if inquiry.form:
+            return r.model_copy(update={"form_slug": inquiry.form.slug})
+        return r
+
     return InquiryListResponse(
-        items=[InquiryResponse.model_validate(i) for i in inquiries],
+        items=[_inquiry_response(i) for i in inquiries],
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,
@@ -316,7 +425,10 @@ async def get_inquiry(
     """Get inquiry by ID."""
     service = InquiryService(db)
     inquiry = await service.get_by_id(inquiry_id, tenant_id)
-    return InquiryResponse.model_validate(inquiry)
+    r = InquiryResponse.model_validate(inquiry)
+    if inquiry.form:
+        r = r.model_copy(update={"form_slug": inquiry.form.slug})
+    return r
 
 
 @router.patch(
@@ -335,7 +447,10 @@ async def update_inquiry(
     """Update an inquiry (status, assignment, notes)."""
     service = InquiryService(db)
     inquiry = await service.update(inquiry_id, tenant_id, data)
-    return InquiryResponse.model_validate(inquiry)
+    r = InquiryResponse.model_validate(inquiry)
+    if inquiry.form:
+        r = r.model_copy(update={"form_slug": inquiry.form.slug})
+    return r
 
 
 @router.delete(

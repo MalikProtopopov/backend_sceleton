@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class InquiryStatus(str, Enum):
@@ -103,10 +103,20 @@ class InquiryAnalytics(BaseModel):
     time_on_page: int | None = None
 
 
-class InquiryCreatePublic(BaseModel):
-    """Schema for creating inquiry from public form."""
+# Allowed form_slug values for short / full brief
+FORM_SLUG_QUICK = "quick"
+FORM_SLUG_MVP_BRIEF = "mvp-brief"
 
-    # Form identifier
+
+class InquiryCreatePublic(BaseModel):
+    """Schema for creating inquiry from public form.
+
+    Supports two form types:
+    - quick: name, email, message (required), phone?, telegram?, consent
+    - mvp-brief: name, email, idea (required), plus idea/market/audience/... in custom_fields
+    """
+
+    # Form identifier: quick | mvp-brief (or other slugs from inquiry_forms)
     form_slug: str | None = Field(default=None, max_length=100)
 
     # Contact info (required)
@@ -115,8 +125,12 @@ class InquiryCreatePublic(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     company: str | None = Field(default=None, max_length=255)
 
-    # Message
+    # Message (required for form_slug=quick)
     message: str | None = None
+
+    # Quick form: telegram; consent required (true)
+    telegram: str | None = Field(default=None, max_length=255)
+    consent: bool | None = None
 
     # Service context
     service_id: UUID | None = None
@@ -124,8 +138,29 @@ class InquiryCreatePublic(BaseModel):
     # Analytics
     analytics: InquiryAnalytics | None = None
 
-    # Custom fields
+    # Custom fields (merged with mvp-brief top-level fields when saving)
     custom_fields: dict | None = None
+
+    # MVP brief top-level fields (stored in custom_fields; idea also used as message)
+    idea: str | None = Field(default=None, max_length=2000)
+    market: str | None = Field(default=None, max_length=100)
+    audience: str | None = Field(default=None, max_length=1000)
+    audienceSize: str | None = Field(default=None, max_length=50)
+    aiRequired: str | None = Field(default=None, max_length=50)
+    appTypes: list[str] | None = None
+    integrations: str | None = Field(default=None, max_length=500)
+    budget: str | None = Field(default=None, max_length=50)
+    urgency: str | None = Field(default=None, max_length=50)
+    source: str | None = Field(default=None, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_form_fields(self) -> "InquiryCreatePublic":
+        """For form_slug=quick require message; for mvp-brief require idea."""
+        if self.form_slug == FORM_SLUG_QUICK and not (self.message or "").strip():
+            raise ValueError("message is required for form_slug=quick")
+        if self.form_slug == FORM_SLUG_MVP_BRIEF and not (self.idea or "").strip():
+            raise ValueError("idea is required for form_slug=mvp-brief")
+        return self
 
 
 class InquiryUpdate(BaseModel):
@@ -144,6 +179,7 @@ class InquiryResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     form_id: UUID | None = None
+    form_slug: str | None = None  # slug of linked form (quick, mvp-brief, etc.)
     status: str
 
     # Contact info
