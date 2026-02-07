@@ -153,7 +153,11 @@ class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):
 
     # Analytics
     ga_tracking_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    ym_counter_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ym_counter_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Yandex.Metrika counter ID or embed code",
+    )
 
     # Relationship
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="settings")

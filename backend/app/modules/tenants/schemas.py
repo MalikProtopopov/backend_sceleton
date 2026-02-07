@@ -74,7 +74,11 @@ class TenantSettingsBase(BaseModel):
     telegram_chat_id: str | None = None
     default_og_image: str | None = None
     ga_tracking_id: str | None = None
-    ym_counter_id: str | None = None
+    ym_counter_id: str | None = Field(
+        default=None,
+        max_length=5000,
+        description="Yandex.Metrika counter ID or full embed code",
+    )
     
     # SEO domain validation
     allowed_domains: list[str] | None = Field(
