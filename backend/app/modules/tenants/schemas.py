@@ -252,3 +252,14 @@ class TenantPublicResponse(BaseModel):
     logo_url: str | None = None
     primary_color: str | None = None
 
+
+class TenantAnalyticsPublic(BaseModel):
+    """Public analytics scripts for frontend.
+    
+    ga_tracking_id: Google Analytics measurement ID (e.g. G-XXXXXXXXXX).
+    ym_counter_id: Yandex.Metrika counter ID (e.g. 92699637) or full embed HTML snippet.
+    """
+
+    ga_tracking_id: str | None = None
+    ym_counter_id: str | None = None
+

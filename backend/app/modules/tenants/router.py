@@ -20,6 +20,7 @@ from app.modules.tenants.schemas import (
     FeatureFlagResponse,
     FeatureFlagsListResponse,
     FeatureFlagUpdate,
+    TenantAnalyticsPublic,
     TenantCreate,
     TenantListResponse,
     TenantPublicResponse,
@@ -92,6 +93,33 @@ async def get_tenant_public(
         slug=tenant.slug,
         logo_url=tenant.logo_url,
         primary_color=tenant.primary_color,
+    )
+
+
+@router.get(
+    "/public/tenants/{tenant_id}/analytics",
+    response_model=TenantAnalyticsPublic,
+    summary="Get analytics scripts (public)",
+    description="Get Google Analytics and Yandex.Metrika IDs/codes for tenant. Use in <head> to inject tracking scripts.",
+    tags=["Public"],
+)
+async def get_tenant_analytics_public(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> TenantAnalyticsPublic:
+    """Get analytics configuration for frontend.
+    
+    Returns ga_tracking_id and ym_counter_id from tenant settings.
+    ym_counter_id may be either a counter ID (e.g. 92699637) or full Yandex.Metrika embed HTML.
+    """
+    service = TenantService(db)
+    tenant = await service.get_by_id(tenant_id)
+    settings = tenant.settings
+    if not settings:
+        return TenantAnalyticsPublic()
+    return TenantAnalyticsPublic(
+        ga_tracking_id=settings.ga_tracking_id or None,
+        ym_counter_id=settings.ym_counter_id or None,
     )
 
 

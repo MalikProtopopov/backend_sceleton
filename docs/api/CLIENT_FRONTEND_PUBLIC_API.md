@@ -383,7 +383,7 @@ interface Address {
 
 interface Contact {
   id: string;
-  type: string; // 'phone', 'email', 'whatsapp', etc.
+  contact_type: string; // 'phone', 'email', 'whatsapp', 'youtube', 'instagram', etc.
   value: string;
   label: string | null;
   is_primary: boolean;
@@ -392,6 +392,14 @@ interface Contact {
 interface ContactsResponse {
   addresses: Address[];
   contacts: Contact[];
+}
+
+// Формирование href для футера/страницы контактов (не использовать mailto для YouTube и соцсетей)
+function getContactHref(contact: Contact): string {
+  if (contact.contact_type === 'email') return `mailto:${contact.value}`;
+  if (['phone', 'whatsapp', 'viber'].includes(contact.contact_type)) return `tel:${contact.value}`;
+  const v = contact.value.trim();
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
 }
 
 const contacts = await fetch(
@@ -487,7 +495,123 @@ submitInquiry({
 
 ---
 
-### 13. SEO
+### 13. Аналитика (Google Analytics, Яндекс.Метрика)
+
+**Получить скрипты аналитики для встраивания**
+
+```typescript
+// GET /api/v1/public/tenants/{tenant_id}/analytics
+interface TenantAnalyticsPublic {
+  ga_tracking_id: string | null;   // Google Analytics ID (G-XXXXXXXXXX)
+  ym_counter_id: string | null;    // Яндекс.Метрика: ID счётчика или полный HTML-код встраивания
+}
+
+const analytics = await fetch(
+  `${API_BASE}/api/v1/public/tenants/${TENANT_ID}/analytics`
+).then(r => r.json()) as TenantAnalyticsPublic;
+```
+
+**Где подставлять:**
+- В `<head>` каждой страницы (layout) — через `dangerouslySetInnerHTML` для HTML или через `Script` в Next.js.
+- `ym_counter_id` может быть:
+  - только ID счётчика (`"92699637"`) — тогда подключать стандартный скрипт Яндекс.Метрики;
+  - полным HTML-кодом встраивания — вставлять как есть в `<head>`.
+
+**Пример для Next.js (app/layout.tsx или components/AnalyticsScripts.tsx):**
+
+```tsx
+// components/AnalyticsScripts.tsx
+'use client';
+
+import Script from 'next/script';
+import { useEffect } from 'react';
+
+// Вспомогательный компонент: скрипты из innerHTML не выполняются, поэтому инжектим вручную
+function YandexMetrikaHtml({ html }: { html: string }) {
+  useEffect(() => {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    div.querySelectorAll('script').forEach((oldScript) => {
+      const s = document.createElement('script');
+      if (oldScript.src) s.src = oldScript.src;
+      else s.textContent = oldScript.textContent || '';
+      document.head.appendChild(s);
+    });
+    const noscript = div.querySelector('noscript');
+    if (noscript) document.body.insertAdjacentHTML('beforeend', noscript.outerHTML);
+  }, [html]);
+  return null;
+}
+import { useEffect, useState } from 'react';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID;
+
+export function AnalyticsScripts() {
+  const [analytics, setAnalytics] = useState<{
+    ga_tracking_id: string | null;
+    ym_counter_id: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!TENANT_ID) return;
+    fetch(`${API_BASE}/api/v1/public/tenants/${TENANT_ID}/analytics`)
+      .then((r) => r.json())
+      .then(setAnalytics)
+      .catch(() => {});
+  }, []);
+
+  if (!analytics) return null;
+
+  const isYmFullHtml = analytics.ym_counter_id?.includes('<script');
+  const ymId = !isYmFullHtml && analytics.ym_counter_id
+    ? analytics.ym_counter_id.replace(/\D/g, '')  // извлечь число из "92699637"
+    : null;
+
+  return (
+    <>
+      {/* Google Analytics */}
+      {analytics.ga_tracking_id && (
+        <>
+          <Script
+            src={`https://www.googletagmanager.com/gtag/js?id=${analytics.ga_tracking_id}`}
+            strategy="afterInteractive"
+          />
+          <Script id="gtag-init" strategy="afterInteractive">
+            {`
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', '${analytics.ga_tracking_id}');
+            `}
+          </Script>
+        </>
+      )}
+      {/* Яндекс.Метрика — полный HTML из админки (инъекция через useEffect) */}
+      {isYmFullHtml && analytics.ym_counter_id && (
+        <YandexMetrikaHtml html={analytics.ym_counter_id} />
+      )}
+      {/* Яндекс.Метрика — только ID счётчика */}
+      {ymId && (
+        <Script id="ym-counter" strategy="afterInteractive">
+          {`(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,"script","https://mc.yandex.ru/metrika/tag.js","ym");ym(${ymId},"init",{clickmap:true,trackLinks:true,accurateTrackBounce:true,webvisor:true});`}
+        </Script>
+      )}
+    </>
+  );
+}
+```
+
+В `app/layout.tsx` добавь: `<AnalyticsScripts />` внутри `<body>`.
+
+**Проверка:**
+1. Открыть DevTools → Elements → искать `yandex` или `metrika` в `<head>`.
+2. Или вкладка Network — запрос к `mc.yandex.ru` при загрузке страницы.
+3. В кабинете Яндекс.Метрики: «Отчёты» → «В режиме реального времени» — должны появляться визиты.
+
+---
+
+### 14. SEO
 
 **Мета-теги для страницы**
 
@@ -567,7 +691,7 @@ async rewrites() {
 
 | Страница | Эндпоинты |
 |----------|-----------|
-| **Главная** | `/public/tenants/{id}`, `/public/services`, `/public/cases?featured=true`, `/public/reviews?featured=true`, `/public/advantages` |
+| **Главная** | `/public/tenants/{id}`, `/public/tenants/{id}/analytics`, `/public/services`, `/public/cases?featured=true`, `/public/reviews?featured=true`, `/public/advantages` |
 | **Услуги (список)** | `/public/services` |
 | **Услуга (детальная)** | `/public/services/{slug}`, `/public/cases?service_id={id}`, `/public/reviews` |
 | **О компании** | `/public/tenants/{id}`, `/public/employees`, `/public/advantages` |
@@ -758,6 +882,7 @@ function InquiryForm({ serviceId }: { serviceId?: string }) {
 ## Чеклист интеграции
 
 - [ ] Настроить переменные окружения (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_TENANT_ID`)
+- [ ] Подключить аналитику (`/public/tenants/{id}/analytics`) в layout
 - [ ] Создать API клиент (`lib/api.ts`)
 - [ ] Подключить tenant info в шапку/футер
 - [ ] Реализовать страницы: услуги, команда, статьи, кейсы, отзывы, FAQ, контакты
