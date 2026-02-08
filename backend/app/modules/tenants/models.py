@@ -110,6 +110,12 @@ class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):
         default=list,
         comment="List of allowed domains for sitemap/robots base_url validation (e.g., ['mediann.dev', '*.mediann.dev'])",
     )
+    # SEO frontend base URL (used in sitemap <loc> and robots.txt Sitemap:)
+    site_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Frontend base URL for sitemap/robots (e.g. https://mediann.dev). Used in <loc> and Sitemap: directive.",
+    )
     
     # SEO sitemap configuration
     sitemap_static_pages: Mapped[list[dict] | None] = mapped_column(

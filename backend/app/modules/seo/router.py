@@ -116,6 +116,30 @@ async def get_validated_base_url(
     return request_base_url
 
 
+async def get_base_url_for_sitemap(
+    request: Request,
+    tenant_id: UUID,
+    db: AsyncSession,
+) -> tuple[str, bool]:
+    """Get base URL for sitemap/robots: prefer tenant site_url (frontend), else request URL.
+    
+    Returns:
+        (base_url, is_frontend): is_frontend True when site_url was used (for robots Sitemap:).
+    """
+    tenant_service = TenantService(db)
+    try:
+        tenant = await tenant_service.get_by_id(tenant_id)
+    except Exception:
+        base_url = await get_validated_base_url(request, tenant_id, db)
+        return base_url, False
+    if tenant.settings and tenant.settings.site_url and tenant.settings.site_url.strip():
+        site_url = tenant.settings.site_url.strip().rstrip("/")
+        if site_url.startswith("http://") or site_url.startswith("https://"):
+            return site_url, True
+    base_url = await get_validated_base_url(request, tenant_id, db)
+    return base_url, False
+
+
 # ============================================================================
 # Public Routes
 # ============================================================================
@@ -217,8 +241,8 @@ async def get_sitemap(
             },
         )
 
-    # Get validated base URL
-    base_url = await get_validated_base_url(request, tenant_id, db)
+    # Get base URL (prefer tenant site_url for frontend domain in <loc>)
+    base_url, _ = await get_base_url_for_sitemap(request, tenant_id, db)
 
     xml = await service.generate_sitemap_xml(tenant_id, locale, base_url)
 
@@ -259,8 +283,8 @@ async def get_sitemap_index(
     """
     service = SitemapService(db)
     
-    # Get validated base URL
-    base_url = await get_validated_base_url(request, tenant_id, db)
+    # Get base URL (prefer tenant site_url for frontend domain)
+    base_url, _ = await get_base_url_for_sitemap(request, tenant_id, db)
     
     # Default locales - could be fetched from tenant settings
     locales = ["ru", "en"]
@@ -324,8 +348,8 @@ async def get_segment_sitemap(
             },
         )
     
-    # Get validated base URL
-    base_url = await get_validated_base_url(request, tenant_id, db)
+    # Get base URL (prefer tenant site_url for frontend domain)
+    base_url, _ = await get_base_url_for_sitemap(request, tenant_id, db)
     
     xml = await service.generate_segment_sitemap_xml(tenant_id, locale, base_url, segment)
     
@@ -369,9 +393,12 @@ async def get_robots(
     service = SitemapService(db)
     tenant_service = TenantService(db)
 
-    # Get validated base URL
-    base_url = await get_validated_base_url(request, tenant_id, db)
-    sitemap_url = f"{base_url}/api/v1/public/sitemap.xml?tenant_id={tenant_id}"
+    # Get base URL (prefer tenant site_url so Sitemap: points to frontend)
+    base_url, is_frontend = await get_base_url_for_sitemap(request, tenant_id, db)
+    if is_frontend:
+        sitemap_url = f"{base_url}/sitemap.xml"
+    else:
+        sitemap_url = f"{base_url}/api/v1/public/sitemap.xml?tenant_id={tenant_id}"
     
     # Get custom rules from tenant settings
     custom_rules = None

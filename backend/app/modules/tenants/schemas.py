@@ -85,6 +85,11 @@ class TenantSettingsBase(BaseModel):
         default=None,
         description="List of allowed domains for sitemap/robots base_url validation",
     )
+    site_url: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Frontend base URL for sitemap and robots.txt (e.g. https://mediann.dev). Used in <loc> and Sitemap:.",
+    )
     
     # SEO sitemap configuration
     sitemap_static_pages: list[SitemapStaticPage] | None = Field(
