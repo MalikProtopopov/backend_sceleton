@@ -1,18 +1,20 @@
 """Company module service layer."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.base_service import BaseService, update_many_to_many
 from app.core.database import transactional
 from app.core.exceptions import (
     DuplicatePriceError,
     DuplicateTagError,
     NotFoundError,
 )
+from app.core.pagination import paginate_query
 from app.core.locale_helpers import (
     LocaleAlreadyExistsError,
     MinimumLocalesError,
@@ -67,32 +69,25 @@ from app.modules.company.schemas import (
 )
 
 
-class ServiceService:
+class ServiceService(BaseService[Service]):
     """Service for managing services."""
 
+    model = Service
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [
+            selectinload(Service.locales),
+            selectinload(Service.prices),
+            selectinload(Service.tags),
+        ]
 
     async def get_by_id(self, service_id: UUID, tenant_id: UUID) -> Service:
         """Get service by ID."""
-        stmt = (
-            select(Service)
-            .where(Service.id == service_id)
-            .where(Service.tenant_id == tenant_id)
-            .where(Service.deleted_at.is_(None))
-            .options(
-                selectinload(Service.locales),
-                selectinload(Service.prices),
-                selectinload(Service.tags),
-            )
-        )
-        result = await self.db.execute(stmt)
-        service = result.scalar_one_or_none()
-
-        if not service:
-            raise NotFoundError("Service", service_id)
-
-        return service
+        return await self._get_by_id(service_id, tenant_id)
 
     async def get_by_slug(self, slug: str, locale: str, tenant_id: UUID) -> Service:
         """Get published service by slug and locale."""
@@ -126,34 +121,20 @@ class ServiceService:
         is_published: bool | None = None,
     ) -> tuple[list[Service], int]:
         """List services with pagination."""
-        base_query = (
-            select(Service)
-            .where(Service.tenant_id == tenant_id)
-            .where(Service.deleted_at.is_(None))
-        )
-
+        filters = []
         if is_published is not None:
-            base_query = base_query.where(Service.is_published == is_published)
+            filters.append(Service.is_published == is_published)
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
+        base_query = self._build_base_query(tenant_id, filters=filters)
 
-        # Get results
-        stmt = (
-            base_query.options(
-                selectinload(Service.locales),
-                selectinload(Service.prices),
-                selectinload(Service.tags),
-            )
-            .order_by(Service.sort_order, Service.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=self._get_default_options(),
+            order_by=[Service.sort_order, Service.created_at.desc()],
         )
-        result = await self.db.execute(stmt)
-        services = list(result.scalars().all())
-
-        return services, total
 
     async def list_published(self, tenant_id: UUID, locale: str) -> list[Service]:
         """List published services for public API."""
@@ -221,7 +202,7 @@ class ServiceService:
 
         # Handle publishing
         if "is_published" in update_data and update_data["is_published"] and not service.is_published:
-            service.published_at = datetime.utcnow()
+            service.published_at = datetime.now(UTC)
 
         for field, value in update_data.items():
             setattr(service, field, value)
@@ -408,9 +389,7 @@ class ServiceService:
     @transactional
     async def soft_delete(self, service_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a service."""
-        service = await self.get_by_id(service_id, tenant_id)
-        service.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(service_id, tenant_id)
 
     # ========== Locale Management ==========
 
@@ -494,33 +473,26 @@ class ServiceService:
         await self.db.flush()
 
 
-class EmployeeService:
+class EmployeeService(BaseService[Employee]):
     """Service for managing employees."""
 
+    model = Employee
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [
+            selectinload(Employee.locales),
+            selectinload(Employee.practice_areas).selectinload(
+                EmployeePracticeArea.practice_area
+            ),
+        ]
 
     async def get_by_id(self, employee_id: UUID, tenant_id: UUID) -> Employee:
         """Get employee by ID."""
-        stmt = (
-            select(Employee)
-            .where(Employee.id == employee_id)
-            .where(Employee.tenant_id == tenant_id)
-            .where(Employee.deleted_at.is_(None))
-            .options(
-                selectinload(Employee.locales),
-                selectinload(Employee.practice_areas).selectinload(
-                    EmployeePracticeArea.practice_area
-                ),
-            )
-        )
-        result = await self.db.execute(stmt)
-        employee = result.scalar_one_or_none()
-
-        if not employee:
-            raise NotFoundError("Employee", employee_id)
-
-        return employee
+        return await self._get_by_id(employee_id, tenant_id)
 
     async def get_by_slug(self, slug: str, locale: str, tenant_id: UUID) -> Employee:
         """Get published employee by slug."""
@@ -551,14 +523,11 @@ class EmployeeService:
         search: str | None = None,
     ) -> tuple[list[Employee], int]:
         """List employees with pagination."""
-        base_query = (
-            select(Employee)
-            .where(Employee.tenant_id == tenant_id)
-            .where(Employee.deleted_at.is_(None))
-        )
-
+        filters = []
         if is_published is not None:
-            base_query = base_query.where(Employee.is_published == is_published)
+            filters.append(Employee.is_published == is_published)
+
+        base_query = self._build_base_query(tenant_id, filters=filters)
 
         if search:
             search_pattern = f"%{search}%"
@@ -568,21 +537,15 @@ class EmployeeService:
                 (Employee.email.ilike(search_pattern))
             ).distinct()
 
-        # Count
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
-
-        # Get results
-        stmt = (
-            base_query.options(selectinload(Employee.locales))
-            .order_by(Employee.sort_order, Employee.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=[selectinload(Employee.locales)],
+            order_by=[Employee.sort_order, Employee.created_at.desc()],
+            unique=True,
         )
-        result = await self.db.execute(stmt)
-        employees = list(result.scalars().unique().all())
-
-        return employees, total
 
     async def list_published(self, tenant_id: UUID, locale: str) -> list[Employee]:
         """List published employees for public API."""
@@ -645,21 +608,22 @@ class EmployeeService:
 
         # Handle publishing
         if "is_published" in update_data and update_data["is_published"] and not employee.is_published:
-            employee.published_at = datetime.utcnow()
+            employee.published_at = datetime.now(UTC)
 
         for field, value in update_data.items():
             setattr(employee, field, value)
 
         # Update practice areas if provided
         if data.practice_area_ids is not None:
-            # Remove existing
-            for epa in employee.practice_areas:
-                await self.db.delete(epa)
-
-            # Add new
-            for pa_id in data.practice_area_ids:
-                epa = EmployeePracticeArea(employee_id=employee.id, practice_area_id=pa_id)
-                self.db.add(epa)
+            await update_many_to_many(
+                self.db,
+                employee,
+                "practice_areas",
+                data.practice_area_ids,
+                EmployeePracticeArea,
+                "employee_id",
+                "practice_area_id",
+            )
 
         await self.db.flush()
         await self.db.refresh(employee)  # Full refresh for scalar fields (updated_at, etc.)
@@ -670,9 +634,7 @@ class EmployeeService:
     @transactional
     async def soft_delete(self, employee_id: UUID, tenant_id: UUID) -> None:
         """Soft delete an employee."""
-        employee = await self.get_by_id(employee_id, tenant_id)
-        employee.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(employee_id, tenant_id)
 
     # ========== Locale Management ==========
 
@@ -756,40 +718,28 @@ class EmployeeService:
         await self.db.flush()
 
 
-class PracticeAreaService:
+class PracticeAreaService(BaseService[PracticeArea]):
     """Service for managing practice areas."""
 
+    model = PracticeArea
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(PracticeArea.locales)]
 
     async def get_by_id(self, pa_id: UUID, tenant_id: UUID) -> PracticeArea:
         """Get practice area by ID."""
-        stmt = (
-            select(PracticeArea)
-            .where(PracticeArea.id == pa_id)
-            .where(PracticeArea.tenant_id == tenant_id)
-            .where(PracticeArea.deleted_at.is_(None))
-            .options(selectinload(PracticeArea.locales))
-        )
-        result = await self.db.execute(stmt)
-        pa = result.scalar_one_or_none()
-
-        if not pa:
-            raise NotFoundError("PracticeArea", pa_id)
-
-        return pa
+        return await self._get_by_id(pa_id, tenant_id)
 
     async def list_all(self, tenant_id: UUID) -> list[PracticeArea]:
         """List all practice areas for admin."""
-        stmt = (
-            select(PracticeArea)
-            .where(PracticeArea.tenant_id == tenant_id)
-            .where(PracticeArea.deleted_at.is_(None))
-            .options(selectinload(PracticeArea.locales))
-            .order_by(PracticeArea.sort_order)
+        return await self._list_all(
+            tenant_id,
+            order_by=[PracticeArea.sort_order],
         )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
 
     async def list_published(self, tenant_id: UUID, locale: str) -> list[PracticeArea]:
         """List published practice areas."""
@@ -851,9 +801,7 @@ class PracticeAreaService:
     @transactional
     async def soft_delete(self, pa_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a practice area."""
-        pa = await self.get_by_id(pa_id, tenant_id)
-        pa.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(pa_id, tenant_id)
 
     # ========== Locale Management ==========
 
@@ -934,40 +882,28 @@ class PracticeAreaService:
         await self.db.flush()
 
 
-class AdvantageService:
+class AdvantageService(BaseService[Advantage]):
     """Service for managing advantages."""
 
+    model = Advantage
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(Advantage.locales)]
 
     async def get_by_id(self, adv_id: UUID, tenant_id: UUID) -> Advantage:
         """Get advantage by ID."""
-        stmt = (
-            select(Advantage)
-            .where(Advantage.id == adv_id)
-            .where(Advantage.tenant_id == tenant_id)
-            .where(Advantage.deleted_at.is_(None))
-            .options(selectinload(Advantage.locales))
-        )
-        result = await self.db.execute(stmt)
-        adv = result.scalar_one_or_none()
-
-        if not adv:
-            raise NotFoundError("Advantage", adv_id)
-
-        return adv
+        return await self._get_by_id(adv_id, tenant_id)
 
     async def list_all(self, tenant_id: UUID) -> list[Advantage]:
         """List all advantages for admin."""
-        stmt = (
-            select(Advantage)
-            .where(Advantage.tenant_id == tenant_id)
-            .where(Advantage.deleted_at.is_(None))
-            .options(selectinload(Advantage.locales))
-            .order_by(Advantage.sort_order)
+        return await self._list_all(
+            tenant_id,
+            order_by=[Advantage.sort_order],
         )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
 
     async def list_published(self, tenant_id: UUID, locale: str) -> list[Advantage]:
         """List published advantages."""
@@ -1029,9 +965,7 @@ class AdvantageService:
     @transactional
     async def soft_delete(self, adv_id: UUID, tenant_id: UUID) -> None:
         """Soft delete an advantage."""
-        adv = await self.get_by_id(adv_id, tenant_id)
-        adv.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(adv_id, tenant_id)
 
     # ========== Locale Management ==========
 

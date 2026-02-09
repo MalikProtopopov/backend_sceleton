@@ -294,6 +294,32 @@ function ReviewAuthor({ review }: { review: Review }) {
 
 ---
 
+## Формирование ссылки (href) по типу контакта
+
+**Важно:** для ссылок в футере и на страницах контактов используйте `href` в зависимости от `contact_type`. Не используйте `mailto:` для типов, которые не являются email — иначе ссылки на YouTube, соцсети и сайт откроют почтовый клиент.
+
+| contact_type | href | Пример value |
+|--------------|------|--------------|
+| `email` | `mailto:${value}` | `info@example.com` |
+| `phone`, `whatsapp`, `viber` | `tel:${value}` (или `https://wa.me/...` для WhatsApp) | `+79991234567` |
+| `website`, `instagram`, `telegram`, `linkedin`, `facebook`, `twitter`, `youtube`, `tiktok`, `other` | **URL как есть** — `value` уже должен быть полным URL (например `https://youtube.com/...`). Если в value нет схемы, добавьте `https://` | `https://youtube.com/c/...` |
+
+Пример функции для фронта:
+
+```ts
+function getContactHref(contact: { contact_type: string; value: string }): string {
+  if (contact.contact_type === 'email') return `mailto:${contact.value}`;
+  if (['phone', 'whatsapp', 'viber'].includes(contact.contact_type)) return `tel:${contact.value}`;
+  // URL-типы: website, instagram, telegram, linkedin, facebook, twitter, youtube, tiktok, other
+  const v = contact.value.trim();
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+```
+
+В разметке используйте `href={getContactHref(contact)}`, а не `href={contact.value}` без учёта типа и не `mailto:` для всех.
+
+---
+
 ## Важные замечания
 
 1. **Контакты всегда возвращаются как массив** — если контактов нет, будет пустой массив `[]`
@@ -301,7 +327,7 @@ function ReviewAuthor({ review }: { review: Review }) {
 2. **Сортировка** — контакты возвращаются в порядке `sort_order`, но рекомендуется дополнительно сортировать на фронте
 
 3. **Валидация value** — значение `value` может содержать:
-   - URL (для website, соцсетей)
+   - URL (для website, соцсетей, **youtube** и т.д.)
    - Email адрес
    - Телефон в любом формате
    - Username (например, для telegram)

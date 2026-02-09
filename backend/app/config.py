@@ -82,6 +82,50 @@ class Settings(BaseSettings):
                 object.__setattr__(self, 's3_endpoint_url', 'http://localhost:9000')
         return self
 
+    @model_validator(mode='after')
+    def validate_production_config(self) -> "Settings":
+        """Validate critical settings for production environment.
+        
+        Ensures security-sensitive settings are properly configured
+        before running in production mode.
+        """
+        if self.environment != "production":
+            return self
+        
+        errors: list[str] = []
+        
+        # JWT secret must not be default
+        if self.jwt_secret_key == "change-me-in-production-very-secret-key":
+            errors.append("JWT_SECRET_KEY must be changed from default in production")
+        
+        # JWT secret should be at least 32 characters
+        if len(self.jwt_secret_key) < 32:
+            errors.append("JWT_SECRET_KEY must be at least 32 characters in production")
+        
+        # S3 credentials required in production
+        if not self.s3_access_key or not self.s3_secret_key:
+            errors.append("S3_ACCESS_KEY and S3_SECRET_KEY are required in production")
+        
+        if not self.s3_endpoint_url:
+            errors.append("S3_ENDPOINT_URL is required in production")
+        
+        # Debug must be disabled
+        if self.debug:
+            errors.append("DEBUG must be False in production")
+        
+        # CORS origins should be HTTPS in production (except localhost for testing)
+        for origin in self.cors_origins:
+            if origin.startswith("http://") and "localhost" not in origin:
+                errors.append(f"CORS origin '{origin}' must use HTTPS in production")
+        
+        if errors:
+            raise ValueError(
+                f"Production configuration validation failed:\n" + 
+                "\n".join(f"  - {e}" for e in errors)
+            )
+        
+        return self
+
     # Rate Limiting
     rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60

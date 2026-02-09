@@ -14,6 +14,7 @@ from app.modules.company.mappers import (
     map_services_to_public_response,
 )
 from app.modules.company.schemas import (
+    ContentBlockForServiceResponse,
     ServiceCreate,
     ServiceListResponse,
     ServiceLocaleCreate,
@@ -107,6 +108,20 @@ async def get_service_public(
 # ============================================================================
 
 
+async def _service_response_with_blocks(
+    svc, db: AsyncSession, tenant_id: UUID
+) -> ServiceResponse:
+    """Build ServiceResponse with content_blocks loaded (admin single-service responses)."""
+    block_service = ContentBlockService(db)
+    blocks = await block_service.list_blocks("service", svc.id, tenant_id, None)
+    response = ServiceResponse.model_validate(svc)
+    return response.model_copy(
+        update={
+            "content_blocks": [ContentBlockForServiceResponse.model_validate(b) for b in blocks]
+        }
+    )
+
+
 @router.get(
     "/admin/services",
     response_model=ServiceListResponse,
@@ -153,7 +168,7 @@ async def create_service(
     """Create a new service."""
     service = ServiceService(db)
     created = await service.create(tenant_id, data)
-    return ServiceResponse.model_validate(created)
+    return await _service_response_with_blocks(created, db, tenant_id)
 
 
 @router.get(
@@ -171,7 +186,7 @@ async def get_service_admin(
     """Get service by ID."""
     service = ServiceService(db)
     svc = await service.get_by_id(service_id, tenant_id)
-    return ServiceResponse.model_validate(svc)
+    return await _service_response_with_blocks(svc, db, tenant_id)
 
 
 @router.patch(
@@ -191,7 +206,7 @@ async def update_service(
     service = ServiceService(db)
     await service.update(service_id, tenant_id, data)
     updated = await service.get_by_id(service_id, tenant_id)
-    return ServiceResponse.model_validate(updated)
+    return await _service_response_with_blocks(updated, db, tenant_id)
 
 
 @router.delete(
@@ -240,7 +255,7 @@ async def upload_service_image(
     await db.commit()
     svc = await service.get_by_id(service_id, tenant_id)
     
-    return ServiceResponse.model_validate(svc)
+    return await _service_response_with_blocks(svc, db, tenant_id)
 
 
 @router.delete(

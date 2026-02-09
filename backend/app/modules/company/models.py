@@ -341,6 +341,8 @@ class EmployeePracticeArea(Base, UUIDMixin):
 
     __table_args__ = (
         UniqueConstraint("employee_id", "practice_area_id", name="uq_employee_practice_areas"),
+        Index("ix_employee_practice_areas_employee", "employee_id"),
+        Index("ix_employee_practice_areas_practice_area", "practice_area_id"),
     )
 
 

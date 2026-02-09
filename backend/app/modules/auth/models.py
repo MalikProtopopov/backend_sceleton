@@ -186,6 +186,7 @@ class AdminUser(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
     __table_args__ = (
         UniqueConstraint("tenant_id", "email", name="uq_admin_users_tenant_email"),
         Index("ix_admin_users_email", "email"),
+        Index("ix_admin_users_role", "role_id"),
         Index(
             "ix_admin_users_active",
             "tenant_id",
@@ -253,6 +254,7 @@ class AuditLog(Base, UUIDMixin):
 
     __table_args__ = (
         Index("ix_audit_logs_tenant_resource", "tenant_id", "resource_type", "resource_id"),
+        Index("ix_audit_logs_resource_id", "resource_id"),
         Index("ix_audit_logs_user", "user_id"),
         Index("ix_audit_logs_created", "tenant_id", "created_at"),
         CheckConstraint(

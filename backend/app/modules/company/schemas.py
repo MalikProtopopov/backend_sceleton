@@ -163,6 +163,8 @@ class ServiceUpdate(BaseModel):
 class ContentBlockForServiceResponse(BaseModel):
     """Content block information for service response."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     locale: str
     block_type: str

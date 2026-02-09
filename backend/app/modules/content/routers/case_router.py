@@ -116,6 +116,18 @@ async def get_case_public(
 # ============================================================================
 
 
+async def _case_response_with_blocks(
+    case, db: AsyncSession, tenant_id: UUID
+) -> CaseResponse:
+    """Build CaseResponse with content_blocks loaded (admin single-case responses)."""
+    block_service = ContentBlockService(db)
+    blocks = await block_service.list_blocks("case", case.id, tenant_id, None)
+    response = CaseResponse.model_validate(case)
+    return response.model_copy(
+        update={"content_blocks": [ContentBlockResponse.model_validate(b) for b in blocks]}
+    )
+
+
 @router.get(
     "/admin/cases",
     response_model=CaseListResponse,
@@ -166,7 +178,7 @@ async def create_case(
     """Create a new case."""
     service = CaseService(db)
     case = await service.create(tenant_id, data)
-    return CaseResponse.model_validate(case)
+    return await _case_response_with_blocks(case, db, tenant_id)
 
 
 @router.get(
@@ -184,7 +196,7 @@ async def get_case_admin(
     """Get case by ID."""
     service = CaseService(db)
     case = await service.get_by_id(case_id, tenant_id)
-    return CaseResponse.model_validate(case)
+    return await _case_response_with_blocks(case, db, tenant_id)
 
 
 @router.patch(
@@ -203,7 +215,7 @@ async def update_case(
     """Update a case."""
     service = CaseService(db)
     case = await service.update(case_id, tenant_id, data)
-    return CaseResponse.model_validate(case)
+    return await _case_response_with_blocks(case, db, tenant_id)
 
 
 @router.post(
@@ -222,7 +234,7 @@ async def publish_case(
     service = CaseService(db)
     await service.publish(case_id, tenant_id)
     case = await service.get_by_id(case_id, tenant_id)
-    return CaseResponse.model_validate(case)
+    return await _case_response_with_blocks(case, db, tenant_id)
 
 
 @router.post(
@@ -241,7 +253,7 @@ async def unpublish_case(
     service = CaseService(db)
     await service.unpublish(case_id, tenant_id)
     case = await service.get_by_id(case_id, tenant_id)
-    return CaseResponse.model_validate(case)
+    return await _case_response_with_blocks(case, db, tenant_id)
 
 
 @router.delete(
@@ -290,7 +302,7 @@ async def upload_case_cover_image(
     await db.commit()
     case = await service.get_by_id(case_id, tenant_id)
     
-    return CaseResponse.model_validate(case)
+    return await _case_response_with_blocks(case, db, tenant_id)
 
 
 @router.delete(

@@ -613,6 +613,8 @@ export function AnalyticsScripts() {
 
 ### 14. SEO
 
+**Обновления (sitemap, robots, site_url):** Домен для sitemap и robots задаётся в админке (настройки тенанта → «URL сайта», например `https://mediann.dev`). Клиентскому фронту нужно только проксировать `/sitemap.xml` и `/robots.txt` на API с `tenant_id` — передавать URL с фронта не требуется. Подробнее: [SITEMAP_ROBOTS_SITE_URL.md](./changelogs/SITEMAP_ROBOTS_SITE_URL.md).
+
 **Мета-теги для страницы**
 
 ```typescript
@@ -661,29 +663,40 @@ export async function generateMetadata({ params }) {
 }
 ```
 
-**Sitemap**
+**Sitemap и robots.txt (обновлено)**
+
+Бэкенд генерирует sitemap и robots.txt. В настройках тенанта (админка) задаётся **URL сайта** (`site_url`, например `https://mediann.dev`) — он подставляется во все `<loc>` в sitemap и в директиву `Sitemap:` в robots.txt. Клиентскому фронту **ничего передавать не нужно**: достаточно проксировать запросы к API с `tenant_id`.
 
 ```typescript
-// GET /api/v1/public/sitemap.xml?tenant_id={uuid}
-// Возвращает XML sitemap
+// GET /api/v1/public/sitemap.xml?tenant_id={uuid}&locale=ru  (опционально locale)
+// GET /api/v1/public/robots.txt?tenant_id={uuid}
+// GET /api/v1/public/sitemap-index.xml?tenant_id={uuid}     (индекс по сегментам и локалям)
 
-// В next.config.js для редиректа:
+// next.config.js — rewrites для проксирования на домене фронта:
 async rewrites() {
   return [
     {
       source: '/sitemap.xml',
       destination: `${API_BASE}/api/v1/public/sitemap.xml?tenant_id=${TENANT_ID}`,
     },
+    {
+      source: '/sitemap-index.xml',
+      destination: `${API_BASE}/api/v1/public/sitemap-index.xml?tenant_id=${TENANT_ID}`,
+    },
+    {
+      source: '/robots.txt',
+      destination: `${API_BASE}/api/v1/public/robots.txt?tenant_id=${TENANT_ID}`,
+    },
   ];
 }
 ```
 
-**Robots.txt**
+- **Sitemap:** в `<loc>` будет домен из `site_url` (например `https://mediann.dev/blog/...`), если он задан в настройках тенанта. Иначе — fallback на домен запроса.
+- **Robots.txt:** при заданном `site_url` директива будет `Sitemap: https://mediann.dev/sitemap.xml` (поисковики должны обращаться к sitemap по домену фронта).
+- **Параметр `locale`:** для sitemap можно передать `locale=ru` или `locale=en` — от этого зависит набор статей/услуг/кейсов по языку. По умолчанию бэкенд использует `ru`.
+- **Sitemap index:** по желанию можно отдавать `/sitemap-index.xml` — в нём перечислены сегментные sitemap (pages, articles, cases, services, team, documents) по локалям.
 
-```typescript
-// GET /api/v1/public/robots.txt?tenant_id={uuid}
-// Возвращает plain text robots.txt
-```
+**Что нужно на клиентском фронте:** только rewrites выше и корректный `NEXT_PUBLIC_TENANT_ID`. URL сайта настраивается в админке (настройки тенанта → «URL сайта»).
 
 ---
 
@@ -887,7 +900,7 @@ function InquiryForm({ serviceId }: { serviceId?: string }) {
 - [ ] Подключить tenant info в шапку/футер
 - [ ] Реализовать страницы: услуги, команда, статьи, кейсы, отзывы, FAQ, контакты
 - [ ] Добавить форму заявки с UTM трекингом
-- [ ] Настроить SEO мета-теги для всех страниц
-- [ ] Подключить sitemap.xml и robots.txt
+- [ ] Настроить SEO мета-теги для всех страниц (`/public/seo/meta`)
+- [ ] **SEO: sitemap и robots.txt** — добавить rewrites для `/sitemap.xml`, `/robots.txt` (и при необходимости `/sitemap-index.xml`) на API с `tenant_id`; в админке у тенанта задать «URL сайта» (`https://ваш-домен`) для корректных `<loc>` и `Sitemap:`
 - [ ] Настроить кэширование
 - [ ] Обработать 404 и ошибки

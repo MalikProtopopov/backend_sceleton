@@ -1,6 +1,6 @@
 """Authentication service - business logic for auth operations."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.core.base_service import BaseService
 from app.core.database import transactional
 from app.core.exceptions import (
     AlreadyExistsError,
@@ -26,6 +27,8 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.base_service import update_many_to_many
+from app.core.pagination import paginate_query
 from app.modules.auth.models import AdminUser, AuditLog, Permission, Role, RolePermission
 from app.modules.auth.schemas import (
     LoginRequest,
@@ -83,7 +86,7 @@ class AuthService:
             raise InvalidCredentialsError("Account is disabled")
 
         # Update last login
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(UTC)
         user.last_login_ip = ip_address
 
         # Create tokens
@@ -198,28 +201,21 @@ class AuthService:
         self.db.add(log)
 
 
-class UserService:
+class UserService(BaseService[AdminUser]):
     """Service for user management operations."""
 
+    model = AdminUser
+
     def __init__(self, db: AsyncSession) -> None:
-        self.db = db
+        super().__init__(db)
+
+    def _get_default_options(self) -> list:
+        """Get default eager loading options."""
+        return [selectinload(AdminUser.role)]
 
     async def get_by_id(self, user_id: UUID, tenant_id: UUID) -> AdminUser:
         """Get user by ID within tenant."""
-        stmt = (
-            select(AdminUser)
-            .where(AdminUser.id == user_id)
-            .where(AdminUser.tenant_id == tenant_id)
-            .where(AdminUser.deleted_at.is_(None))
-            .options(selectinload(AdminUser.role))
-        )
-        result = await self.db.execute(stmt)
-        user = result.scalar_one_or_none()
-
-        if not user:
-            raise NotFoundError("User", user_id)
-
-        return user
+        return await self._get_by_id(user_id, tenant_id)
 
     async def list_users(
         self,
@@ -230,15 +226,13 @@ class UserService:
         search: str | None = None,
     ) -> tuple[list[AdminUser], int]:
         """List users in tenant with pagination."""
-        base_query = (
-            select(AdminUser)
-            .where(AdminUser.tenant_id == tenant_id)
-            .where(AdminUser.deleted_at.is_(None))
-        )
-
+        filters = []
         if is_active is not None:
-            base_query = base_query.where(AdminUser.is_active == is_active)
+            filters.append(AdminUser.is_active == is_active)
 
+        base_query = self._build_base_query(tenant_id, filters=filters)
+
+        # Add search filter separately (complex OR condition)
         if search:
             search_pattern = f"%{search}%"
             base_query = base_query.where(
@@ -246,21 +240,14 @@ class UserService:
                 (AdminUser.full_name.ilike(search_pattern))
             )
 
-        # Count total
-        count_stmt = select(func.count()).select_from(base_query.subquery())
-        total = (await self.db.execute(count_stmt)).scalar() or 0
-
-        # Get paginated results
-        stmt = (
-            base_query.options(selectinload(AdminUser.role))
-            .order_by(AdminUser.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        return await paginate_query(
+            self.db,
+            base_query,
+            page,
+            page_size,
+            options=self._get_default_options(),
+            order_by=[AdminUser.created_at.desc()],
         )
-        result = await self.db.execute(stmt)
-        users = list(result.scalars().all())
-
-        return users, total
 
     @transactional
     async def create(self, tenant_id: UUID, data: UserCreate) -> AdminUser:
@@ -326,9 +313,7 @@ class UserService:
     @transactional
     async def soft_delete(self, user_id: UUID, tenant_id: UUID) -> None:
         """Soft delete a user."""
-        user = await self.get_by_id(user_id, tenant_id)
-        user.soft_delete()
-        await self.db.flush()
+        await self._soft_delete(user_id, tenant_id)
 
 
 class RoleService:
@@ -439,14 +424,15 @@ class RoleService:
 
         # Update permissions if provided
         if permission_ids is not None:
-            # Remove existing
-            for rp in role.role_permissions:
-                await self.db.delete(rp)
-
-            # Add new
-            for perm_id in permission_ids:
-                rp = RolePermission(role_id=role.id, permission_id=perm_id)
-                self.db.add(rp)
+            await update_many_to_many(
+                self.db,
+                role,
+                "role_permissions",
+                permission_ids,
+                RolePermission,
+                "role_id",
+                "permission_id",
+            )
 
         await self.db.flush()
         await self.db.refresh(role)  # Full refresh for scalar fields (updated_at, etc.)

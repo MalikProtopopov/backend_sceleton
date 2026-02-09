@@ -108,6 +108,18 @@ async def get_article_public(
 # ============================================================================
 
 
+async def _article_response_with_blocks(
+    article, db: AsyncSession, tenant_id: UUID
+) -> ArticleResponse:
+    """Build ArticleResponse with content_blocks loaded (admin single-article responses)."""
+    block_service = ContentBlockService(db)
+    blocks = await block_service.list_blocks("article", article.id, tenant_id, None)
+    response = ArticleResponse.model_validate(article)
+    return response.model_copy(
+        update={"content_blocks": [ContentBlockResponse.model_validate(b) for b in blocks]}
+    )
+
+
 @router.get(
     "/admin/articles",
     response_model=ArticleListResponse,
@@ -159,7 +171,7 @@ async def create_article(
     """Create a new article."""
     service = ArticleService(db)
     article = await service.create(tenant_id, data, author_id=user.id)
-    return ArticleResponse.model_validate(article)
+    return await _article_response_with_blocks(article, db, tenant_id)
 
 
 @router.get(
@@ -177,7 +189,7 @@ async def get_article_admin(
     """Get article by ID."""
     service = ArticleService(db)
     article = await service.get_by_id(article_id, tenant_id)
-    return ArticleResponse.model_validate(article)
+    return await _article_response_with_blocks(article, db, tenant_id)
 
 
 @router.patch(
@@ -196,7 +208,7 @@ async def update_article(
     """Update an article."""
     service = ArticleService(db)
     article = await service.update(article_id, tenant_id, data)
-    return ArticleResponse.model_validate(article)
+    return await _article_response_with_blocks(article, db, tenant_id)
 
 
 @router.post(
@@ -215,7 +227,7 @@ async def publish_article(
     service = ArticleService(db)
     await service.publish(article_id, tenant_id)
     article = await service.get_by_id(article_id, tenant_id)
-    return ArticleResponse.model_validate(article)
+    return await _article_response_with_blocks(article, db, tenant_id)
 
 
 @router.post(
@@ -234,7 +246,7 @@ async def unpublish_article(
     service = ArticleService(db)
     await service.unpublish(article_id, tenant_id)
     article = await service.get_by_id(article_id, tenant_id)
-    return ArticleResponse.model_validate(article)
+    return await _article_response_with_blocks(article, db, tenant_id)
 
 
 @router.delete(
@@ -283,7 +295,7 @@ async def upload_article_cover_image(
     await db.commit()
     article = await service.get_by_id(article_id, tenant_id)
     
-    return ArticleResponse.model_validate(article)
+    return await _article_response_with_blocks(article, db, tenant_id)
 
 
 @router.delete(
