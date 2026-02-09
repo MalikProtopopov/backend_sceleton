@@ -82,25 +82,15 @@ def create_app() -> FastAPI:
 
 def _setup_middleware(app: FastAPI) -> None:
     """Configure application middleware."""
-    # CORS - restricted to necessary methods and headers for security
+    # CORS - origins are restricted via CORS_ORIGINS env var;
+    # methods and headers use wildcard to avoid breaking preflight
+    # when frontend sends unexpected headers (Pragma, Sec-*, etc.)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        # Restrict to HTTP methods actually used by the API
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        # Restrict to headers actually needed by the frontend
-        allow_headers=[
-            "Accept",
-            "Accept-Language",
-            "Content-Type",
-            "Authorization",
-            "X-Tenant-ID",
-            "X-Request-ID",
-            "X-Locale",
-            "Cache-Control",
-            "If-None-Match",
-        ],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # Cache headers (runs last on response, adds Cache-Control and ETag)
