@@ -150,6 +150,7 @@ def _setup_routers(app: FastAPI) -> None:
     from app.modules.export.router import router as export_router
     from app.modules.health.router import router as health_router
     from app.modules.leads.router import router as leads_router
+    from app.modules.platform_dashboard.router import router as platform_dashboard_router
     from app.modules.seo.router import router as seo_router
     from app.modules.telegram.router import router as telegram_router
     from app.modules.tenants.router import router as tenants_router
@@ -180,6 +181,11 @@ def _setup_routers(app: FastAPI) -> None:
         dashboard_router,
         prefix=f"{settings.api_prefix}/admin",
         tags=["Dashboard"],
+    )
+    app.include_router(
+        platform_dashboard_router,
+        prefix=f"{settings.api_prefix}/admin",
+        tags=["Platform Owner - Dashboard"],
     )
     app.include_router(
         audit_router,
