@@ -14,6 +14,7 @@ from app.modules.company.mappers import (
     map_employees_to_public_response,
 )
 from app.modules.company.schemas import (
+    ContentBlockForServiceResponse,
     EmployeeCreate,
     EmployeeListResponse,
     EmployeeLocaleCreate,
@@ -24,6 +25,13 @@ from app.modules.company.schemas import (
     EmployeeUpdate,
 )
 from app.modules.company.service import EmployeeService
+from app.modules.content.schemas import (
+    ContentBlockCreate,
+    ContentBlockReorderRequest,
+    ContentBlockResponse,
+    ContentBlockUpdate,
+)
+from app.modules.content.service import ContentBlockService
 
 router = APIRouter()
 
@@ -62,15 +70,33 @@ async def get_employee_public(
     tenant_id: PublicTenantId,
     db: AsyncSession = Depends(get_db),
 ) -> EmployeePublicResponse:
-    """Get a team member by slug."""
+    """Get a team member by slug with content blocks."""
     service = EmployeeService(db)
     emp = await service.get_by_slug(slug, locale.locale, tenant_id)
-    return map_employee_to_public_response(emp, locale.locale)
+    content_block_service = ContentBlockService(db)
+    content_blocks = await content_block_service.list_blocks(
+        "employee", emp.id, tenant_id, locale.locale
+    )
+    return map_employee_to_public_response(emp, locale.locale, content_blocks=content_blocks)
 
 
 # ============================================================================
 # Admin Routes - Employees
 # ============================================================================
+
+
+async def _employee_response_with_blocks(
+    employee, db: AsyncSession, tenant_id: UUID
+) -> EmployeeResponse:
+    """Build EmployeeResponse with content_blocks loaded (admin single-employee)."""
+    block_service = ContentBlockService(db)
+    blocks = await block_service.list_blocks("employee", employee.id, tenant_id, None)
+    response = EmployeeResponse.model_validate(employee)
+    return response.model_copy(
+        update={
+            "content_blocks": [ContentBlockForServiceResponse.model_validate(b) for b in blocks]
+        }
+    )
 
 
 @router.get(
@@ -136,10 +162,10 @@ async def get_employee_admin(
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> EmployeeResponse:
-    """Get employee by ID."""
+    """Get employee by ID with content blocks."""
     service = EmployeeService(db)
     emp = await service.get_by_id(employee_id, tenant_id)
-    return EmployeeResponse.model_validate(emp)
+    return await _employee_response_with_blocks(emp, db, tenant_id)
 
 
 @router.patch(
@@ -230,6 +256,120 @@ async def delete_employee_photo(
         await image_upload_service.delete_image(emp.photo_url)
         emp.photo_url = None
         await db.commit()
+
+
+# ============================================================================
+# Admin Routes - Employee Content Blocks
+# ============================================================================
+# Same pattern as cases/services: list, add, update, delete, reorder.
+
+
+@router.get(
+    "/admin/employees/{employee_id}/content-blocks",
+    response_model=list[ContentBlockResponse],
+    summary="List employee content blocks",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("employees:read"))],
+)
+async def list_employee_content_blocks(
+    employee_id: UUID,
+    locale: str | None = Query(default=None, description="Filter by locale"),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """List content blocks for an employee, optionally filtered by locale."""
+    employee_service = EmployeeService(db)
+    await employee_service.get_by_id(employee_id, tenant_id)
+    service = ContentBlockService(db)
+    blocks = await service.list_blocks("employee", employee_id, tenant_id, locale)
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
+
+
+@router.post(
+    "/admin/employees/{employee_id}/content-blocks",
+    response_model=ContentBlockResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add employee content block",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("employees:update"))],
+)
+async def add_employee_content_block(
+    employee_id: UUID,
+    data: ContentBlockCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Add a content block to an employee (text, image, video, gallery, link)."""
+    employee_service = EmployeeService(db)
+    await employee_service.get_by_id(employee_id, tenant_id)
+    service = ContentBlockService(db)
+    block = await service.add_block("employee", employee_id, tenant_id, data)
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.patch(
+    "/admin/employees/{employee_id}/content-blocks/{block_id}",
+    response_model=ContentBlockResponse,
+    summary="Update employee content block",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("employees:update"))],
+)
+async def update_employee_content_block(
+    employee_id: UUID,
+    block_id: UUID,
+    data: ContentBlockUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Update an employee content block."""
+    service = ContentBlockService(db)
+    block = await service.update_block(
+        block_id, "employee", employee_id, tenant_id, data
+    )
+    await db.commit()
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.delete(
+    "/admin/employees/{employee_id}/content-blocks/{block_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete employee content block",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("employees:update"))],
+)
+async def delete_employee_content_block(
+    employee_id: UUID,
+    block_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a content block from an employee."""
+    service = ContentBlockService(db)
+    await service.delete_block(block_id, "employee", employee_id, tenant_id)
+    await db.commit()
+
+
+@router.post(
+    "/admin/employees/{employee_id}/content-blocks/reorder",
+    response_model=list[ContentBlockResponse],
+    summary="Reorder employee content blocks",
+    tags=["Admin - Company"],
+    dependencies=[Depends(PermissionChecker("employees:update"))],
+)
+async def reorder_employee_content_blocks(
+    employee_id: UUID,
+    data: ContentBlockReorderRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """Reorder content blocks for an employee in a specific locale."""
+    service = ContentBlockService(db)
+    blocks = await service.reorder_blocks(
+        "employee", employee_id, tenant_id, data.locale, data.block_ids
+    )
+    await db.commit()
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
 
 
 # ============================================================================

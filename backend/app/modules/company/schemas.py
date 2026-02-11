@@ -386,6 +386,7 @@ class EmployeeResponse(EmployeeBase):
     created_at: datetime
     updated_at: datetime
     locales: list[EmployeeLocaleResponse] = []
+    content_blocks: list[ContentBlockForServiceResponse] = Field(default_factory=list)
 
 
 class EmployeePublicResponse(BaseModel):
@@ -405,6 +406,10 @@ class EmployeePublicResponse(BaseModel):
     phone: str | None = None
     linkedin_url: str | None = None
     telegram_url: str | None = None
+    content_blocks: list[ContentBlockForServiceResponse] = Field(
+        default_factory=list,
+        description="Content blocks for team member page (text, image, video, gallery, link)",
+    )
 
 
 class EmployeeListResponse(BaseModel):

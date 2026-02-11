@@ -219,12 +219,17 @@ def map_services_to_public_response(
 # ============================================================================
 
 
-def map_employee_to_public_response(employee: Employee, locale: str) -> EmployeePublicResponse:
+def map_employee_to_public_response(
+    employee: Employee,
+    locale: str,
+    content_blocks: list[ContentBlock] | None = None,
+) -> EmployeePublicResponse:
     """Map an Employee model to EmployeePublicResponse.
     
     Args:
         employee: Employee ORM model with locales loaded
         locale: Locale code to filter by
+        content_blocks: Optional list of content blocks to include
         
     Returns:
         EmployeePublicResponse with data for the specified locale
@@ -236,6 +241,24 @@ def map_employee_to_public_response(employee: Employee, locale: str) -> Employee
     
     if not locale_data:
         raise LocaleDataMissingError("Employee", employee.id, locale)
+    
+    blocks_response = [
+        ContentBlockForServiceResponse(
+            id=b.id,
+            locale=b.locale,
+            block_type=b.block_type,
+            sort_order=b.sort_order,
+            title=b.title,
+            content=b.content,
+            media_url=b.media_url,
+            thumbnail_url=b.thumbnail_url,
+            link_url=b.link_url,
+            link_label=b.link_label,
+            device_type=b.device_type,
+            block_metadata=b.block_metadata,
+        )
+        for b in content_blocks
+    ] if content_blocks else []
     
     return EmployeePublicResponse(
         id=employee.id,
@@ -250,6 +273,7 @@ def map_employee_to_public_response(employee: Employee, locale: str) -> Employee
         phone=employee.phone,
         linkedin_url=employee.linkedin_url,
         telegram_url=employee.telegram_url,
+        content_blocks=blocks_response,
     )
 
 
