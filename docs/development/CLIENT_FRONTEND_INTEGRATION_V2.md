@@ -4,7 +4,84 @@ This document describes how the **client-facing frontend** should integrate with
 
 ---
 
-## 1. Authentication Flow
+## Для публичного сайта (отдельный фронт: лендинг/сайт, не админка)
+
+Если у вас **отдельный сервер с публичным сайтом** (без логина, без админки), нужны только следующие вещи.
+
+### 1. Все запросы к API — только к публичным эндпоинтам
+
+- Базовый путь: `GET /api/v1/public/...`
+- **Авторизация не нужна** — не передавайте `Authorization` для публичных запросов.
+
+### 2. Обязательный параметр: `tenant_id`
+
+В multi-tenant режиме у **каждого** публичного запроса должен быть query-параметр:
+
+- `tenant_id` — UUID тенанта (сайта/организации), чьи данные запрашиваете.
+
+Примеры:
+
+```
+GET /api/v1/public/articles?tenant_id=<uuid>&locale=ru
+GET /api/v1/public/cases?tenant_id=<uuid>&locale=ru
+GET /api/v1/public/employees?tenant_id=<uuid>&locale=ru
+GET /api/v1/public/services?tenant_id=<uuid>&locale=ru
+GET /api/v1/public/faq?tenant_id=<uuid>&locale=ru
+GET /api/v1/public/reviews?tenant_id=<uuid>
+GET /api/v1/public/sitemap.xml?tenant_id=<uuid>&locale=ru
+GET /api/v1/public/robots.txt?tenant_id=<uuid>
+GET /api/v1/public/seo/meta?tenant_id=<uuid>&path=/about&locale=ru
+POST /api/v1/public/inquiries?tenant_id=<uuid>
+```
+
+Откуда брать `tenant_id`: из конфига фронта для этого сайта (один сайт = один тенант) или из домена/окружения при сборке.
+
+### 3. Локаль
+
+Где нужна локаль — передавайте `locale` в query: `locale=ru` или `locale=en`.
+
+### 4. Ошибка 404: фича отключена у тенанта
+
+Если у тенанта выключен модуль (например, блог), бэкенд вернёт **404** с телом в формате RFC 7807:
+
+```json
+{
+  "type": "https://api.cms.local/errors/feature_not_available",
+  "title": "Feature Not Available",
+  "status": 404,
+  "detail": "The requested resource is not available.",
+  "feature": "blog_module",
+  "_hint": "This feature is disabled for the tenant. Enable it via the admin panel."
+}
+```
+
+**Что делать на публичном сайте:**
+
+1. По ответу с `status === 404` смотреть в тело: есть ли поле `feature` и тип ошибки `feature_not_available`.
+2. Если **да** (`feature_not_available`) — показать страницу «Раздел временно недоступен» или редирект на главную, **не** показывать контакты админа посетителям.
+3. Если **нет** (обычный 404, например `not_found`) — показать стандартную страницу 404.
+
+Так поисковики и пользователи видят обычный 404, а не «forbidden».
+
+### 5. Несуществующий или неактивный тенант
+
+Если передан несуществующий или неактивный `tenant_id`, API может вернуть **400** или **404**. Показывать нейтральную страницу ошибки, не светить внутренние детали.
+
+### 6. Итого для публичного фронта
+
+| Что | Детали |
+|-----|--------|
+| Эндпоинты | Только `GET/POST /api/v1/public/*` |
+| Авторизация | Не нужна |
+| Параметры | `tenant_id` — обязательно; `locale` — где нужна локаль |
+| 404 с `feature` | Модуль выключен → «Раздел недоступен» или 404-страница |
+| 404 без `feature` | Обычный 404 |
+
+Всё остальное в этом документе (логин, токены, сайдбар, каталог фич, 403 для админки, смена пароля и т.д.) относится к **админскому фронту**, публичному сайту не нужно.
+
+---
+
+## 1. Authentication Flow (админский фронт)
 
 ### Login
 

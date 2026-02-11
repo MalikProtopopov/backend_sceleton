@@ -443,7 +443,7 @@ async def create_user(
     "/users/{user_id}",
     response_model=UserResponse,
     summary="Get user",
-    description="Get user by ID. Platform owner can specify tenant_id to get users from any organization.",
+    description="Get user by ID. Platform owner / superuser can view users from any organization (auto-resolved if tenant_id not specified).",
     dependencies=[Depends(PermissionChecker("users:read"))],
 )
 async def get_user(
@@ -453,11 +453,30 @@ async def get_user(
     current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    """Get user by ID."""
+    """Get user by ID.
+
+    For superusers / platform owners: if tenant_id is not specified,
+    first tries the current tenant, then falls back to a global lookup
+    so that cross-tenant user profiles are always reachable.
+    """
     effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
 
     service = UserService(db)
-    found_user = await service.get_by_id(user_id, effective_tenant_id)
+
+    try:
+        found_user = await service.get_by_id(user_id, effective_tenant_id)
+    except Exception:
+        # If user not found in the effective tenant AND the caller is
+        # a superuser / platform_owner without an explicit tenant_id,
+        # try a global (cross-tenant) lookup.
+        is_privileged = user.is_superuser or (
+            user.role and user.role.name == "platform_owner"
+        )
+        if is_privileged and target_tenant_id is None:
+            found_user = await service.get_by_id_global(user_id)
+        else:
+            raise
+
     return UserResponse.model_validate(found_user)
 
 

@@ -315,6 +315,26 @@ class UserService(BaseService[AdminUser]):
         """Get user by ID within tenant."""
         return await self._get_by_id(user_id, tenant_id)
 
+    async def get_by_id_global(self, user_id: UUID) -> AdminUser:
+        """Get user by ID without tenant restriction.
+
+        Used by superuser / platform_owner when the user's tenant
+        is unknown (e.g. navigating from the global user list).
+        """
+        stmt = (
+            select(AdminUser)
+            .where(AdminUser.id == user_id)
+            .where(AdminUser.deleted_at.is_(None))
+            .options(*self._get_default_options())
+        )
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise NotFoundError("AdminUser", user_id)
+
+        return user
+
     async def list_users(
         self,
         tenant_id: UUID,
