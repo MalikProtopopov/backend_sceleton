@@ -7,7 +7,7 @@
 #   make prod-up       Start production environment
 # =============================================================================
 
-.PHONY: help install dev run test lint format migrate migration rollback \
+.PHONY: help install dev run test test-unit test-integration test-security test-e2e test-cov lint format migrate migration rollback \
         dev-up dev-down dev-logs dev-build dev-restart dev-shell dev-status \
         prod-up prod-down prod-logs prod-build prod-restart prod-status \
         ssl-init ssl-renew db-backup db-restore clean seed init-admin init-admin-prod deploy
@@ -89,6 +89,18 @@ run:
 
 test:
 	pytest -v
+
+test-unit:
+	pytest tests/unit -v -n auto
+
+test-integration:
+	pytest tests/integration -v --timeout=30
+
+test-security:
+	pytest tests/security -v --timeout=30
+
+test-e2e:
+	pytest tests/e2e -v --timeout=60
 
 test-cov:
 	pytest --cov=app --cov-report=html --cov-report=term

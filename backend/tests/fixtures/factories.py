@@ -6,11 +6,11 @@ from uuid import uuid4
 import factory
 from faker import Faker
 
-from app.modules.auth.models import AdminUser, Role
+from app.modules.auth.models import AdminUser, AuditLog, Role
 from app.modules.company.models import Employee, Service
 from app.modules.content.models import Article, ArticleLocale, FAQ, Review, Topic
 from app.modules.leads.models import Inquiry
-from app.modules.tenants.models import Tenant
+from app.modules.tenants.models import FeatureFlag, Tenant
 
 fake = Faker("ru_RU")
 
@@ -208,4 +208,39 @@ class ReviewFactory(factory.Factory):
     case_id = None
     created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+
+class FeatureFlagFactory(factory.Factory):
+    """Factory for FeatureFlag model."""
+
+    class Meta:
+        model = FeatureFlag
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    feature_name = factory.Faker(
+        "random_element",
+        elements=["blog_module", "cases_module", "reviews_module", "faq_module", "team_module"],
+    )
+    enabled = True
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+
+
+class AuditLogFactory(factory.Factory):
+    """Factory for AuditLog model."""
+
+    class Meta:
+        model = AuditLog
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    user_id = factory.LazyFunction(uuid4)
+    resource_type = factory.Faker("random_element", elements=["user", "tenant", "role", "auth"])
+    resource_id = factory.LazyFunction(uuid4)
+    action = factory.Faker("random_element", elements=["create", "update", "delete", "login"])
+    changes = None
+    ip_address = factory.LazyFunction(lambda: fake.ipv4())
+    user_agent = factory.LazyFunction(lambda: fake.user_agent())
+    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
 

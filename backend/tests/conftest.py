@@ -20,6 +20,11 @@ from app.main import create_app
 from app.modules.auth.models import AdminUser, Role
 from app.modules.tenants.models import Tenant
 
+# Register multi-tenant fixtures so they're available project-wide
+pytest_plugins = [
+    "tests.fixtures.multi_tenant",
+]
+
 
 # ============================================================================
 # Test Settings
