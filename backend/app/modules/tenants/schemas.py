@@ -256,6 +256,11 @@ class TenantPublicResponse(BaseModel):
     slug: str
     logo_url: str | None = None
     primary_color: str | None = None
+    site_url: str | None = Field(
+        default=None,
+        description="Frontend base URL for the tenant site (e.g. https://mediann.dev). "
+        "Used by client frontend for sitemap proxying, canonical URLs, etc.",
+    )
 
 
 class TenantAnalyticsPublic(BaseModel):

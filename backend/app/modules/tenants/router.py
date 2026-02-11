@@ -72,7 +72,7 @@ def check_tenant_access(
     "/public/tenants/{tenant_id}",
     response_model=TenantPublicResponse,
     summary="Get tenant info (public)",
-    description="Get public tenant information (name, logo, branding) for frontend.",
+    description="Get public tenant information (name, logo, branding, site URL) for frontend.",
     tags=["Public"],
 )
 async def get_tenant_public(
@@ -81,11 +81,16 @@ async def get_tenant_public(
 ) -> TenantPublicResponse:
     """Get public tenant information.
     
-    Returns only non-sensitive data: name, slug, logo_url, primary_color.
+    Returns only non-sensitive data: name, slug, logo_url, primary_color, site_url.
     Does not require authentication.
     """
     service = TenantService(db)
     tenant = await service.get_by_id(tenant_id)
+    
+    # Extract site_url from tenant settings (if available)
+    site_url = None
+    if tenant.settings and tenant.settings.site_url:
+        site_url = tenant.settings.site_url
     
     return TenantPublicResponse(
         id=tenant.id,
@@ -93,6 +98,7 @@ async def get_tenant_public(
         slug=tenant.slug,
         logo_url=tenant.logo_url,
         primary_color=tenant.primary_color,
+        site_url=site_url,
     )
 
 
