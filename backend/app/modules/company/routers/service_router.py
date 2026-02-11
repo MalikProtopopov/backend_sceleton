@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.dependencies import Filtering, Locale, Pagination, PublicTenantId
 from app.core.image_upload import image_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_services, require_services_public
 from app.modules.company.mappers import (
     map_service_to_public_response,
     map_services_to_public_response,
@@ -51,6 +52,7 @@ router = APIRouter()
     response_model=list[ServicePublicResponse],
     summary="List published services",
     tags=["Public - Company"],
+    dependencies=[require_services_public],
 )
 async def list_services_public(
     locale: Locale,
@@ -68,6 +70,7 @@ async def list_services_public(
     response_model=ServicePublicResponse,
     summary="Get service by slug",
     tags=["Public - Company"],
+    dependencies=[require_services_public],
 )
 async def get_service_public(
     slug: str,
@@ -127,7 +130,7 @@ async def _service_response_with_blocks(
     response_model=ServiceListResponse,
     summary="List services (admin)",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:read"))],
 )
 async def list_services_admin(
     pagination: Pagination,
@@ -158,7 +161,7 @@ async def list_services_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:create"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:create"))],
 )
 async def create_service(
     data: ServiceCreate,
@@ -176,7 +179,7 @@ async def create_service(
     response_model=ServiceResponse,
     summary="Get service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:read"))],
 )
 async def get_service_admin(
     service_id: UUID,
@@ -194,7 +197,7 @@ async def get_service_admin(
     response_model=ServiceResponse,
     summary="Update service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def update_service(
     service_id: UUID,
@@ -214,7 +217,7 @@ async def update_service(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:delete"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:delete"))],
 )
 async def delete_service(
     service_id: UUID,
@@ -231,7 +234,7 @@ async def delete_service(
     response_model=ServiceResponse,
     summary="Upload service image",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def upload_service_image(
     service_id: UUID,
@@ -263,7 +266,7 @@ async def upload_service_image(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete service image",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def delete_service_image(
     service_id: UUID,
@@ -291,7 +294,7 @@ async def delete_service_image(
     status_code=status.HTTP_201_CREATED,
     summary="Add price to service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def create_service_price(
     service_id: UUID,
@@ -310,7 +313,7 @@ async def create_service_price(
     response_model=ServicePriceResponse,
     summary="Update service price",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def update_service_price(
     service_id: UUID,
@@ -330,7 +333,7 @@ async def update_service_price(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete service price",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def delete_service_price(
     service_id: UUID,
@@ -354,7 +357,7 @@ async def delete_service_price(
     status_code=status.HTTP_201_CREATED,
     summary="Add tag to service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def create_service_tag(
     service_id: UUID,
@@ -373,7 +376,7 @@ async def create_service_tag(
     response_model=ServiceTagResponse,
     summary="Update service tag",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def update_service_tag(
     service_id: UUID,
@@ -393,7 +396,7 @@ async def update_service_tag(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete service tag",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def delete_service_tag(
     service_id: UUID,
@@ -417,7 +420,7 @@ async def delete_service_tag(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to service",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def create_service_locale(
     service_id: UUID,
@@ -436,7 +439,7 @@ async def create_service_locale(
     response_model=ServiceLocaleResponse,
     summary="Update service locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def update_service_locale(
     service_id: UUID,
@@ -456,7 +459,7 @@ async def update_service_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete service locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def delete_service_locale(
     service_id: UUID,
@@ -479,7 +482,7 @@ async def delete_service_locale(
     response_model=list[ContentBlockResponse],
     summary="List service content blocks",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:read"))],
 )
 async def list_service_content_blocks(
     service_id: UUID,
@@ -503,7 +506,7 @@ async def list_service_content_blocks(
     status_code=status.HTTP_201_CREATED,
     summary="Add service content block",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def add_service_content_block(
     service_id: UUID,
@@ -527,7 +530,7 @@ async def add_service_content_block(
     response_model=ContentBlockResponse,
     summary="Update service content block",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def update_service_content_block(
     service_id: UUID,
@@ -548,7 +551,7 @@ async def update_service_content_block(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete service content block",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def delete_service_content_block(
     service_id: UUID,
@@ -567,7 +570,7 @@ async def delete_service_content_block(
     response_model=list[ContentBlockResponse],
     summary="Reorder service content blocks",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_services, Depends(PermissionChecker("services:update"))],
 )
 async def reorder_service_content_blocks(
     service_id: UUID,

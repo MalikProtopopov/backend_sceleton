@@ -87,14 +87,15 @@ class InvalidTokenError(AppException):
 
 
 class PermissionDeniedError(AppException):
-    """User lacks required permission."""
+    """User lacks required permission (user-level restriction)."""
 
     def __init__(
         self,
-        message: str = "Permission denied",
+        message: str = "You do not have sufficient permissions for this action. "
+        "Contact your organization administrator to update your role.",
         required_permission: str | None = None,
     ) -> None:
-        detail = {}
+        detail: dict[str, Any] = {"restriction_level": "user"}
         if required_permission:
             detail["required_permission"] = required_permission
 
@@ -107,14 +108,15 @@ class PermissionDeniedError(AppException):
 
 
 class InsufficientRoleError(AppException):
-    """User role is insufficient."""
+    """User role is insufficient (user-level restriction)."""
 
     def __init__(
         self,
-        message: str = "Insufficient role privileges",
+        message: str = "You do not have the required role for this action. "
+        "Contact your organization administrator.",
         required_role: str | None = None,
     ) -> None:
-        detail = {}
+        detail: dict[str, Any] = {"restriction_level": "user"}
         if required_role:
             detail["required_role"] = required_role
 
@@ -126,15 +128,55 @@ class InsufficientRoleError(AppException):
         )
 
 
+class TenantInactiveError(AppException):
+    """Tenant/organization is currently suspended."""
+
+    def __init__(
+        self,
+        message: str = "Organization is currently suspended. Contact platform administrator.",
+    ) -> None:
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code="tenant_inactive",
+            message=message,
+        )
+
+
 class FeatureDisabledError(AppException):
-    """Feature is disabled for this tenant."""
+    """Feature is disabled for this tenant (organization-level restriction)."""
 
     def __init__(self, feature_name: str) -> None:
         super().__init__(
             status_code=status.HTTP_403_FORBIDDEN,
             error_code="feature_disabled",
-            message=f"Feature '{feature_name}' is not enabled for this tenant",
-            detail={"feature": feature_name},
+            message="This feature is not enabled for your organization. "
+            "Contact your platform administrator to enable it.",
+            detail={
+                "feature": feature_name,
+                "contact_admin": True,
+                "restriction_level": "organization",
+            },
+        )
+
+
+class FeatureNotAvailableError(AppException):
+    """Feature is disabled -- returns 404 for public API.
+
+    Appears as a standard 404 to crawlers and end users, but includes
+    a developer hint in the response body so devs can distinguish
+    'feature disabled' from 'resource truly not found'.
+    """
+
+    def __init__(self, feature_name: str) -> None:
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error_code="feature_not_available",
+            message="The requested resource is not available.",
+            detail={
+                "feature": feature_name,
+                "_hint": "This feature is disabled for the tenant. "
+                "Enable it via the admin panel.",
+            },
         )
 
 

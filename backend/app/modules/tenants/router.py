@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -143,18 +143,25 @@ async def get_tenant_analytics_public(
 async def list_tenants(
     pagination: Pagination,
     is_active: bool | None = None,
+    search: str | None = Query(default=None, description="Search tenants by name"),
+    sort_by: str = Query(default="created_at", description="Sort by: name, created_at"),
+    sort_order: str = Query(default="desc", pattern="^(asc|desc)$", description="Sort order: asc or desc"),
     user: AdminUser = Depends(require_platform_owner),
     db: AsyncSession = Depends(get_db),
 ) -> TenantListResponse:
     """List all tenants with pagination.
     
     Only platform owners and superusers can access this endpoint.
+    Supports search by name, filtering by is_active, and sorting.
     """
     service = TenantService(db)
     tenants, total = await service.list_tenants(
         page=pagination.page,
         page_size=pagination.page_size,
         is_active=is_active,
+        search=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
     return TenantListResponse(
@@ -181,7 +188,7 @@ async def create_tenant(
     
     Only platform owners and superusers can create new tenants.
     """
-    service = TenantService(db)
+    service = TenantService(db, actor_id=user.id)
     tenant = await service.create(data)
     return TenantResponse.model_validate(tenant)
 
@@ -229,7 +236,7 @@ async def update_tenant(
     """
     check_tenant_access(user, tenant_id, current_tenant_id)
     
-    service = TenantService(db)
+    service = TenantService(db, actor_id=user.id)
     tenant = await service.update(tenant_id, data)
     return TenantResponse.model_validate(tenant)
 
@@ -249,7 +256,7 @@ async def delete_tenant(
     
     Only platform owners and superusers can delete tenants.
     """
-    service = TenantService(db)
+    service = TenantService(db, actor_id=user.id)
     await service.soft_delete(tenant_id)
 
 
@@ -421,7 +428,7 @@ async def update_feature_flag(
         tenant_service = TenantService(db)
         await tenant_service.get_by_id(target_tenant_id)
     
-    service = FeatureFlagService(db)
+    service = FeatureFlagService(db, actor_id=user.id)
     flag = await service.update_flag(effective_tenant_id, feature_name, data)
     return FeatureFlagResponse.model_validate(flag)
 

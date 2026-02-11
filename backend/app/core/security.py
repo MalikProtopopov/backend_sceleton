@@ -20,6 +20,7 @@ from app.core.exceptions import (
     InsufficientRoleError,
     InvalidTokenError,
     PermissionDeniedError,
+    TenantInactiveError,
     TokenExpiredError,
 )
 from app.core.logging import get_logger
@@ -132,6 +133,28 @@ def decode_token(token: str) -> dict[str, Any]:
         raise InvalidTokenError()
 
 
+def create_password_reset_token(user_id: str, tenant_id: str, email: str) -> str:
+    """Create a short-lived JWT token for password reset (1 hour)."""
+    data = {
+        "sub": user_id,
+        "tenant_id": tenant_id,
+        "email": email,
+        "type": "password_reset",
+        "exp": datetime.now(UTC) + timedelta(hours=1),
+        "iat": datetime.now(UTC),
+        "jti": str(uuid4()),
+    }
+    return jwt.encode(data, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_password_reset_token(token: str) -> dict[str, Any]:
+    """Decode and validate a password reset token."""
+    payload = decode_token(token)
+    if payload.get("type") != "password_reset":
+        raise InvalidTokenError("Invalid token type")
+    return payload
+
+
 # ============================================================================
 # Token Payload Schemas
 # ============================================================================
@@ -191,6 +214,42 @@ async def get_current_token(
     return TokenPayload(payload)
 
 
+async def _check_tenant_active(tenant_id: UUID, db: AsyncSession) -> None:
+    """Check if tenant is active using Redis cache with DB fallback.
+    
+    Raises TenantInactiveError if tenant is suspended.
+    Uses Redis cache (30s TTL) to avoid DB hit on every request.
+    """
+    from app.core.redis import get_tenant_status_cache
+    from app.modules.tenants.models import Tenant
+
+    tenant_id_str = str(tenant_id)
+    
+    # Try Redis cache first
+    cache = await get_tenant_status_cache()
+    if cache:
+        cached_status = await cache.is_tenant_active(tenant_id_str)
+        if cached_status is not None:
+            if not cached_status:
+                raise TenantInactiveError()
+            return
+    
+    # Cache miss -- query DB
+    stmt = select(Tenant.is_active).where(
+        Tenant.id == tenant_id,
+        Tenant.deleted_at.is_(None),
+    )
+    result = await db.execute(stmt)
+    is_active = result.scalar_one_or_none()
+    
+    # Cache the result
+    if cache and is_active is not None:
+        await cache.set_status(tenant_id_str, is_active)
+    
+    if is_active is None or not is_active:
+        raise TenantInactiveError()
+
+
 async def get_current_user(
     token: TokenPayload = Depends(get_current_token),
     db: AsyncSession = Depends(get_db),
@@ -198,6 +257,7 @@ async def get_current_user(
     """Dependency to get current authenticated user.
 
     Loads user from database and validates they're active.
+    Also checks that tenant is active (with superuser bypass).
     """
     from app.modules.auth.models import AdminUser
 
@@ -213,6 +273,13 @@ async def get_current_user(
 
     if not user:
         raise AuthenticationError("User not found or inactive")
+
+    # Check tenant is active (superusers and platform_owners bypass)
+    is_platform_privileged = user.is_superuser or (
+        user.role and user.role.name == "platform_owner"
+    )
+    if not is_platform_privileged:
+        await _check_tenant_active(token.tenant_id, db)
 
     return user
 

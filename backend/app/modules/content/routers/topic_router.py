@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Locale, PublicTenantId
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_blog, require_blog_public
 from app.modules.content.mappers import (
     map_topic_to_detail_public_response,
     map_topics_with_counts_to_public_response,
@@ -37,6 +38,7 @@ router = APIRouter()
     response_model=list[TopicWithArticlesCountPublicResponse],
     summary="List topics with article count",
     tags=["Public - Content"],
+    dependencies=[require_blog_public],
 )
 async def list_topics_public(
     locale: Locale,
@@ -60,6 +62,7 @@ async def list_topics_public(
     response_model=TopicDetailPublicResponse,
     summary="Get topic by slug",
     tags=["Public - Content"],
+    dependencies=[require_blog_public],
 )
 async def get_topic_public(
     slug: str,
@@ -84,7 +87,7 @@ async def get_topic_public(
     response_model=list[TopicResponse],
     summary="List topics (admin)",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:read"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:read"))],
 )
 async def list_topics_admin(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -102,7 +105,7 @@ async def list_topics_admin(
     status_code=201,
     summary="Create topic",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:create"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:create"))],
 )
 async def create_topic(
     data: TopicCreate,
@@ -120,7 +123,7 @@ async def create_topic(
     response_model=TopicResponse,
     summary="Update topic",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def update_topic(
     topic_id: UUID,
@@ -139,7 +142,7 @@ async def update_topic(
     status_code=204,
     summary="Delete topic",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:delete"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:delete"))],
 )
 async def delete_topic(
     topic_id: UUID,
@@ -162,7 +165,7 @@ async def delete_topic(
     status_code=201,
     summary="Add locale to topic",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def create_topic_locale(
     topic_id: UUID,
@@ -181,7 +184,7 @@ async def create_topic_locale(
     response_model=TopicLocaleResponse,
     summary="Update topic locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def update_topic_locale(
     topic_id: UUID,
@@ -201,7 +204,7 @@ async def update_topic_locale(
     status_code=204,
     summary="Delete topic locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def delete_topic_locale(
     topic_id: UUID,

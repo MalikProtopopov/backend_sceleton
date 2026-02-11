@@ -11,6 +11,88 @@ logger = get_logger(__name__)
 class EmailService:
     """Service for sending email notifications."""
 
+    async def send_welcome_email(
+        self,
+        to_email: str,
+        first_name: str,
+        tenant_name: str,
+        admin_url: str | None = None,
+    ) -> bool:
+        """Send welcome email to newly created user.
+
+        The email does NOT contain the password. The admin communicates
+        the password to the user via another channel (phone, in person, etc.).
+
+        Returns True if sent successfully.
+        """
+        platform_name = settings.app_name
+        login_url = admin_url or f"{platform_name} Admin Panel"
+
+        if settings.email_provider == "console":
+            logger.info(
+                "welcome_email",
+                to=to_email,
+                first_name=first_name,
+                tenant_name=tenant_name,
+            )
+            return True
+
+        subject = f"You've been invited to {tenant_name}"
+        body = (
+            f"Hello {first_name},\n\n"
+            f"You have been granted access to {tenant_name} on {platform_name}.\n\n"
+            f"Login URL: {login_url}\n"
+            f"Email: {to_email}\n\n"
+            f"Your password has been set by your administrator.\n"
+            f"Please change it after your first login.\n\n"
+            f"If you did not expect this email, please ignore it."
+        )
+
+        if settings.email_provider == "sendgrid":
+            return await self._send_via_sendgrid(to_email, subject, body)
+        elif settings.email_provider == "mailgun":
+            return await self._send_via_mailgun(to_email, subject, body)
+
+        return False
+
+    async def send_password_reset_email(
+        self,
+        to_email: str,
+        first_name: str,
+        reset_token: str,
+        reset_url: str | None = None,
+    ) -> bool:
+        """Send password reset email with token.
+
+        Returns True if sent successfully.
+        """
+        if settings.email_provider == "console":
+            logger.info(
+                "password_reset_email",
+                to=to_email,
+                first_name=first_name,
+                token=reset_token[:20] + "...",
+            )
+            return True
+
+        link = reset_url or f"Reset token: {reset_token}"
+
+        subject = "Password Reset Request"
+        body = (
+            f"Hello {first_name},\n\n"
+            f"You have requested a password reset.\n\n"
+            f"{link}\n\n"
+            f"This link expires in 1 hour.\n\n"
+            f"If you did not request this, please ignore this email.\n"
+        )
+
+        if settings.email_provider == "sendgrid":
+            return await self._send_via_sendgrid(to_email, subject, body)
+        elif settings.email_provider == "mailgun":
+            return await self._send_via_mailgun(to_email, subject, body)
+
+        return False
+
     async def send_inquiry_notification(
         self,
         to_email: str,

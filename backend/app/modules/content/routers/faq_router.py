@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Filtering, Locale, Pagination, PublicTenantId
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_faq, require_faq_public
 from app.modules.content.mappers import map_faqs_to_public_response
 from app.modules.content.schemas import (
     FAQCreate,
@@ -34,6 +35,7 @@ router = APIRouter()
     response_model=list[FAQPublicResponse],
     summary="List FAQ",
     tags=["Public - Content"],
+    dependencies=[require_faq_public],
 )
 async def list_faq_public(
     locale: Locale,
@@ -57,7 +59,7 @@ async def list_faq_public(
     response_model=FAQListResponse,
     summary="List FAQ (admin)",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:read"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:read"))],
 )
 async def list_faq_admin(
     pagination: Pagination,
@@ -90,7 +92,7 @@ async def list_faq_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create FAQ",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:create"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:create"))],
 )
 async def create_faq(
     data: FAQCreate,
@@ -108,7 +110,7 @@ async def create_faq(
     response_model=FAQResponse,
     summary="Get FAQ",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:read"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:read"))],
 )
 async def get_faq_admin(
     faq_id: UUID,
@@ -126,7 +128,7 @@ async def get_faq_admin(
     response_model=FAQResponse,
     summary="Update FAQ",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:update"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:update"))],
 )
 async def update_faq(
     faq_id: UUID,
@@ -145,7 +147,7 @@ async def update_faq(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete FAQ",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:delete"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:delete"))],
 )
 async def delete_faq(
     faq_id: UUID,
@@ -168,7 +170,7 @@ async def delete_faq(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to FAQ",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:update"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:update"))],
 )
 async def create_faq_locale(
     faq_id: UUID,
@@ -187,7 +189,7 @@ async def create_faq_locale(
     response_model=FAQLocaleResponse,
     summary="Update FAQ locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:update"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:update"))],
 )
 async def update_faq_locale(
     faq_id: UUID,
@@ -207,7 +209,7 @@ async def update_faq_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete FAQ locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("faq:update"))],
+    dependencies=[require_faq, Depends(PermissionChecker("faq:update"))],
 )
 async def delete_faq_locale(
     faq_id: UUID,

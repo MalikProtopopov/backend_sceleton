@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
 from app.core.image_upload import image_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_reviews, require_reviews_public
 from app.modules.content.mappers import map_case_to_minimal_response
 from app.modules.content.models import Case, CaseLocale
 from app.modules.content.schemas import (
@@ -38,6 +39,7 @@ router = APIRouter()
     response_model=ReviewPublicListResponse,
     summary="List approved reviews",
     tags=["Public - Content"],
+    dependencies=[require_reviews_public],
 )
 async def list_reviews_public(
     pagination: Pagination,
@@ -94,7 +96,7 @@ async def list_reviews_public(
     response_model=ReviewListResponse,
     summary="List reviews (admin)",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:read"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:read"))],
 )
 async def list_reviews_admin(
     pagination: Pagination,
@@ -174,7 +176,7 @@ async def list_reviews_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create review",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:create"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:create"))],
 )
 async def create_review(
     data: ReviewCreate,
@@ -192,7 +194,7 @@ async def create_review(
     response_model=ReviewResponse,
     summary="Get review",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:read"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:read"))],
 )
 async def get_review_admin(
     review_id: UUID,
@@ -210,7 +212,7 @@ async def get_review_admin(
     response_model=ReviewResponse,
     summary="Update review",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def update_review(
     review_id: UUID,
@@ -229,7 +231,7 @@ async def update_review(
     response_model=ReviewResponse,
     summary="Approve review",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def approve_review(
     review_id: UUID,
@@ -247,7 +249,7 @@ async def approve_review(
     response_model=ReviewResponse,
     summary="Reject review",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def reject_review(
     review_id: UUID,
@@ -265,7 +267,7 @@ async def reject_review(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete review",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:delete"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:delete"))],
 )
 async def delete_review(
     review_id: UUID,
@@ -282,7 +284,7 @@ async def delete_review(
     response_model=ReviewResponse,
     summary="Upload review author photo",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def upload_review_author_photo(
     review_id: UUID,
@@ -314,7 +316,7 @@ async def upload_review_author_photo(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete review author photo",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def delete_review_author_photo(
     review_id: UUID,
@@ -342,7 +344,7 @@ async def delete_review_author_photo(
     status_code=status.HTTP_201_CREATED,
     summary="Add review author contact",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def add_review_author_contact(
     review_id: UUID,
@@ -361,7 +363,7 @@ async def add_review_author_contact(
     response_model=ReviewAuthorContactResponse,
     summary="Update review author contact",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def update_review_author_contact(
     review_id: UUID,
@@ -381,7 +383,7 @@ async def update_review_author_contact(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete review author contact",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("reviews:update"))],
+    dependencies=[require_reviews, Depends(PermissionChecker("reviews:update"))],
 )
 async def delete_review_author_contact(
     review_id: UUID,

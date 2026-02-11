@@ -93,6 +93,21 @@ test:
 test-cov:
 	pytest --cov=app --cov-report=html --cov-report=term
 
+test-unit:
+	pytest tests/unit -v -m unit -n auto --timeout=10
+
+test-api:
+	pytest tests/api -v -m "not slow" --timeout=30
+
+test-security:
+	pytest tests/security -v -m security --timeout=60
+
+test-e2e:
+	pytest tests/e2e -v -m e2e --timeout=120
+
+test-all:
+	pytest tests/ -v --timeout=60 --cov=app --cov-report=term
+
 lint:
 	ruff check .
 	mypy app/

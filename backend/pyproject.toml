@@ -40,6 +40,8 @@ dev = [
     "ruff>=0.1.14",
     "mypy>=1.8.0",
     "pre-commit>=3.6.0",
+    "freezegun>=1.2.0",
+    "respx>=0.22.0",
 ]
 
 [build-system]
@@ -89,6 +91,7 @@ markers = [
     "api: API endpoint tests",
     "e2e: end-to-end tests",
     "slow: slow tests (>1s)",
+    "security: security tests (tenant isolation, info leakage)",
 ]
 timeout = 30
 

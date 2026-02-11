@@ -6,11 +6,21 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.exceptions import FeatureDisabledError
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.modules.content.schemas import BulkOperationRequest, BulkOperationResponse
 from app.modules.content.service import BulkOperationService
+from app.modules.tenants.service import FeatureFlagService
 
 router = APIRouter()
+
+# Map resource types to feature flag names
+_RESOURCE_FEATURE_MAP: dict[str, str] = {
+    "articles": "blog_module",
+    "cases": "cases_module",
+    "faq": "faq_module",
+    "reviews": "reviews_module",
+}
 
 
 # ============================================================================
@@ -40,6 +50,13 @@ async def bulk_operation(
 
     Items are processed synchronously for < 100 items.
     """
+    # Check feature flag for the resource type
+    feature_name = _RESOURCE_FEATURE_MAP.get(data.resource_type)
+    if feature_name:
+        ff_service = FeatureFlagService(db)
+        if not await ff_service.is_enabled(tenant_id, feature_name):
+            raise FeatureDisabledError(feature_name)
+
     service = BulkOperationService(db)
     summary = await service.execute(tenant_id, data)
 

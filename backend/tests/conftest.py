@@ -1,5 +1,9 @@
 """Pytest configuration and fixtures."""
 
+pytest_plugins = [
+    "tests.fixtures.multi_tenant",
+]
+
 import asyncio
 from collections.abc import AsyncGenerator, Generator
 from datetime import timedelta
@@ -99,7 +103,18 @@ async def db_session(db_engine: Any) -> AsyncGenerator[AsyncSession, None]:
 
 @pytest_asyncio.fixture(scope="function")
 async def app(db_session: AsyncSession) -> FastAPI:
-    """Create test FastAPI application."""
+    """Create test FastAPI application.
+
+    Forces multi-tenant mode so that X-Tenant-ID headers and
+    tenant_id query parameters are respected (not overridden
+    by the single-tenant default).
+    """
+    from app.config import settings
+
+    # Enable multi-tenant mode for tests
+    original_mode = settings.single_tenant_mode
+    settings.single_tenant_mode = False
+
     application = create_app()
 
     # Override database dependency
@@ -108,7 +123,10 @@ async def app(db_session: AsyncSession) -> FastAPI:
 
     application.dependency_overrides[get_db] = override_get_db
 
-    return application
+    yield application
+
+    # Restore original mode
+    settings.single_tenant_mode = original_mode
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -139,7 +157,9 @@ TEST_USER_PASSWORD = "testpass123"
 
 @pytest_asyncio.fixture(scope="function")
 async def test_tenant(db_session: AsyncSession) -> Tenant:
-    """Create a test tenant."""
+    """Create a test tenant with all feature flags enabled."""
+    from app.modules.tenants.models import AVAILABLE_FEATURES, FeatureFlag
+
     # Use unique identifiers per test to avoid conflicts
     unique_id = uuid4()
     tenant = Tenant(
@@ -151,6 +171,19 @@ async def test_tenant(db_session: AsyncSession) -> Tenant:
     )
     db_session.add(tenant)
     await db_session.flush()
+
+    # Create all feature flags (enabled by default)
+    for feature_name in AVAILABLE_FEATURES:
+        db_session.add(
+            FeatureFlag(
+                tenant_id=tenant.id,
+                feature_name=feature_name,
+                enabled=True,
+                description=f"Test {feature_name}",
+            )
+        )
+    await db_session.flush()
+
     return tenant
 
 

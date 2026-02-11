@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
 from app.core.image_upload import image_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_cases, require_cases_public
 from app.modules.content.mappers import (
     map_case_to_public_response,
     map_cases_to_public_response,
@@ -46,6 +47,7 @@ router = APIRouter()
     response_model=CasePublicListResponse,
     summary="List published cases",
     tags=["Public - Content"],
+    dependencies=[require_cases_public],
 )
 async def list_cases_public(
     locale: Locale,
@@ -79,6 +81,7 @@ async def list_cases_public(
     response_model=CasePublicResponse,
     summary="Get case by slug",
     tags=["Public - Content"],
+    dependencies=[require_cases_public],
 )
 async def get_case_public(
     slug: str,
@@ -133,7 +136,7 @@ async def _case_response_with_blocks(
     response_model=CaseListResponse,
     summary="List cases (admin)",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:read"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:read"))],
 )
 async def list_cases_admin(
     pagination: Pagination,
@@ -168,7 +171,7 @@ async def list_cases_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:create"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:create"))],
 )
 async def create_case(
     data: CaseCreate,
@@ -186,7 +189,7 @@ async def create_case(
     response_model=CaseResponse,
     summary="Get case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:read"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:read"))],
 )
 async def get_case_admin(
     case_id: UUID,
@@ -204,7 +207,7 @@ async def get_case_admin(
     response_model=CaseResponse,
     summary="Update case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def update_case(
     case_id: UUID,
@@ -223,7 +226,7 @@ async def update_case(
     response_model=CaseResponse,
     summary="Publish case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:publish"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:publish"))],
 )
 async def publish_case(
     case_id: UUID,
@@ -242,7 +245,7 @@ async def publish_case(
     response_model=CaseResponse,
     summary="Unpublish case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:publish"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:publish"))],
 )
 async def unpublish_case(
     case_id: UUID,
@@ -261,7 +264,7 @@ async def unpublish_case(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:delete"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:delete"))],
 )
 async def delete_case(
     case_id: UUID,
@@ -278,7 +281,7 @@ async def delete_case(
     response_model=CaseResponse,
     summary="Upload case cover image",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def upload_case_cover_image(
     case_id: UUID,
@@ -310,7 +313,7 @@ async def upload_case_cover_image(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete case cover image",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def delete_case_cover_image(
     case_id: UUID,
@@ -338,7 +341,7 @@ async def delete_case_cover_image(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to case",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def create_case_locale(
     case_id: UUID,
@@ -357,7 +360,7 @@ async def create_case_locale(
     response_model=CaseLocaleResponse,
     summary="Update case locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def update_case_locale(
     case_id: UUID,
@@ -377,7 +380,7 @@ async def update_case_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete case locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def delete_case_locale(
     case_id: UUID,
@@ -401,7 +404,7 @@ async def delete_case_locale(
     status_code=status.HTTP_201_CREATED,
     summary="Add case contact",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def add_case_contact(
     case_id: UUID,
@@ -420,7 +423,7 @@ async def add_case_contact(
     response_model=CaseContactResponse,
     summary="Update case contact",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def update_case_contact(
     case_id: UUID,
@@ -440,7 +443,7 @@ async def update_case_contact(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete case contact",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def delete_case_contact(
     case_id: UUID,
@@ -463,7 +466,7 @@ async def delete_case_contact(
     response_model=list[ContentBlockResponse],
     summary="List case content blocks",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:read"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:read"))],
 )
 async def list_case_content_blocks(
     case_id: UUID,
@@ -487,7 +490,7 @@ async def list_case_content_blocks(
     status_code=status.HTTP_201_CREATED,
     summary="Add case content block",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def add_case_content_block(
     case_id: UUID,
@@ -511,7 +514,7 @@ async def add_case_content_block(
     response_model=ContentBlockResponse,
     summary="Update case content block",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def update_case_content_block(
     case_id: UUID,
@@ -532,7 +535,7 @@ async def update_case_content_block(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete case content block",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def delete_case_content_block(
     case_id: UUID,
@@ -551,7 +554,7 @@ async def delete_case_content_block(
     response_model=list[ContentBlockResponse],
     summary="Reorder case content blocks",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("cases:update"))],
+    dependencies=[require_cases, Depends(PermissionChecker("cases:update"))],
 )
 async def reorder_case_content_blocks(
     case_id: UUID,

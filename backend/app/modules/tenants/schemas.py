@@ -46,7 +46,7 @@ class FeatureFlagsListResponse(BaseModel):
     """Schema for list of feature flags."""
 
     items: list[FeatureFlagResponse]
-    available_features: dict[str, str]
+    available_features: dict[str, dict[str, str]]
 
 
 # ============================================================================
@@ -223,6 +223,7 @@ class TenantResponse(TenantBase):
     id: UUID
     logo_url: str | None = None
     version: int
+    users_count: int = Field(default=0, description="Number of active users in this tenant")
     created_at: datetime
     updated_at: datetime
     settings: TenantSettingsResponse | None = None

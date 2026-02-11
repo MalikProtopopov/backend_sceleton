@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.dependencies import Pagination, PublicTenantId
 from app.core.logging import get_logger
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_seo_advanced
 from app.core.url_utils import normalize_path, validate_base_url, extract_domain
 from app.modules.seo.schemas import (
     RedirectCreate,
@@ -597,7 +598,7 @@ async def get_llms_txt(
     response_model=RevalidateResponse,
     summary="Trigger cache revalidation",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def revalidate_seo_cache(
     data: RevalidateRequest,
@@ -664,7 +665,7 @@ async def revalidate_seo_cache(
     response_model=list[SEORouteResponse],
     summary="List SEO routes",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:read"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:read"))],
 )
 async def list_seo_routes(
     pagination: Pagination,
@@ -688,7 +689,7 @@ async def list_seo_routes(
     response_model=SEORouteResponse,
     summary="Create or update SEO route",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def upsert_seo_route(
     data: SEORouteCreate,
@@ -706,7 +707,7 @@ async def upsert_seo_route(
     response_model=SEORouteResponse,
     summary="Update SEO route",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def update_seo_route(
     route_id: UUID,
@@ -725,7 +726,7 @@ async def update_seo_route(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete SEO route",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def delete_seo_route(
     route_id: UUID,
@@ -747,7 +748,7 @@ async def delete_seo_route(
     response_model=RedirectListResponse,
     summary="List redirects",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:read"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:read"))],
 )
 async def list_redirects(
     pagination: Pagination,
@@ -778,7 +779,7 @@ async def list_redirects(
     status_code=status.HTTP_201_CREATED,
     summary="Create redirect",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def create_redirect(
     data: RedirectCreate,
@@ -796,7 +797,7 @@ async def create_redirect(
     response_model=RedirectResponse,
     summary="Get redirect",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:read"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:read"))],
 )
 async def get_redirect(
     redirect_id: UUID,
@@ -814,7 +815,7 @@ async def get_redirect(
     response_model=RedirectResponse,
     summary="Update redirect",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def update_redirect(
     redirect_id: UUID,
@@ -833,7 +834,7 @@ async def update_redirect(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete redirect",
     tags=["Admin - SEO"],
-    dependencies=[Depends(PermissionChecker("seo:update"))],
+    dependencies=[require_seo_advanced, Depends(PermissionChecker("seo:update"))],
 )
 async def delete_redirect(
     redirect_id: UUID,

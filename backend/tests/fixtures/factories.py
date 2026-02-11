@@ -1,16 +1,16 @@
 """Factory Boy factories for test data generation."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import factory
 from faker import Faker
 
-from app.modules.auth.models import AdminUser, Role
+from app.modules.auth.models import AdminUser, AuditLog, Permission, Role, RolePermission
 from app.modules.company.models import Employee, Service
-from app.modules.content.models import Article, ArticleLocale, FAQ, Review, Topic
+from app.modules.content.models import FAQ, Article, ArticleLocale, Review, Topic
 from app.modules.leads.models import Inquiry
-from app.modules.tenants.models import Tenant
+from app.modules.tenants.models import FeatureFlag, Tenant
 
 fake = Faker("ru_RU")
 
@@ -28,8 +28,8 @@ class TenantFactory(factory.Factory):
     plan = factory.Faker("random_element", elements=["starter", "pro", "enterprise"])
     is_active = True
     extra_data = factory.LazyFunction(dict)
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class RoleFactory(factory.Factory):
@@ -41,7 +41,7 @@ class RoleFactory(factory.Factory):
     id = factory.LazyFunction(uuid4)
     name = factory.Faker("random_element", elements=["admin", "content_manager", "marketer"])
     description = factory.LazyFunction(lambda: fake.sentence())
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class AdminUserFactory(factory.Factory):
@@ -58,8 +58,8 @@ class AdminUserFactory(factory.Factory):
     last_name = factory.LazyFunction(lambda: fake.last_name())
     role_id = factory.LazyFunction(uuid4)
     is_active = True
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class ServiceFactory(factory.Factory):
@@ -75,8 +75,8 @@ class ServiceFactory(factory.Factory):
     is_featured = factory.Faker("boolean")
     sort_order = factory.Sequence(lambda n: n)
     status = "published"
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class EmployeeFactory(factory.Factory):
@@ -93,8 +93,8 @@ class EmployeeFactory(factory.Factory):
     photo_url = factory.LazyFunction(lambda: fake.image_url())
     sort_order = factory.Sequence(lambda n: n)
     status = "published"
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class TopicFactory(factory.Factory):
@@ -107,8 +107,8 @@ class TopicFactory(factory.Factory):
     tenant_id = factory.LazyFunction(uuid4)
     slug = factory.LazyFunction(lambda: fake.slug())
     sort_order = factory.Sequence(lambda n: n)
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class ArticleFactory(factory.Factory):
@@ -126,8 +126,8 @@ class ArticleFactory(factory.Factory):
     status = factory.Faker("random_element", elements=["draft", "published", "archived"])
     published_at = None
     view_count = factory.Faker("random_int", min=0, max=1000)
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class ArticleLocaleFactory(factory.Factory):
@@ -144,8 +144,8 @@ class ArticleLocaleFactory(factory.Factory):
     content = factory.LazyFunction(lambda: fake.text(max_nb_chars=500))
     meta_title = factory.LazyFunction(lambda: fake.sentence(nb_words=4))
     meta_description = factory.LazyFunction(lambda: fake.paragraph(nb_sentences=1))
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class FAQFactory(factory.Factory):
@@ -158,8 +158,8 @@ class FAQFactory(factory.Factory):
     tenant_id = factory.LazyFunction(uuid4)
     sort_order = factory.Sequence(lambda n: n)
     is_active = True
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class InquiryFactory(factory.Factory):
@@ -186,8 +186,8 @@ class InquiryFactory(factory.Factory):
     ip_address = factory.LazyFunction(lambda: fake.ipv4())
     user_agent = factory.LazyFunction(lambda: fake.user_agent())
     device_type = factory.Faker("random_element", elements=["desktop", "mobile", "tablet"])
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
 
 
 class ReviewFactory(factory.Factory):
@@ -206,6 +206,77 @@ class ReviewFactory(factory.Factory):
     rating = factory.Faker("random_int", min=1, max=5)
     status = factory.Faker("random_element", elements=["pending", "approved", "rejected"])
     case_id = None
-    created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class FeatureFlagFactory(factory.Factory):
+    """Factory for FeatureFlag model."""
+
+    class Meta:
+        model = FeatureFlag
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    feature_name = factory.Faker(
+        "random_element",
+        elements=[
+            "blog_module", "cases_module", "reviews_module", "faq_module",
+            "team_module", "services_module", "seo_advanced", "multilang",
+            "analytics_advanced",
+        ],
+    )
+    enabled = True
+    description = factory.LazyFunction(lambda: fake.sentence())
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class AuditLogFactory(factory.Factory):
+    """Factory for AuditLog model."""
+
+    class Meta:
+        model = AuditLog
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    user_id = factory.LazyFunction(uuid4)
+    resource_type = factory.Faker(
+        "random_element", elements=["user", "tenant", "role", "feature_flag", "auth"]
+    )
+    resource_id = factory.LazyFunction(uuid4)
+    action = factory.Faker(
+        "random_element", elements=["create", "update", "delete", "login", "logout"]
+    )
+    changes = factory.LazyFunction(dict)
+    ip_address = factory.LazyFunction(lambda: fake.ipv4())
+    user_agent = factory.LazyFunction(lambda: fake.user_agent())
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class PermissionFactory(factory.Factory):
+    """Factory for Permission model."""
+
+    class Meta:
+        model = Permission
+
+    id = factory.LazyFunction(uuid4)
+    code = factory.LazyFunction(lambda: f"{fake.word()}:{fake.word()}")
+    name = factory.LazyFunction(lambda: fake.sentence(nb_words=3))
+    description = factory.LazyFunction(lambda: fake.sentence())
+    resource = factory.LazyFunction(lambda: fake.word())
+    action = factory.Faker("random_element", elements=["read", "create", "update", "delete"])
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class RolePermissionFactory(factory.Factory):
+    """Factory for RolePermission model."""
+
+    class Meta:
+        model = RolePermission
+
+    id = factory.LazyFunction(uuid4)
+    role_id = factory.LazyFunction(uuid4)
+    permission_id = factory.LazyFunction(uuid4)
 

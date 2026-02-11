@@ -234,14 +234,75 @@ class FeatureFlag(Base, UUIDMixin, TimestampMixin):
 
 
 # Available feature flags with descriptions
-AVAILABLE_FEATURES = {
-    "cases_module": "Case studies / portfolio module",
-    "reviews_module": "Client testimonials module",
-    "seo_advanced": "Advanced SEO features (custom meta per page, redirects)",
-    "multilang": "Multi-language content support",
-    "analytics_advanced": "Detailed lead analytics (UTM, device, geo)",
-    "blog_module": "Blog / articles module",
-    "faq_module": "FAQ module",
-    "team_module": "Team / employees module",
+AVAILABLE_FEATURES: dict[str, dict[str, str]] = {
+    "blog_module": {
+        "title": "Blog / Articles",
+        "title_ru": "Блог / Статьи",
+        "description": "Create and manage articles and blog posts",
+        "description_ru": "Создание и управление статьями и блогом",
+        "category": "content",
+    },
+    "cases_module": {
+        "title": "Case Studies",
+        "title_ru": "Кейсы / Портфолио",
+        "description": "Publish case studies and portfolio items",
+        "description_ru": "Публикация кейсов и портфолио работ",
+        "category": "content",
+    },
+    "reviews_module": {
+        "title": "Reviews / Testimonials",
+        "title_ru": "Отзывы",
+        "description": "Manage client testimonials and reviews",
+        "description_ru": "Управление отзывами клиентов",
+        "category": "content",
+    },
+    "faq_module": {
+        "title": "FAQ",
+        "title_ru": "Вопросы и ответы",
+        "description": "Manage frequently asked questions",
+        "description_ru": "Управление часто задаваемыми вопросами",
+        "category": "content",
+    },
+    "team_module": {
+        "title": "Team / Employees",
+        "title_ru": "Команда / Сотрудники",
+        "description": "Manage team members and employee profiles",
+        "description_ru": "Управление профилями сотрудников",
+        "category": "company",
+    },
+    "services_module": {
+        "title": "Services",
+        "title_ru": "Услуги",
+        "description": "Manage company services and practice areas",
+        "description_ru": "Управление услугами и направлениями деятельности",
+        "category": "company",
+    },
+    "seo_advanced": {
+        "title": "Advanced SEO",
+        "title_ru": "Расширенное SEO",
+        "description": "Advanced SEO features (custom meta per page, redirects)",
+        "description_ru": "Расширенные SEO-функции (мета-теги, редиректы)",
+        "category": "platform",
+    },
+    "multilang": {
+        "title": "Multi-language",
+        "title_ru": "Мультиязычность",
+        "description": "Multi-language content support",
+        "description_ru": "Поддержка мультиязычного контента",
+        "category": "platform",
+    },
+    "analytics_advanced": {
+        "title": "Advanced Analytics",
+        "title_ru": "Расширенная аналитика",
+        "description": "Detailed lead analytics (UTM, device, geo)",
+        "description_ru": "Детальная аналитика лидов (UTM, устройства, гео)",
+        "category": "platform",
+    },
 }
+
+
+def get_feature_description(feature_name: str) -> str:
+    """Get simple description for backward compatibility."""
+    feature = AVAILABLE_FEATURES.get(feature_name, {})
+    return feature.get("description", feature_name)
 

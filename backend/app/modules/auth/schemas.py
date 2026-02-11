@@ -65,6 +65,10 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=100)
     role_id: UUID | None = None
     is_active: bool = True
+    send_credentials: bool = Field(
+        default=True,
+        description="Send welcome email to the new user with login URL and account info",
+    )
 
 
 class UserUpdate(BaseModel):
@@ -96,6 +100,7 @@ class UserResponse(UserBase):
     tenant_id: UUID
     is_active: bool
     is_superuser: bool
+    force_password_change: bool = False
     avatar_url: str | None = None
     last_login_at: datetime | None = None
     role: "RoleResponse | None" = None
@@ -214,14 +219,16 @@ class MeResponse(BaseModel):
     full_name: str
     avatar_url: str | None = None
     is_superuser: bool
+    force_password_change: bool = False
     role: RoleResponse | None = None
     permissions: list[str] = Field(default_factory=list)
 
 
 class EnabledFeaturesResponse(BaseModel):
-    """Schema for enabled features response.
+    """Schema for enabled features response (legacy).
     
     Used by frontend to determine which sections to show in sidebar.
+    Kept for backward compatibility; prefer FeatureCatalogResponse.
     """
     
     enabled_features: list[str] = Field(
@@ -232,6 +239,51 @@ class EnabledFeaturesResponse(BaseModel):
         default=False,
         description="True if user is superuser/platform_owner (has access to all features)"
     )
+
+
+class FeatureCatalogItem(BaseModel):
+    """Single feature in the catalog."""
+
+    name: str = Field(..., description="Feature key (e.g. 'blog_module')")
+    title: str = Field(..., description="Human-readable title")
+    description: str = Field(..., description="Feature description")
+    category: str = Field(..., description="Feature category (content, company, platform)")
+    enabled: bool = Field(..., description="Whether this feature is enabled for the tenant")
+    can_request: bool = Field(
+        ...,
+        description="Whether the user can request enabling this feature (true when disabled)",
+    )
+
+
+class FeatureCatalogResponse(BaseModel):
+    """Full feature catalog with per-feature details.
+    
+    Used by frontend to build sidebar showing available, disabled,
+    and requestable sections in one API call.
+    """
+
+    features: list[FeatureCatalogItem] = Field(
+        default_factory=list,
+        description="Full catalog of all platform features with their status",
+    )
+    all_features_enabled: bool = Field(
+        default=False,
+        description="True if user is superuser/platform_owner (has access to all features)",
+    )
+    tenant_id: UUID = Field(..., description="Tenant ID for this catalog")
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request schema for forgot password."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request schema for resetting password with token."""
+
+    token: str = Field(..., min_length=1, description="Password reset token")
+    new_password: str = Field(..., min_length=8, max_length=100, description="New password")
 
 
 # Fix forward references

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Pagination, get_tenant_from_header
+from app.core.exceptions import PermissionDeniedError
 from app.core.image_upload import image_upload_service
 from app.core.logging import get_logger
 from app.core.redis import get_token_blacklist
@@ -22,12 +23,16 @@ logger = get_logger(__name__)
 from app.modules.auth.models import AdminUser
 from app.modules.auth.schemas import (
     EnabledFeaturesResponse,
+    FeatureCatalogItem,
+    FeatureCatalogResponse,
+    ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
     MeResponse,
     PasswordChange,
     PermissionListResponse,
     PermissionResponse,
+    ResetPasswordRequest,
     RoleCreate,
     RoleListResponse,
     RoleResponse,
@@ -62,9 +67,27 @@ async def login(
     tenant_id: UUID = Depends(get_tenant_from_header),
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
-    """Authenticate user and return tokens."""
+    """Authenticate user and return tokens.
+    
+    Rate limited to 10 attempts per minute per IP address.
+    """
+    # Rate limit login attempts (10 per minute per IP)
+    ip_address = request.client.host if request.client else "unknown"
+    from app.core.redis import get_redis_client, RateLimiter
+    from app.core.exceptions import RateLimitExceededError
+    redis_client = get_redis_client()
+    if redis_client:
+        limiter = RateLimiter(redis_client)
+        allowed, remaining, retry_after = await limiter.is_allowed(
+            f"login:{ip_address}", max_requests=10, window_seconds=60,
+        )
+        if not allowed:
+            raise RateLimitExceededError(
+                message="Too many login attempts. Please try again later.",
+                retry_after=retry_after,
+            )
+
     service = AuthService(db)
-    ip_address = request.client.host if request.client else None
 
     user, tokens = await service.authenticate(data, tenant_id, ip_address)
 
@@ -90,6 +113,41 @@ async def refresh_tokens(
 
 
 @router.post(
+    "/forgot-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Request password reset",
+    description="Send a password reset email. Always returns 204 regardless of whether the email exists (security).",
+)
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    tenant_id: UUID = Depends(get_tenant_from_header),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Request password reset email.
+    
+    Always returns 204 to prevent email enumeration.
+    If the email exists in the tenant, a reset email is sent.
+    """
+    service = AuthService(db)
+    await service.request_password_reset(data.email, tenant_id)
+
+
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reset password",
+    description="Reset password using the token from the reset email.",
+)
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Reset password using a valid reset token."""
+    service = AuthService(db)
+    await service.reset_password(data.token, data.new_password)
+
+
+@router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Logout",
@@ -97,6 +155,7 @@ async def refresh_tokens(
 )
 async def logout(
     token: TokenPayload = Depends(get_current_token),
+    db: AsyncSession = Depends(get_db),
 ) -> None:
     """Logout current user and revoke the access token.
 
@@ -110,6 +169,18 @@ async def logout(
             logger.info("token_revoked", jti=token.jti[:8], user_id=str(token.user_id))
         else:
             logger.warning("logout_blacklist_unavailable", user_id=str(token.user_id))
+
+    # Audit log: logout
+    from app.core.audit import AuditService
+    audit = AuditService(db)
+    await audit.log(
+        tenant_id=token.tenant_id,
+        user_id=token.user_id,
+        resource_type="auth",
+        resource_id=token.user_id,
+        action="logout",
+    )
+    await db.commit()
 
 
 # ============================================================================
@@ -140,6 +211,7 @@ async def get_me(
         full_name=user.full_name,
         avatar_url=user.avatar_url,
         is_superuser=user.is_superuser,
+        force_password_change=user.force_password_change,
         role=RoleResponse.model_validate(user.role) if user.role else None,
         permissions=permissions,
     )
@@ -147,38 +219,55 @@ async def get_me(
 
 @router.get(
     "/me/features",
-    response_model=EnabledFeaturesResponse,
-    summary="Get enabled features",
-    description="Get list of enabled features/modules for the current tenant. Used by frontend to determine which sections to show in sidebar.",
+    response_model=FeatureCatalogResponse,
+    summary="Get feature catalog",
+    description="Get full feature catalog with enabled/disabled status for the current tenant. Used by frontend to build sidebar showing available, disabled, and requestable sections.",
 )
 async def get_my_features(
+    locale: str = Query(default="en", description="Locale for titles/descriptions (en, ru)"),
     user: AdminUser = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> EnabledFeaturesResponse:
-    """Get enabled features for current user's tenant.
+) -> FeatureCatalogResponse:
+    """Get full feature catalog for current user's tenant.
     
-    - Superusers and platform_owners have all_features_enabled=True
-    - Regular users get list of actually enabled features
+    Returns all platform features with their enabled/disabled status,
+    human-readable titles, descriptions, and whether the feature
+    can be requested (when disabled).
     
-    Use this to conditionally show/hide sidebar items.
+    - Superusers and platform_owners: all_features_enabled=True, all features marked enabled
+    - Regular users: actual feature flag status from database
     """
-    # Superusers and platform_owners have access to all features
+    from app.modules.tenants.models import AVAILABLE_FEATURES
+
     is_platform_owner = user.is_superuser or (user.role and user.role.name == "platform_owner")
-    
-    if is_platform_owner:
-        return EnabledFeaturesResponse(
-            enabled_features=[],  # Not needed when all_features_enabled=True
-            all_features_enabled=True,
-        )
     
     # Get enabled features from database
     service = FeatureFlagService(db)
     flags = await service.get_flags(user.tenant_id)
-    enabled_features = [f.feature_name for f in flags if f.enabled]
+    enabled_set = {f.feature_name for f in flags if f.enabled}
     
-    return EnabledFeaturesResponse(
-        enabled_features=enabled_features,
-        all_features_enabled=False,
+    # Build catalog items
+    use_ru = locale.startswith("ru")
+    catalog_items: list[FeatureCatalogItem] = []
+    
+    for feature_name, meta in AVAILABLE_FEATURES.items():
+        enabled = is_platform_owner or feature_name in enabled_set
+        title = meta.get("title_ru" if use_ru else "title", feature_name)
+        description = meta.get("description_ru" if use_ru else "description", "")
+        
+        catalog_items.append(FeatureCatalogItem(
+            name=feature_name,
+            title=title,
+            description=description,
+            category=meta.get("category", "other"),
+            enabled=enabled,
+            can_request=not enabled,
+        ))
+    
+    return FeatureCatalogResponse(
+        features=catalog_items,
+        all_features_enabled=is_platform_owner,
+        tenant_id=user.tenant_id,
     )
 
 
@@ -241,6 +330,7 @@ async def upload_my_avatar(
         full_name=user.full_name,
         avatar_url=user.avatar_url,
         is_superuser=user.is_superuser,
+        force_password_change=user.force_password_change,
         role=RoleResponse.model_validate(user.role) if user.role else None,
         permissions=permissions,
     )
@@ -268,24 +358,50 @@ async def delete_my_avatar(
 # ============================================================================
 
 
+def _resolve_effective_tenant(
+    user: AdminUser,
+    target_tenant_id: UUID | None,
+    current_tenant_id: UUID,
+) -> UUID:
+    """Resolve effective tenant_id for cross-tenant operations.
+    
+    Platform owners and superusers can specify any tenant_id.
+    Regular users are restricted to their own tenant.
+    """
+    if target_tenant_id is None:
+        return current_tenant_id
+    
+    # Only platform_owner/superuser can cross-tenant
+    if not user.is_superuser and not (user.role and user.role.name == "platform_owner"):
+        raise PermissionDeniedError(
+            required_permission="platform:read",
+            message="You can only manage users in your own organization",
+        )
+    return target_tenant_id
+
+
 @router.get(
     "/users",
     response_model=UserListResponse,
     summary="List users",
-    description="Get paginated list of users in the tenant.",
+    description="Get paginated list of users in the tenant. Platform owner can specify tenant_id to list users of any organization.",
     dependencies=[Depends(PermissionChecker("users:read"))],
 )
 async def list_users(
     pagination: Pagination,
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
     is_active: bool | None = Query(default=None),
     search: str | None = Query(default=None, description="Search in email and name"),
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserListResponse:
     """List users in tenant."""
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
     service = UserService(db)
     users, total = await service.list_users(
-        tenant_id=tenant_id,
+        tenant_id=effective_tenant_id,
         page=pagination.page,
         page_size=pagination.page_size,
         is_active=is_active,
@@ -305,68 +421,88 @@ async def list_users(
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create user",
+    description="Create a new user. Platform owner can specify tenant_id to create users in any organization.",
     dependencies=[Depends(PermissionChecker("users:create"))],
 )
 async def create_user(
     data: UserCreate,
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """Create a new user in tenant."""
-    service = UserService(db)
-    user = await service.create(tenant_id, data)
-    return UserResponse.model_validate(user)
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
+    service = UserService(db, actor_id=user.id)
+    new_user = await service.create(effective_tenant_id, data)
+    return UserResponse.model_validate(new_user)
 
 
 @router.get(
     "/users/{user_id}",
     response_model=UserResponse,
     summary="Get user",
+    description="Get user by ID. Platform owner can specify tenant_id to get users from any organization.",
     dependencies=[Depends(PermissionChecker("users:read"))],
 )
 async def get_user(
     user_id: UUID,
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """Get user by ID."""
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
     service = UserService(db)
-    user = await service.get_by_id(user_id, tenant_id)
-    return UserResponse.model_validate(user)
+    found_user = await service.get_by_id(user_id, effective_tenant_id)
+    return UserResponse.model_validate(found_user)
 
 
 @router.patch(
     "/users/{user_id}",
     response_model=UserResponse,
     summary="Update user",
+    description="Update user. Platform owner can specify tenant_id to update users in any organization.",
     dependencies=[Depends(PermissionChecker("users:update"))],
 )
 async def update_user(
     user_id: UUID,
     data: UserUpdate,
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """Update user."""
-    service = UserService(db)
-    user = await service.update(user_id, tenant_id, data)
-    return UserResponse.model_validate(user)
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
+    service = UserService(db, actor_id=user.id)
+    updated_user = await service.update(user_id, effective_tenant_id, data)
+    return UserResponse.model_validate(updated_user)
 
 
 @router.delete(
     "/users/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete user",
+    description="Soft delete a user. Platform owner can specify tenant_id to delete users in any organization.",
     dependencies=[Depends(PermissionChecker("users:delete"))],
 )
 async def delete_user(
     user_id: UUID,
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Soft delete a user."""
-    service = UserService(db)
-    await service.soft_delete(user_id, tenant_id)
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
+    service = UserService(db, actor_id=user.id)
+    await service.soft_delete(user_id, effective_tenant_id)
 
 
 @router.post(
@@ -378,7 +514,9 @@ async def delete_user(
 async def upload_user_avatar(
     user_id: UUID,
     file: UploadFile = File(...),
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     """Upload or replace avatar for user.
@@ -386,26 +524,28 @@ async def upload_user_avatar(
     Supported formats: JPEG, PNG, WebP, GIF
     Maximum size: 10MB
     """
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
     service = UserService(db)
-    user = await service.get_by_id(user_id, tenant_id)
+    target_user = await service.get_by_id(user_id, effective_tenant_id)
     
     # Upload new avatar
     new_url = await image_upload_service.upload_image(
         file=file,
-        tenant_id=tenant_id,
+        tenant_id=effective_tenant_id,
         folder="users",
         entity_id=user_id,
-        old_image_url=user.avatar_url,
+        old_image_url=target_user.avatar_url,
     )
     
     # Update user
-    user.avatar_url = new_url
+    target_user.avatar_url = new_url
     await db.commit()
     
     # Re-fetch user to avoid greenlet issues
-    user = await service.get_by_id(user_id, tenant_id)
+    target_user = await service.get_by_id(user_id, effective_tenant_id)
     
-    return UserResponse.model_validate(user)
+    return UserResponse.model_validate(target_user)
 
 
 @router.delete(
@@ -416,16 +556,20 @@ async def upload_user_avatar(
 )
 async def delete_user_avatar(
     user_id: UUID,
-    tenant_id: UUID = Depends(get_current_tenant_id),
+    target_tenant_id: UUID | None = Query(None, alias="tenant_id", description="Target tenant (platform owner only)"),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete avatar from user."""
+    effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+
     service = UserService(db)
-    user = await service.get_by_id(user_id, tenant_id)
+    target_user = await service.get_by_id(user_id, effective_tenant_id)
     
-    if user.avatar_url:
-        await image_upload_service.delete_image(user.avatar_url)
-        user.avatar_url = None
+    if target_user.avatar_url:
+        await image_upload_service.delete_image(target_user.avatar_url)
+        target_user.avatar_url = None
         await db.commit()
 
 
@@ -482,11 +626,12 @@ async def list_permissions(
 )
 async def create_role(
     data: RoleCreate,
+    user: AdminUser = Depends(get_current_active_user),
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> RoleResponse:
     """Create a new role with permissions."""
-    service = RoleService(db)
+    service = RoleService(db, actor_id=user.id)
     role = await service.create_role(
         tenant_id=tenant_id,
         name=data.name,
@@ -505,6 +650,7 @@ async def create_role(
 async def update_role(
     role_id: UUID,
     data: RoleUpdate,
+    user: AdminUser = Depends(get_current_active_user),
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> RoleResponse:
@@ -512,7 +658,7 @@ async def update_role(
 
     Note: System roles cannot be modified.
     """
-    service = RoleService(db)
+    service = RoleService(db, actor_id=user.id)
     role = await service.update_role(
         role_id=role_id,
         tenant_id=tenant_id,
@@ -531,6 +677,7 @@ async def update_role(
 )
 async def delete_role(
     role_id: UUID,
+    user: AdminUser = Depends(get_current_active_user),
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -539,6 +686,6 @@ async def delete_role(
     Note: System roles cannot be deleted.
     Note: Roles assigned to users cannot be deleted.
     """
-    service = RoleService(db)
+    service = RoleService(db, actor_id=user.id)
     await service.delete_role(role_id, tenant_id)
 

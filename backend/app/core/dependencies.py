@@ -126,9 +126,10 @@ async def get_public_tenant_id(
     
     In multi-tenant mode:
     - tenant_id is required
+    - Validates that tenant exists and is active
     """
     from app.config import settings
-    from app.core.tenant import get_default_tenant_id
+    from app.core.tenant import get_default_tenant_id, validate_tenant_exists
     
     # In single-tenant mode, always use default tenant (ignore provided tenant_id for security)
     if settings.single_tenant_mode:
@@ -138,6 +139,10 @@ async def get_public_tenant_id(
     if tenant_id is None:
         from app.core.exceptions import TenantRequiredError
         raise TenantRequiredError()
+    
+    # Validate tenant exists and is active
+    if not await validate_tenant_exists(db, tenant_id):
+        raise TenantNotFoundError(tenant_id)
     
     return tenant_id
 

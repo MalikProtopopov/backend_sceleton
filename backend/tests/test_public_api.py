@@ -3,6 +3,8 @@
 import pytest
 from httpx import AsyncClient
 
+from app.modules.tenants.models import Tenant
+
 
 # ============================================================================
 # Company Public API
@@ -10,12 +12,12 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_list_services_public(client: AsyncClient) -> None:
+async def test_list_services_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public services list endpoint."""
     response = await client.get(
         "/api/v1/public/services",
         params={
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
             "locale": "ru",
         },
     )
@@ -26,12 +28,12 @@ async def test_list_services_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_employees_public(client: AsyncClient) -> None:
+async def test_list_employees_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public employees list endpoint."""
     response = await client.get(
         "/api/v1/public/employees",
         params={
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
             "locale": "ru",
         },
     )
@@ -42,12 +44,12 @@ async def test_list_employees_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_advantages_public(client: AsyncClient) -> None:
+async def test_list_advantages_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public advantages list endpoint."""
     response = await client.get(
         "/api/v1/public/advantages",
         params={
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
             "locale": "ru",
         },
     )
@@ -58,11 +60,11 @@ async def test_list_advantages_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_contacts_public(client: AsyncClient) -> None:
+async def test_get_contacts_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public contacts endpoint."""
     response = await client.get(
         "/api/v1/public/contacts",
-        params={"tenant_id": "00000000-0000-0000-0000-000000000000"},
+        params={"tenant_id": str(test_tenant.id)},
     )
 
     assert response.status_code == 200
@@ -77,12 +79,12 @@ async def test_get_contacts_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_articles_public(client: AsyncClient) -> None:
+async def test_list_articles_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public articles list endpoint."""
     response = await client.get(
         "/api/v1/public/articles",
         params={
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
             "locale": "ru",
         },
     )
@@ -95,12 +97,12 @@ async def test_list_articles_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_topics_public(client: AsyncClient) -> None:
+async def test_list_topics_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public topics list endpoint."""
     response = await client.get(
         "/api/v1/public/topics",
         params={
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
             "locale": "ru",
         },
     )
@@ -111,12 +113,12 @@ async def test_list_topics_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_faq_public(client: AsyncClient) -> None:
+async def test_list_faq_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test public FAQ list endpoint."""
     response = await client.get(
         "/api/v1/public/faq",
         params={
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
             "locale": "ru",
         },
     )
@@ -132,7 +134,7 @@ async def test_list_faq_public(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_inquiry_public(client: AsyncClient, test_tenant) -> None:
+async def test_create_inquiry_public(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test creating public inquiry."""
     response = await client.post(
         "/api/v1/public/inquiries",
@@ -159,7 +161,7 @@ async def test_create_inquiry_public(client: AsyncClient, test_tenant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_inquiry_minimal(client: AsyncClient, test_tenant) -> None:
+async def test_create_inquiry_minimal(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test creating inquiry with minimal data."""
     response = await client.post(
         "/api/v1/public/inquiries",
@@ -175,11 +177,11 @@ async def test_create_inquiry_minimal(client: AsyncClient, test_tenant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_inquiry_missing_name(client: AsyncClient) -> None:
+async def test_create_inquiry_missing_name(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test inquiry creation fails without name."""
     response = await client.post(
         "/api/v1/public/inquiries",
-        params={"tenant_id": "00000000-0000-0000-0000-000000000000"},
+        params={"tenant_id": str(test_tenant.id)},
         json={
             "email": "test@example.com",
             # Missing name
@@ -195,14 +197,14 @@ async def test_create_inquiry_missing_name(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_seo_meta(client: AsyncClient) -> None:
+async def test_get_seo_meta(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test getting SEO meta for a path."""
     response = await client.get(
         "/api/v1/public/seo/meta",
         params={
             "path": "/about",
             "locale": "ru",
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
         },
     )
 
@@ -213,13 +215,13 @@ async def test_get_seo_meta(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_sitemap(client: AsyncClient) -> None:
+async def test_get_sitemap(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test sitemap.xml generation."""
     response = await client.get(
         "/api/v1/public/sitemap.xml",
         params={
             "locale": "ru",
-            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "tenant_id": str(test_tenant.id),
         },
     )
 
@@ -230,15 +232,14 @@ async def test_get_sitemap(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_robots(client: AsyncClient) -> None:
+async def test_get_robots(client: AsyncClient, test_tenant: Tenant) -> None:
     """Test robots.txt generation."""
     response = await client.get(
         "/api/v1/public/robots.txt",
-        params={"tenant_id": "00000000-0000-0000-0000-000000000000"},
+        params={"tenant_id": str(test_tenant.id)},
     )
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/plain; charset=utf-8"
     assert "User-agent" in response.text
     assert "Sitemap" in response.text
-

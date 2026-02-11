@@ -27,13 +27,14 @@ async def get_default_tenant(db: AsyncSession):
         Tenant object
         
     Raises:
-        RuntimeError: If default tenant is not found
+        RuntimeError: If default tenant is not found or inactive
     """
     # Import here to avoid circular imports
     from app.modules.tenants.models import Tenant
     
     stmt = select(Tenant).where(
         Tenant.slug == settings.default_tenant_slug,
+        Tenant.is_active.is_(True),
         Tenant.deleted_at.is_(None)
     )
     result = await db.execute(stmt)
@@ -41,7 +42,7 @@ async def get_default_tenant(db: AsyncSession):
     
     if not tenant:
         raise RuntimeError(
-            f"Default tenant '{settings.default_tenant_slug}' not found. "
+            f"Default tenant '{settings.default_tenant_slug}' not found or inactive. "
             "Run 'python -m app.scripts.init_admin' to create it."
         )
     

@@ -167,6 +167,9 @@ class AdminUser(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    force_password_change: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false",
+    )
 
     # Last activity
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

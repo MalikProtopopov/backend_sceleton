@@ -232,6 +232,61 @@ async def get_token_blacklist() -> TokenBlacklist | None:
     return TokenBlacklist(_redis_client)
 
 
+class TenantStatusCache:
+    """Cache for tenant active/inactive status.
+    
+    Uses Redis with short TTL to avoid DB hit on every authenticated request.
+    Provides explicit invalidation when tenant status changes.
+    
+    Usage:
+        cache = TenantStatusCache(redis_client)
+        
+        # Check tenant status (cached)
+        is_active = await cache.is_tenant_active(tenant_id)
+        
+        # Invalidate on tenant update
+        await cache.invalidate(tenant_id)
+    """
+    
+    PREFIX = "tenant_status:"
+    TTL = 30  # 30 seconds cache
+    
+    def __init__(self, redis_client: Redis):
+        self.redis = redis_client
+    
+    async def is_tenant_active(self, tenant_id: str) -> bool | None:
+        """Check cached tenant active status.
+        
+        Returns:
+            True/False if cached, None if not in cache.
+        """
+        key = f"{self.PREFIX}{tenant_id}"
+        value = await self.redis.get(key)
+        if value is None:
+            return None
+        return value == "1"
+    
+    async def set_status(self, tenant_id: str, is_active: bool) -> None:
+        """Cache tenant active status."""
+        key = f"{self.PREFIX}{tenant_id}"
+        await self.redis.setex(key, self.TTL, "1" if is_active else "0")
+    
+    async def invalidate(self, tenant_id: str) -> None:
+        """Invalidate cached status for a tenant."""
+        key = f"{self.PREFIX}{tenant_id}"
+        await self.redis.delete(key)
+
+
+async def get_tenant_status_cache() -> TenantStatusCache | None:
+    """Get tenant status cache instance.
+    
+    Returns None if Redis is not initialized.
+    """
+    if _redis_client is None:
+        return None
+    return TenantStatusCache(_redis_client)
+
+
 class CacheClient:
     """Simple cache client wrapper for Redis.
     

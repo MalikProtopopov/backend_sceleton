@@ -57,16 +57,9 @@ async def test_list_files_unauthorized(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_feature_flags_requires_tenant_id(client: AsyncClient) -> None:
-    """Test feature flags requires tenant_id parameter."""
-    # Without tenant_id, should return 422 (validation error)
-    response = await client.get("/api/v1/admin/feature-flags")
-    assert response.status_code == 422
-
-    # With tenant_id, should return 200
-    response = await client.get(
-        "/api/v1/admin/feature-flags",
-        params={"tenant_id": "00000000-0000-0000-0000-000000000000"},
-    )
-    assert response.status_code == 200
+async def test_feature_flags_requires_auth(client: AsyncClient) -> None:
+    """Test feature flags endpoint requires authentication."""
+    # Without auth token, should return 401
+    response = await client.get("/api/v1/feature-flags")
+    assert response.status_code == 401
 

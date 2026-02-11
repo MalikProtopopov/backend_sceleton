@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.dependencies import Filtering, Locale, Pagination, PublicTenantId
 from app.core.image_upload import image_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_team, require_team_public
 from app.modules.company.mappers import (
     map_employee_to_public_response,
     map_employees_to_public_response,
@@ -46,6 +47,7 @@ router = APIRouter()
     response_model=list[EmployeePublicResponse],
     summary="List team members",
     tags=["Public - Company"],
+    dependencies=[require_team_public],
 )
 async def list_employees_public(
     locale: Locale,
@@ -63,6 +65,7 @@ async def list_employees_public(
     response_model=EmployeePublicResponse,
     summary="Get team member by slug",
     tags=["Public - Company"],
+    dependencies=[require_team_public],
 )
 async def get_employee_public(
     slug: str,
@@ -104,7 +107,7 @@ async def _employee_response_with_blocks(
     response_model=EmployeeListResponse,
     summary="List employees (admin)",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:read"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:read"))],
 )
 async def list_employees_admin(
     pagination: Pagination,
@@ -137,7 +140,7 @@ async def list_employees_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create employee",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:create"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:create"))],
 )
 async def create_employee(
     data: EmployeeCreate,
@@ -155,7 +158,7 @@ async def create_employee(
     response_model=EmployeeResponse,
     summary="Get employee",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:read"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:read"))],
 )
 async def get_employee_admin(
     employee_id: UUID,
@@ -173,7 +176,7 @@ async def get_employee_admin(
     response_model=EmployeeResponse,
     summary="Update employee",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def update_employee(
     employee_id: UUID,
@@ -192,7 +195,7 @@ async def update_employee(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete employee",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:delete"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:delete"))],
 )
 async def delete_employee(
     employee_id: UUID,
@@ -209,7 +212,7 @@ async def delete_employee(
     response_model=EmployeeResponse,
     summary="Upload employee photo",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def upload_employee_photo(
     employee_id: UUID,
@@ -241,7 +244,7 @@ async def upload_employee_photo(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete employee photo",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def delete_employee_photo(
     employee_id: UUID,
@@ -269,7 +272,7 @@ async def delete_employee_photo(
     response_model=list[ContentBlockResponse],
     summary="List employee content blocks",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:read"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:read"))],
 )
 async def list_employee_content_blocks(
     employee_id: UUID,
@@ -291,7 +294,7 @@ async def list_employee_content_blocks(
     status_code=status.HTTP_201_CREATED,
     summary="Add employee content block",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def add_employee_content_block(
     employee_id: UUID,
@@ -313,7 +316,7 @@ async def add_employee_content_block(
     response_model=ContentBlockResponse,
     summary="Update employee content block",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def update_employee_content_block(
     employee_id: UUID,
@@ -336,7 +339,7 @@ async def update_employee_content_block(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete employee content block",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def delete_employee_content_block(
     employee_id: UUID,
@@ -355,7 +358,7 @@ async def delete_employee_content_block(
     response_model=list[ContentBlockResponse],
     summary="Reorder employee content blocks",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def reorder_employee_content_blocks(
     employee_id: UUID,
@@ -383,7 +386,7 @@ async def reorder_employee_content_blocks(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to employee",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def create_employee_locale(
     employee_id: UUID,
@@ -402,7 +405,7 @@ async def create_employee_locale(
     response_model=EmployeeLocaleResponse,
     summary="Update employee locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def update_employee_locale(
     employee_id: UUID,
@@ -422,7 +425,7 @@ async def update_employee_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete employee locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("employees:update"))],
+    dependencies=[require_team, Depends(PermissionChecker("employees:update"))],
 )
 async def delete_employee_locale(
     employee_id: UUID,

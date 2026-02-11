@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
 from app.core.image_upload import image_upload_service
 from app.core.security import PermissionChecker, get_current_active_user, get_current_tenant_id
+from app.middleware.feature_check import require_blog, require_blog_public
 from app.modules.auth.models import AdminUser
 from app.modules.content.mappers import (
     map_article_to_public_response,
@@ -44,6 +45,7 @@ router = APIRouter()
     response_model=ArticlePublicListResponse,
     summary="List published articles",
     tags=["Public - Content"],
+    dependencies=[require_blog_public],
 )
 async def list_articles_public(
     locale: Locale,
@@ -77,6 +79,7 @@ async def list_articles_public(
     response_model=ArticlePublicResponse,
     summary="Get article by slug",
     tags=["Public - Content"],
+    dependencies=[require_blog_public],
 )
 async def get_article_public(
     slug: str,
@@ -125,7 +128,7 @@ async def _article_response_with_blocks(
     response_model=ArticleListResponse,
     summary="List articles (admin)",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:read"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:read"))],
 )
 async def list_articles_admin(
     pagination: Pagination,
@@ -160,7 +163,7 @@ async def list_articles_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:create"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:create"))],
 )
 async def create_article(
     data: ArticleCreate,
@@ -179,7 +182,7 @@ async def create_article(
     response_model=ArticleResponse,
     summary="Get article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:read"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:read"))],
 )
 async def get_article_admin(
     article_id: UUID,
@@ -197,7 +200,7 @@ async def get_article_admin(
     response_model=ArticleResponse,
     summary="Update article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def update_article(
     article_id: UUID,
@@ -216,7 +219,7 @@ async def update_article(
     response_model=ArticleResponse,
     summary="Publish article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:publish"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:publish"))],
 )
 async def publish_article(
     article_id: UUID,
@@ -235,7 +238,7 @@ async def publish_article(
     response_model=ArticleResponse,
     summary="Unpublish article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:publish"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:publish"))],
 )
 async def unpublish_article(
     article_id: UUID,
@@ -254,7 +257,7 @@ async def unpublish_article(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:delete"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:delete"))],
 )
 async def delete_article(
     article_id: UUID,
@@ -271,7 +274,7 @@ async def delete_article(
     response_model=ArticleResponse,
     summary="Upload article cover image",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def upload_article_cover_image(
     article_id: UUID,
@@ -303,7 +306,7 @@ async def upload_article_cover_image(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete article cover image",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def delete_article_cover_image(
     article_id: UUID,
@@ -331,7 +334,7 @@ async def delete_article_cover_image(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to article",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def create_article_locale(
     article_id: UUID,
@@ -350,7 +353,7 @@ async def create_article_locale(
     response_model=ArticleLocaleResponse,
     summary="Update article locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def update_article_locale(
     article_id: UUID,
@@ -370,7 +373,7 @@ async def update_article_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete article locale",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def delete_article_locale(
     article_id: UUID,
@@ -393,7 +396,7 @@ async def delete_article_locale(
     response_model=list[ContentBlockResponse],
     summary="List article content blocks",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:read"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:read"))],
 )
 async def list_article_content_blocks(
     article_id: UUID,
@@ -417,7 +420,7 @@ async def list_article_content_blocks(
     status_code=status.HTTP_201_CREATED,
     summary="Add article content block",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def add_article_content_block(
     article_id: UUID,
@@ -441,7 +444,7 @@ async def add_article_content_block(
     response_model=ContentBlockResponse,
     summary="Update article content block",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def update_article_content_block(
     article_id: UUID,
@@ -462,7 +465,7 @@ async def update_article_content_block(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete article content block",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def delete_article_content_block(
     article_id: UUID,
@@ -481,7 +484,7 @@ async def delete_article_content_block(
     response_model=list[ContentBlockResponse],
     summary="Reorder article content blocks",
     tags=["Admin - Content"],
-    dependencies=[Depends(PermissionChecker("articles:update"))],
+    dependencies=[require_blog, Depends(PermissionChecker("articles:update"))],
 )
 async def reorder_article_content_blocks(
     article_id: UUID,
