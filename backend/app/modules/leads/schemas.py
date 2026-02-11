@@ -4,6 +4,8 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
@@ -106,6 +108,22 @@ class InquiryAnalytics(BaseModel):
 # Allowed form_slug values for short / full brief
 FORM_SLUG_QUICK = "quick"
 FORM_SLUG_MVP_BRIEF = "mvp-brief"
+
+# Human-readable labels for custom_fields keys (used in admin UI and Telegram)
+CUSTOM_FIELDS_LABELS: dict[str, str] = {
+    "idea": "Идея / описание проекта",
+    "market": "Рынок",
+    "audience": "Описание аудитории",
+    "audienceSize": "Размер аудитории",
+    "aiRequired": "Нужен ли AI/ML",
+    "appTypes": "Типы приложения",
+    "integrations": "Интеграции",
+    "budget": "Бюджет",
+    "urgency": "Срочность",
+    "source": "Откуда узнали",
+    "telegram": "Telegram",
+    "consent": "Согласие на обработку ПД",
+}
 
 
 class InquiryCreatePublic(BaseModel):
@@ -226,10 +244,32 @@ class InquiryResponse(BaseModel):
 
     # Custom
     custom_fields: dict | None = None
+    custom_fields_display: list[dict] | None = None
 
     # Timestamps
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def build_custom_fields_display(self) -> "InquiryResponse":
+        """Build human-readable display list from custom_fields."""
+        if not self.custom_fields:
+            return self
+        display: list[dict[str, Any]] = []
+        for key, value in self.custom_fields.items():
+            if value is None:
+                continue
+            label = CUSTOM_FIELDS_LABELS.get(key, key)
+            # Format list values (e.g. appTypes)
+            if isinstance(value, list):
+                display_value = ", ".join(str(v) for v in value)
+            elif isinstance(value, bool):
+                display_value = "Да" if value else "Нет"
+            else:
+                display_value = str(value)
+            display.append({"key": key, "label": label, "value": display_value})
+        self.custom_fields_display = display if display else None
+        return self
 
 
 class InquiryListResponse(BaseModel):

@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.leads.models import Inquiry
+from app.modules.leads.schemas import CUSTOM_FIELDS_LABELS
 from app.modules.telegram.service import TelegramIntegrationService
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,11 @@ class TelegramNotifier:
         if inquiry.company:
             lines.append(f"🏢 <b>Компания:</b> {self._escape_html(inquiry.company)}")
         
+        # Telegram from custom_fields (contact-level, show near other contacts)
+        tg_handle = self._get_custom_field(inquiry, "telegram")
+        if tg_handle:
+            lines.append(f"✈️ <b>Telegram:</b> {self._escape_html(tg_handle)}")
+        
         # Message
         if inquiry.message:
             lines.append("")
@@ -105,6 +111,14 @@ class TelegramNotifier:
             if len(message) > 1000:
                 message = message[:1000] + "..."
             lines.append(self._escape_html(message))
+        
+        # Custom fields (MVP brief and others)
+        custom_lines = self._format_custom_fields(inquiry)
+        if custom_lines:
+            lines.append("")
+            lines.append("📋 <b>Детали заявки</b>")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+            lines.extend(custom_lines)
         
         # Source info
         source_info = []
@@ -124,6 +138,51 @@ class TelegramNotifier:
             lines.append(f"🔗 <i>{' | '.join(source_info)}</i>")
         
         return "\n".join(lines)
+    
+    def _get_custom_field(self, inquiry: Inquiry, key: str) -> str | None:
+        """Get a value from custom_fields by key."""
+        if not inquiry.custom_fields or not isinstance(inquiry.custom_fields, dict):
+            return None
+        value = inquiry.custom_fields.get(key)
+        if value is None or value == "":
+            return None
+        return str(value)
+    
+    # Keys already shown elsewhere (contacts) or not useful in Telegram
+    _SKIP_KEYS = {"telegram", "consent"}
+    
+    def _format_custom_fields(self, inquiry: Inquiry) -> list[str]:
+        """Format custom_fields as labeled lines for Telegram message.
+        
+        Only includes fields that have a non-empty value.
+        Uses human-readable labels from CUSTOM_FIELDS_LABELS.
+        """
+        if not inquiry.custom_fields or not isinstance(inquiry.custom_fields, dict):
+            return []
+        
+        lines: list[str] = []
+        for key, value in inquiry.custom_fields.items():
+            if key in self._SKIP_KEYS:
+                continue
+            if value is None or value == "" or value == []:
+                continue
+            
+            label = CUSTOM_FIELDS_LABELS.get(key, key)
+            
+            if isinstance(value, list):
+                display = ", ".join(str(v) for v in value)
+            elif isinstance(value, bool):
+                display = "Да" if value else "Нет"
+            else:
+                display = str(value)
+            
+            # Truncate very long values
+            if len(display) > 500:
+                display = display[:500] + "..."
+            
+            lines.append(f"• <b>{self._escape_html(label)}:</b> {self._escape_html(display)}")
+        
+        return lines
     
     def _escape_html(self, text: str) -> str:
         """Escape HTML special characters.
