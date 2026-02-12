@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,6 +18,10 @@ from app.core.security import (
 from app.modules.auth.models import AdminUser
 from app.modules.tenants.models import AVAILABLE_FEATURES
 from app.modules.tenants.schemas import (
+    EmailLogListResponse,
+    EmailLogResponse,
+    EmailTestRequest,
+    EmailTestResponse,
     FeatureFlagResponse,
     FeatureFlagsListResponse,
     FeatureFlagUpdate,
@@ -356,8 +361,115 @@ async def update_tenant_settings(
     check_tenant_access(user, tenant_id, current_tenant_id)
     
     service = TenantService(db)
-    settings = await service.update_settings(tenant_id, data)
-    return TenantSettingsResponse.model_validate(settings)
+    tenant_settings = await service.update_settings(tenant_id, data)
+    return TenantSettingsResponse.model_validate(tenant_settings)
+
+
+# ============================================================================
+# Email Test & Logs Routes
+# ============================================================================
+
+
+@router.post(
+    "/tenants/{tenant_id}/settings/email-test",
+    response_model=EmailTestResponse,
+    summary="Send test email",
+    description="Send a test email using the tenant's email configuration to verify SMTP/provider setup.",
+)
+async def send_email_test(
+    tenant_id: UUID,
+    data: EmailTestRequest,
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> EmailTestResponse:
+    """Send a test email using tenant's email config.
+
+    Sends a test message to the specified address to verify configuration.
+    Requires settings:update permission.
+    """
+    check_tenant_access(user, tenant_id, current_tenant_id)
+
+    from app.modules.notifications.service import EmailService
+
+    email_service = EmailService(db=db)
+    success, error = await email_service.send_test_email(
+        to_email=data.to_email,
+        tenant_id=tenant_id,
+    )
+
+    # Commit the email log entry
+    await db.commit()
+
+    # Determine the provider used
+    config = await email_service._resolve_config(tenant_id)
+
+    return EmailTestResponse(
+        success=success,
+        provider=config.provider,
+        error=error,
+    )
+
+
+@router.get(
+    "/tenants/{tenant_id}/email-logs",
+    response_model=EmailLogListResponse,
+    summary="List email logs",
+    description="Get paginated list of email send attempts for a tenant. Useful for debugging invitation delivery.",
+)
+async def list_email_logs(
+    tenant_id: UUID,
+    pagination: Pagination,
+    email_status: str | None = Query(
+        default=None,
+        alias="status",
+        description="Filter by status: sent, failed, console",
+    ),
+    email_type: str | None = Query(
+        default=None,
+        alias="type",
+        description="Filter by type: welcome, password_reset, inquiry, test",
+    ),
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> EmailLogListResponse:
+    """List email logs for a tenant with pagination and filters.
+
+    Superusers and platform owners can view logs for any tenant.
+    Regular admins can only view logs for their own tenant.
+    """
+    check_tenant_access(user, tenant_id, current_tenant_id)
+
+    from app.modules.notifications.models import EmailLog
+
+    base_query = select(EmailLog).where(EmailLog.tenant_id == tenant_id)
+
+    if email_status:
+        base_query = base_query.where(EmailLog.status == email_status)
+    if email_type:
+        base_query = base_query.where(EmailLog.email_type == email_type)
+
+    # Count total
+    count_stmt = select(func.count()).select_from(base_query.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    # Paginated results (newest first)
+    stmt = (
+        base_query
+        .order_by(EmailLog.created_at.desc())
+        .offset((pagination.page - 1) * pagination.page_size)
+        .limit(pagination.page_size)
+    )
+    result = await db.execute(stmt)
+    logs = list(result.scalars().all())
+
+    return EmailLogListResponse(
+        items=[EmailLogResponse.model_validate(log) for log in logs],
+        total=total,
+        page=pagination.page,
+        page_size=pagination.page_size,
+    )
 
 
 # ============================================================================

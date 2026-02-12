@@ -242,11 +242,12 @@ class AuthService:
 
         # Send reset email
         try:
-            email_service = EmailService()
+            email_service = EmailService(db=self.db)
             await email_service.send_password_reset_email(
                 to_email=user.email,
                 first_name=user.first_name,
                 reset_token=reset_token,
+                tenant_id=tenant_id,
             )
         except Exception:
             import logging
@@ -427,11 +428,12 @@ class UserService(BaseService[AdminUser]):
                 tenant_result = await self.db.execute(tenant_stmt)
                 tenant_name = tenant_result.scalar_one_or_none() or "Platform"
 
-                email_service = EmailService()
+                email_service = EmailService(db=self.db)
                 await email_service.send_welcome_email(
                     to_email=data.email,
                     first_name=data.first_name,
                     tenant_name=tenant_name,
+                    tenant_id=tenant_id,
                 )
             except Exception:
                 # Don't fail user creation if email sending fails

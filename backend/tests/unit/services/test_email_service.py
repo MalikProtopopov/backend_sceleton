@@ -15,6 +15,7 @@ class TestEmailServiceWelcome:
             mock_settings.email_from_address = "noreply@test.com"
             mock_settings.email_from_name = "Test"
             mock_settings.email_api_key = ""
+            mock_settings.app_name = "TestApp"
             from app.modules.notifications.service import EmailService
             svc = EmailService()
             result = await svc.send_welcome_email("a@b.com", "John", "Acme")
@@ -28,9 +29,14 @@ class TestEmailServiceWelcome:
             mock_settings.email_api_key = "SG.test_key"
             mock_settings.email_from_address = "noreply@test.com"
             mock_settings.email_from_name = "Test"
+            mock_settings.app_name = "TestApp"
             from app.modules.notifications.service import EmailService
             svc = EmailService()
-            with patch.object(svc, "_send_via_sendgrid", new_callable=AsyncMock, return_value=True) as mock_send:
+            with patch.object(
+                svc, "_send_via_sendgrid",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ) as mock_send:
                 result = await svc.send_welcome_email("a@b.com", "John", "Acme")
                 assert result is True
                 mock_send.assert_called_once()
@@ -43,9 +49,14 @@ class TestEmailServiceWelcome:
             mock_settings.email_api_key = "mg.test_key"
             mock_settings.email_from_address = "noreply@test.com"
             mock_settings.email_from_name = "Test"
+            mock_settings.app_name = "TestApp"
             from app.modules.notifications.service import EmailService
             svc = EmailService()
-            with patch.object(svc, "_send_via_mailgun", new_callable=AsyncMock, return_value=True) as mock_send:
+            with patch.object(
+                svc, "_send_via_mailgun",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ) as mock_send:
                 result = await svc.send_welcome_email("a@b.com", "John", "Acme")
                 assert result is True
                 mock_send.assert_called_once()
@@ -61,6 +72,7 @@ class TestEmailServicePasswordReset:
             mock_settings.email_from_address = "noreply@test.com"
             mock_settings.email_from_name = "Test"
             mock_settings.email_api_key = ""
+            mock_settings.app_name = "TestApp"
             from app.modules.notifications.service import EmailService
             svc = EmailService()
             result = await svc.send_password_reset_email("a@b.com", "John", "token123")

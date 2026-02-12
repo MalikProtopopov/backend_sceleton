@@ -257,18 +257,45 @@ class TenantService:
     async def update_settings(
         self, tenant_id: UUID, data: TenantSettingsUpdate
     ) -> TenantSettings:
-        """Update tenant settings."""
+        """Update tenant settings.
+
+        Handles encryption of sensitive fields (smtp_password, email_api_key)
+        before persisting to database.
+        """
+        from app.core.encryption import get_encryption_service
+
         tenant = await self.get_by_id(tenant_id)
+        enc = get_encryption_service()
+
+        # Extract and encrypt sensitive write-only fields
+        update_data = data.model_dump(exclude_unset=True)
+        smtp_password = update_data.pop("smtp_password", None)
+        email_api_key = update_data.pop("email_api_key", None)
 
         if not tenant.settings:
             # Create settings if not exists
-            settings = TenantSettings(tenant_id=tenant_id, **data.model_dump())
+            settings = TenantSettings(tenant_id=tenant_id, **update_data)
             self.db.add(settings)
         else:
             # Update existing settings
-            for field, value in data.model_dump(exclude_unset=True).items():
+            for field, value in update_data.items():
                 setattr(tenant.settings, field, value)
             settings = tenant.settings
+
+        # Handle smtp_password: encrypt if provided, clear if explicitly set to empty/None
+        if smtp_password is not None:
+            if smtp_password:
+                settings.smtp_password_encrypted = enc.encrypt(smtp_password)
+            else:
+                settings.smtp_password_encrypted = None
+        # If smtp_password was not in the request at all, don't touch existing value
+
+        # Handle email_api_key: encrypt if provided, clear if explicitly set to empty/None
+        if email_api_key is not None:
+            if email_api_key:
+                settings.email_api_key_encrypted = enc.encrypt(email_api_key)
+            else:
+                settings.email_api_key_encrypted = None
 
         await self.db.commit()
         await self.db.refresh(settings)

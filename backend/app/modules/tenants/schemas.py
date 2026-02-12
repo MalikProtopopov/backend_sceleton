@@ -1,9 +1,10 @@
 """Pydantic schemas for tenants module."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 # ============================================================================
@@ -126,15 +127,68 @@ class TenantSettingsBase(BaseModel):
         description="Custom content to include in llms.txt",
     )
 
+    # Email / SMTP configuration (per-tenant)
+    email_provider: Literal["smtp", "sendgrid", "mailgun", "console"] | None = Field(
+        default=None,
+        description="Email provider for this tenant. NULL = use global default.",
+    )
+    email_from_address: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Sender email address for this tenant",
+    )
+    email_from_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Sender display name for this tenant",
+    )
+    smtp_host: str | None = Field(
+        default=None,
+        max_length=255,
+        description="SMTP server host (e.g. smtp.gmail.com)",
+    )
+    smtp_port: int | None = Field(
+        default=None,
+        ge=1,
+        le=65535,
+        description="SMTP server port (587=STARTTLS, 465=SSL)",
+    )
+    smtp_user: str | None = Field(
+        default=None,
+        max_length=255,
+        description="SMTP authentication username",
+    )
+    smtp_use_tls: bool = Field(
+        default=True,
+        description="Use STARTTLS for SMTP connection",
+    )
+
 
 class TenantSettingsUpdate(TenantSettingsBase):
-    """Schema for updating tenant settings."""
+    """Schema for updating tenant settings.
 
-    pass
+    smtp_password and email_api_key are write-only fields.
+    They are encrypted before storage and never returned in responses.
+    Pass null/empty to clear, or omit to keep unchanged.
+    """
+
+    smtp_password: str | None = Field(
+        default=None,
+        max_length=500,
+        description="SMTP password (write-only, encrypted at rest). Pass null to clear.",
+    )
+    email_api_key: str | None = Field(
+        default=None,
+        max_length=500,
+        description="SendGrid/Mailgun API key (write-only, encrypted at rest). Pass null to clear.",
+    )
 
 
 class TenantSettingsResponse(TenantSettingsBase):
-    """Schema for tenant settings response."""
+    """Schema for tenant settings response.
+
+    Sensitive fields (smtp_password, email_api_key) are masked.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -142,6 +196,39 @@ class TenantSettingsResponse(TenantSettingsBase):
     tenant_id: UUID
     created_at: datetime
     updated_at: datetime
+
+    # Masked secrets — show whether a value is configured, not the actual value
+    smtp_password_configured: bool = Field(
+        default=False,
+        description="Whether SMTP password is configured (actual value is never returned)",
+    )
+    email_api_key_configured: bool = Field(
+        default=False,
+        description="Whether email API key is configured (actual value is never returned)",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def compute_secret_flags(cls, data):
+        """Compute *_configured flags from encrypted DB fields."""
+        if hasattr(data, "__dict__"):
+            # ORM model — access attributes
+            obj = data
+            smtp_enc = getattr(obj, "smtp_password_encrypted", None)
+            api_enc = getattr(obj, "email_api_key_encrypted", None)
+            # Pydantic v2 from_attributes: we must inject into a dict copy
+            d = {}
+            for field_name in cls.model_fields:
+                if hasattr(obj, field_name):
+                    d[field_name] = getattr(obj, field_name)
+            d["smtp_password_configured"] = bool(smtp_enc)
+            d["email_api_key_configured"] = bool(api_enc)
+            return d
+        # dict input (e.g., from .model_dump())
+        if isinstance(data, dict):
+            data["smtp_password_configured"] = bool(data.get("smtp_password_encrypted"))
+            data["email_api_key_configured"] = bool(data.get("email_api_key_encrypted"))
+        return data
 
 
 # ============================================================================
@@ -273,4 +360,48 @@ class TenantAnalyticsPublic(BaseModel):
 
     ga_tracking_id: str | None = None
     ym_counter_id: str | None = None
+
+
+# ============================================================================
+# Email Test / Email Log Schemas
+# ============================================================================
+
+
+class EmailTestRequest(BaseModel):
+    """Request to send a test email using tenant's email configuration."""
+
+    to_email: EmailStr = Field(..., description="Recipient email address for the test")
+
+
+class EmailTestResponse(BaseModel):
+    """Response from the email test endpoint."""
+
+    success: bool
+    provider: str | None = None
+    error: str | None = None
+
+
+class EmailLogResponse(BaseModel):
+    """Schema for email log entry."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    to_email: str
+    subject: str
+    email_type: str
+    provider: str
+    status: str
+    error_message: str | None = None
+    created_at: datetime
+
+
+class EmailLogListResponse(BaseModel):
+    """Schema for paginated email logs."""
+
+    items: list[EmailLogResponse]
+    total: int
+    page: int
+    page_size: int
 

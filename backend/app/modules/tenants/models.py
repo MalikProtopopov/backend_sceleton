@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -100,6 +100,55 @@ class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):
     inquiry_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # Email / SMTP configuration (per-tenant)
+    email_provider: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Email provider: smtp, sendgrid, mailgun, console. NULL = use global default",
+    )
+    email_from_address: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Sender email address for this tenant",
+    )
+    email_from_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Sender display name for this tenant",
+    )
+    smtp_host: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="SMTP server host (e.g. smtp.gmail.com)",
+    )
+    smtp_port: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=587,
+        comment="SMTP server port (587=STARTTLS, 465=SSL)",
+    )
+    smtp_user: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="SMTP authentication username",
+    )
+    smtp_password_encrypted: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="SMTP password (encrypted with Fernet)",
+    )
+    smtp_use_tls: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="Use STARTTLS for SMTP connection",
+    )
+    email_api_key_encrypted: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="SendGrid/Mailgun API key (encrypted with Fernet)",
+    )
+
     # SEO defaults
     default_og_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
     
@@ -172,6 +221,10 @@ class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):
         CheckConstraint(
             "default_locale ~ '^[a-z]{2}(-[A-Z]{2})?$'",
             name="ck_tenant_settings_locale_format",
+        ),
+        CheckConstraint(
+            "email_provider IS NULL OR email_provider IN ('smtp', 'sendgrid', 'mailgun', 'console')",
+            name="ck_tenant_settings_email_provider",
         ),
     )
 

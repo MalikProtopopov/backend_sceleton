@@ -1,6 +1,20 @@
-"""Notification services for Email and Telegram."""
+"""Notification services for Email and Telegram.
+
+EmailService is tenant-aware: it loads per-tenant SMTP/email configuration
+from TenantSettings and falls back to global settings when not configured.
+Every send attempt is logged to the email_logs table.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from uuid import UUID
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.logging import get_logger
@@ -8,8 +22,37 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+@dataclass
+class EmailConfig:
+    """Resolved email configuration (tenant-level or global fallback)."""
+
+    provider: str  # smtp, sendgrid, mailgun, console
+    from_address: str
+    from_name: str
+    # SMTP-specific
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    # API-key based providers (SendGrid / Mailgun)
+    api_key: str | None = None
+
+
 class EmailService:
-    """Service for sending email notifications."""
+    """Service for sending email notifications.
+
+    Tenant-aware: accepts an optional db session and tenant_id.
+    When tenant_id is provided, loads per-tenant email config from TenantSettings.
+    Falls back to global settings (config.py / env vars) when no tenant config exists.
+    """
+
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        self.db = db
+
+    # ------------------------------------------------------------------
+    # Public send methods
+    # ------------------------------------------------------------------
 
     async def send_welcome_email(
         self,
@@ -17,25 +60,15 @@ class EmailService:
         first_name: str,
         tenant_name: str,
         admin_url: str | None = None,
+        tenant_id: UUID | None = None,
     ) -> bool:
         """Send welcome email to newly created user.
 
         The email does NOT contain the password. The admin communicates
         the password to the user via another channel (phone, in person, etc.).
-
-        Returns True if sent successfully.
         """
         platform_name = settings.app_name
         login_url = admin_url or f"{platform_name} Admin Panel"
-
-        if settings.email_provider == "console":
-            logger.info(
-                "welcome_email",
-                to=to_email,
-                first_name=first_name,
-                tenant_name=tenant_name,
-            )
-            return True
 
         subject = f"You've been invited to {tenant_name}"
         body = (
@@ -48,12 +81,13 @@ class EmailService:
             f"If you did not expect this email, please ignore it."
         )
 
-        if settings.email_provider == "sendgrid":
-            return await self._send_via_sendgrid(to_email, subject, body)
-        elif settings.email_provider == "mailgun":
-            return await self._send_via_mailgun(to_email, subject, body)
-
-        return False
+        return await self._send(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            email_type="welcome",
+            tenant_id=tenant_id,
+        )
 
     async def send_password_reset_email(
         self,
@@ -61,20 +95,9 @@ class EmailService:
         first_name: str,
         reset_token: str,
         reset_url: str | None = None,
+        tenant_id: UUID | None = None,
     ) -> bool:
-        """Send password reset email with token.
-
-        Returns True if sent successfully.
-        """
-        if settings.email_provider == "console":
-            logger.info(
-                "password_reset_email",
-                to=to_email,
-                first_name=first_name,
-                token=reset_token[:20] + "...",
-            )
-            return True
-
+        """Send password reset email with token."""
         link = reset_url or f"Reset token: {reset_token}"
 
         subject = "Password Reset Request"
@@ -86,12 +109,13 @@ class EmailService:
             f"If you did not request this, please ignore this email.\n"
         )
 
-        if settings.email_provider == "sendgrid":
-            return await self._send_via_sendgrid(to_email, subject, body)
-        elif settings.email_provider == "mailgun":
-            return await self._send_via_mailgun(to_email, subject, body)
-
-        return False
+        return await self._send(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            email_type="password_reset",
+            tenant_id=tenant_id,
+        )
 
     async def send_inquiry_notification(
         self,
@@ -101,23 +125,9 @@ class EmailService:
         inquiry_phone: str | None,
         inquiry_message: str | None,
         inquiry_source: str | None = None,
+        tenant_id: UUID | None = None,
     ) -> bool:
-        """Send email notification about new inquiry.
-
-        Returns True if sent successfully.
-        """
-        if settings.email_provider == "console":
-            # Log to console in development
-            logger.info(
-                "email_notification",
-                to=to_email,
-                subject="Новая заявка",
-                name=inquiry_name,
-                email=inquiry_email,
-                phone=inquiry_phone,
-            )
-            return True
-
+        """Send email notification about new inquiry."""
         subject = f"Новая заявка от {inquiry_name}"
         body = self._build_inquiry_email_body(
             inquiry_name,
@@ -127,12 +137,287 @@ class EmailService:
             inquiry_source,
         )
 
-        if settings.email_provider == "sendgrid":
-            return await self._send_via_sendgrid(to_email, subject, body)
-        elif settings.email_provider == "mailgun":
-            return await self._send_via_mailgun(to_email, subject, body)
+        return await self._send(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            email_type="inquiry",
+            tenant_id=tenant_id,
+        )
 
-        return False
+    async def send_test_email(
+        self,
+        to_email: str,
+        tenant_id: UUID,
+    ) -> tuple[bool, str | None]:
+        """Send a test email using tenant's email configuration.
+
+        Returns (success, error_message).
+        """
+        config = await self._resolve_config(tenant_id)
+
+        subject = "Test Email - Configuration Verified"
+        body = (
+            "This is a test email to verify your email configuration.\n\n"
+            f"Provider: {config.provider}\n"
+            f"From: {config.from_name} <{config.from_address}>\n\n"
+            "If you received this email, your configuration is working correctly."
+        )
+
+        success, error = await self._dispatch(
+            config=config,
+            to_email=to_email,
+            subject=subject,
+            body=body,
+        )
+
+        # Log the attempt
+        await self._log_email(
+            tenant_id=tenant_id,
+            to_email=to_email,
+            subject=subject,
+            email_type="test",
+            provider=config.provider,
+            success=success,
+            error_message=error,
+        )
+
+        return success, error
+
+    # ------------------------------------------------------------------
+    # Internal: unified send with config resolution and logging
+    # ------------------------------------------------------------------
+
+    async def _send(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        email_type: str,
+        tenant_id: UUID | None = None,
+    ) -> bool:
+        """Resolve config, send email, and log the attempt."""
+        config = await self._resolve_config(tenant_id)
+
+        success, error = await self._dispatch(
+            config=config,
+            to_email=to_email,
+            subject=subject,
+            body=body,
+        )
+
+        # Log the attempt (best-effort, don't fail the send)
+        try:
+            await self._log_email(
+                tenant_id=tenant_id,
+                to_email=to_email,
+                subject=subject,
+                email_type=email_type,
+                provider=config.provider,
+                success=success,
+                error_message=error,
+            )
+        except Exception:
+            logger.warning("email_log_failed", to=to_email, email_type=email_type)
+
+        return success
+
+    async def _dispatch(
+        self,
+        config: EmailConfig,
+        to_email: str,
+        subject: str,
+        body: str,
+    ) -> tuple[bool, str | None]:
+        """Dispatch email via the configured provider.
+
+        Returns (success, error_message).
+        """
+        if config.provider == "console":
+            logger.info(
+                "email_console",
+                to=to_email,
+                subject=subject,
+                from_addr=config.from_address,
+            )
+            return True, None
+
+        try:
+            if config.provider == "smtp":
+                await self._send_via_smtp(to_email, subject, body, config)
+                return True, None
+            elif config.provider == "sendgrid":
+                return await self._send_via_sendgrid(to_email, subject, body, config)
+            elif config.provider == "mailgun":
+                return await self._send_via_mailgun(to_email, subject, body, config)
+            else:
+                return False, f"Unknown provider: {config.provider}"
+        except Exception as e:
+            logger.exception("email_send_error", provider=config.provider, error=str(e))
+            return False, str(e)
+
+    # ------------------------------------------------------------------
+    # Config resolution
+    # ------------------------------------------------------------------
+
+    async def _resolve_config(self, tenant_id: UUID | None = None) -> EmailConfig:
+        """Resolve email configuration: tenant-specific or global fallback."""
+        if tenant_id and self.db:
+            try:
+                from app.modules.tenants.models import TenantSettings
+
+                stmt = select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
+                result = await self.db.execute(stmt)
+                ts = result.scalar_one_or_none()
+
+                if ts and ts.email_provider:
+                    # Tenant has its own email config
+                    return self._build_tenant_config(ts)
+            except Exception:
+                logger.warning("tenant_email_config_fallback", tenant_id=str(tenant_id))
+
+        # Global fallback
+        return EmailConfig(
+            provider=settings.email_provider,
+            from_address=settings.email_from_address,
+            from_name=settings.email_from_name,
+            api_key=settings.email_api_key or None,
+        )
+
+    def _build_tenant_config(self, ts) -> EmailConfig:
+        """Build EmailConfig from TenantSettings, decrypting secrets."""
+        from app.core.encryption import get_encryption_service
+
+        enc = get_encryption_service()
+
+        smtp_password = None
+        if ts.smtp_password_encrypted:
+            try:
+                smtp_password = enc.decrypt(ts.smtp_password_encrypted)
+            except Exception:
+                logger.warning("smtp_password_decrypt_failed", tenant_id=str(ts.tenant_id))
+
+        api_key = None
+        if ts.email_api_key_encrypted:
+            try:
+                api_key = enc.decrypt(ts.email_api_key_encrypted)
+            except Exception:
+                logger.warning("email_api_key_decrypt_failed", tenant_id=str(ts.tenant_id))
+
+        return EmailConfig(
+            provider=ts.email_provider,
+            from_address=ts.email_from_address or settings.email_from_address,
+            from_name=ts.email_from_name or settings.email_from_name,
+            smtp_host=ts.smtp_host,
+            smtp_port=ts.smtp_port or 587,
+            smtp_user=ts.smtp_user,
+            smtp_password=smtp_password,
+            smtp_use_tls=ts.smtp_use_tls,
+            api_key=api_key,
+        )
+
+    # ------------------------------------------------------------------
+    # Provider implementations
+    # ------------------------------------------------------------------
+
+    async def _send_via_smtp(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        config: EmailConfig,
+    ) -> None:
+        """Send email via SMTP using aiosmtplib.
+
+        Raises on failure (caller catches and converts to (False, error)).
+        """
+        import aiosmtplib
+
+        if not config.smtp_host:
+            raise ValueError("SMTP host is not configured")
+
+        msg = MIMEMultipart()
+        msg["From"] = f"{config.from_name} <{config.from_address}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        await aiosmtplib.send(
+            msg,
+            hostname=config.smtp_host,
+            port=config.smtp_port,
+            username=config.smtp_user,
+            password=config.smtp_password,
+            start_tls=config.smtp_use_tls,
+        )
+
+    async def _send_via_sendgrid(
+        self, to_email: str, subject: str, body: str, config: EmailConfig
+    ) -> tuple[bool, str | None]:
+        """Send email via SendGrid API."""
+        if not config.api_key:
+            return False, "SendGrid API key is not configured"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.sendgrid.com/v3/mail/send",
+                    headers={
+                        "Authorization": f"Bearer {config.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "personalizations": [{"to": [{"email": to_email}]}],
+                        "from": {
+                            "email": config.from_address,
+                            "name": config.from_name,
+                        },
+                        "subject": subject,
+                        "content": [{"type": "text/plain", "value": body}],
+                    },
+                )
+                if response.status_code in (200, 202):
+                    return True, None
+                error = f"SendGrid {response.status_code}: {response.text}"
+                logger.error("sendgrid_error", status=response.status_code, body=response.text)
+                return False, error
+        except Exception as e:
+            logger.exception("sendgrid_exception", error=str(e))
+            return False, str(e)
+
+    async def _send_via_mailgun(
+        self, to_email: str, subject: str, body: str, config: EmailConfig
+    ) -> tuple[bool, str | None]:
+        """Send email via Mailgun API."""
+        if not config.api_key:
+            return False, "Mailgun API key is not configured"
+
+        try:
+            domain = config.from_address.split("@")[1]
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"https://api.mailgun.net/v3/{domain}/messages",
+                    auth=("api", config.api_key),
+                    data={
+                        "from": f"{config.from_name} <{config.from_address}>",
+                        "to": to_email,
+                        "subject": subject,
+                        "text": body,
+                    },
+                )
+                if response.status_code == 200:
+                    return True, None
+                error = f"Mailgun {response.status_code}: {response.text}"
+                logger.error("mailgun_error", status=response.status_code, body=response.text)
+                return False, error
+        except Exception as e:
+            logger.exception("mailgun_exception", error=str(e))
+            return False, str(e)
+
+    # ------------------------------------------------------------------
+    # Email body builders
+    # ------------------------------------------------------------------
 
     def _build_inquiry_email_body(
         self,
@@ -158,70 +443,40 @@ class EmailService:
 
         return "\n".join(lines)
 
-    async def _send_via_sendgrid(
-        self, to_email: str, subject: str, body: str
-    ) -> bool:
-        """Send email via SendGrid API."""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.sendgrid.com/v3/mail/send",
-                    headers={
-                        "Authorization": f"Bearer {settings.email_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "personalizations": [{"to": [{"email": to_email}]}],
-                        "from": {
-                            "email": settings.email_from_address,
-                            "name": settings.email_from_name,
-                        },
-                        "subject": subject,
-                        "content": [{"type": "text/plain", "value": body}],
-                    },
-                )
-                success = response.status_code in (200, 202)
-                if not success:
-                    logger.error(
-                        "sendgrid_error",
-                        status=response.status_code,
-                        body=response.text,
-                    )
-                return success
-        except Exception as e:
-            logger.exception("sendgrid_exception", error=str(e))
-            return False
+    # ------------------------------------------------------------------
+    # Email logging
+    # ------------------------------------------------------------------
 
-    async def _send_via_mailgun(
-        self, to_email: str, subject: str, body: str
-    ) -> bool:
-        """Send email via Mailgun API."""
-        try:
-            # Mailgun domain is part of the API key setup
-            domain = settings.email_from_address.split("@")[1]
+    async def _log_email(
+        self,
+        tenant_id: UUID | None,
+        to_email: str,
+        subject: str,
+        email_type: str,
+        provider: str,
+        success: bool,
+        error_message: str | None = None,
+    ) -> None:
+        """Record an email send attempt in email_logs table."""
+        if not self.db or not tenant_id:
+            return  # Can't log without db session or tenant context
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"https://api.mailgun.net/v3/{domain}/messages",
-                    auth=("api", settings.email_api_key),
-                    data={
-                        "from": f"{settings.email_from_name} <{settings.email_from_address}>",
-                        "to": to_email,
-                        "subject": subject,
-                        "text": body,
-                    },
-                )
-                success = response.status_code == 200
-                if not success:
-                    logger.error(
-                        "mailgun_error",
-                        status=response.status_code,
-                        body=response.text,
-                    )
-                return success
-        except Exception as e:
-            logger.exception("mailgun_exception", error=str(e))
-            return False
+        from app.modules.notifications.models import EmailLog
+
+        log_entry = EmailLog(
+            tenant_id=tenant_id,
+            to_email=to_email,
+            subject=subject[:500],  # Truncate to column max
+            email_type=email_type,
+            provider=provider,
+            status="sent" if success else ("console" if provider == "console" else "failed"),
+            error_message=error_message[:2000] if error_message else None,
+        )
+        self.db.add(log_entry)
+        try:
+            await self.db.flush()
+        except Exception:
+            logger.warning("email_log_flush_failed", to=to_email, email_type=email_type)
 
 
 class TelegramService:
@@ -315,8 +570,8 @@ class TelegramService:
 class NotificationService:
     """Unified notification service."""
 
-    def __init__(self) -> None:
-        self.email = EmailService()
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        self.email = EmailService(db=db)
         self.telegram = TelegramService()
 
     async def notify_inquiry(
@@ -328,6 +583,7 @@ class NotificationService:
         inquiry_phone: str | None,
         inquiry_message: str | None,
         inquiry_source: str | None = None,
+        tenant_id: UUID | None = None,
     ) -> dict:
         """Send inquiry notifications via all configured channels.
 
@@ -343,6 +599,7 @@ class NotificationService:
                 inquiry_phone=inquiry_phone,
                 inquiry_message=inquiry_message,
                 inquiry_source=inquiry_source,
+                tenant_id=tenant_id,
             )
 
         if telegram_chat_id:
@@ -363,4 +620,3 @@ class NotificationService:
         )
 
         return results
-

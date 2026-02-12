@@ -210,7 +210,7 @@ async def _send_inquiry_notification(
             return
         
         # Send notifications via configured channels
-        notification_service = NotificationService()
+        notification_service = NotificationService(db=db)
         
         # Build source info
         source_parts = []
@@ -228,6 +228,7 @@ async def _send_inquiry_notification(
             inquiry_phone=inquiry.phone,
             inquiry_message=inquiry.message,
             inquiry_source=source,
+            tenant_id=tenant_id,
         )
         
         logger.info(
