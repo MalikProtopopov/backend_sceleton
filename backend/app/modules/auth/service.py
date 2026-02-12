@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -374,12 +375,11 @@ class UserService(BaseService[AdminUser]):
         Sets force_password_change=True for new users.
         Sends welcome email when send_credentials=True.
         """
-        # Check email uniqueness in tenant
+        # Check email uniqueness in tenant (including soft-deleted to match DB constraint)
         existing = await self.db.execute(
             select(AdminUser)
             .where(AdminUser.tenant_id == tenant_id)
             .where(AdminUser.email == data.email)
-            .where(AdminUser.deleted_at.is_(None))
         )
         if existing.scalar_one_or_none():
             raise AlreadyExistsError("User", "email", data.email)
@@ -396,7 +396,13 @@ class UserService(BaseService[AdminUser]):
             force_password_change=True,
         )
         self.db.add(user)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            await self.db.rollback()
+            if "uq_admin_users_tenant_email" in str(exc):
+                raise AlreadyExistsError("User", "email", data.email) from exc
+            raise
         await self.db.refresh(user)  # Full refresh for scalar fields (updated_at, etc.)
         await self.db.refresh(user, ["role"])
 
