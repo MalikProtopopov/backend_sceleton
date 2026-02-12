@@ -26,7 +26,12 @@ from app.modules.tenants.schemas import (
     FeatureFlagsListResponse,
     FeatureFlagUpdate,
     TenantAnalyticsPublic,
+    TenantByDomainResponse,
     TenantCreate,
+    TenantDomainCreate,
+    TenantDomainListResponse,
+    TenantDomainResponse,
+    TenantDomainUpdate,
     TenantListResponse,
     TenantPublicResponse,
     TenantResponse,
@@ -34,7 +39,7 @@ from app.modules.tenants.schemas import (
     TenantSettingsUpdate,
     TenantUpdate,
 )
-from app.modules.tenants.service import FeatureFlagService, TenantService
+from app.modules.tenants.service import FeatureFlagService, TenantDomainService, TenantService
 
 router = APIRouter()
 
@@ -105,6 +110,33 @@ async def get_tenant_public(
         primary_color=tenant.primary_color,
         site_url=site_url,
     )
+
+
+@router.get(
+    "/public/tenants/by-domain/{domain}",
+    response_model=TenantByDomainResponse,
+    summary="Resolve tenant by domain (public)",
+    description=(
+        "Resolve a custom admin-panel domain (e.g. admin.client.com) to tenant info. "
+        "Used by the admin SPA at startup to determine which tenant to load."
+    ),
+    tags=["Public"],
+)
+async def resolve_tenant_by_domain(
+    domain: str,
+    db: AsyncSession = Depends(get_db),
+) -> TenantByDomainResponse:
+    """Resolve hostname → tenant.
+
+    Returns tenant_id, slug, name, logo, color, site_url.
+    Result is cached in Redis for 5 min.
+    """
+    service = TenantDomainService(db)
+    data = await service.resolve(domain)
+    if data is None:
+        from app.core.exceptions import NotFoundError
+        raise NotFoundError("TenantDomain", domain)
+    return TenantByDomainResponse(**data)
 
 
 @router.get(
@@ -334,6 +366,86 @@ async def delete_tenant_logo(
         await image_upload_service.delete_image(tenant.logo_url)
         tenant.logo_url = None
         await db.commit()
+
+
+# ============================================================================
+# Tenant Domain Routes (platform owner)
+# ============================================================================
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains",
+    response_model=TenantDomainListResponse,
+    summary="List tenant domains",
+    description="List all custom domains attached to a tenant. Platform owner only.",
+)
+async def list_tenant_domains(
+    tenant_id: UUID,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+) -> TenantDomainListResponse:
+    """List all domains for a tenant."""
+    service = TenantDomainService(db)
+    domains = await service.list_domains(tenant_id)
+    return TenantDomainListResponse(
+        items=[TenantDomainResponse.model_validate(d) for d in domains],
+        total=len(domains),
+    )
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains",
+    response_model=TenantDomainResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add domain to tenant",
+    description="Attach a new custom admin-panel domain to a tenant. Platform owner only.",
+)
+async def add_tenant_domain(
+    tenant_id: UUID,
+    data: TenantDomainCreate,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+) -> TenantDomainResponse:
+    """Add a domain to a tenant."""
+    service = TenantDomainService(db)
+    td = await service.add_domain(tenant_id, data)
+    return TenantDomainResponse.model_validate(td)
+
+
+@router.patch(
+    "/tenants/{tenant_id}/domains/{domain_id}",
+    response_model=TenantDomainResponse,
+    summary="Update tenant domain",
+    description="Update domain attributes (is_primary, ssl_status). Platform owner only.",
+)
+async def update_tenant_domain(
+    tenant_id: UUID,
+    domain_id: UUID,
+    data: TenantDomainUpdate,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+) -> TenantDomainResponse:
+    """Update a domain."""
+    service = TenantDomainService(db)
+    td = await service.update_domain(domain_id, data)
+    return TenantDomainResponse.model_validate(td)
+
+
+@router.delete(
+    "/tenants/{tenant_id}/domains/{domain_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove tenant domain",
+    description="Remove a custom domain from a tenant. Platform owner only.",
+)
+async def remove_tenant_domain(
+    tenant_id: UUID,
+    domain_id: UUID,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Remove a domain binding."""
+    service = TenantDomainService(db)
+    await service.remove_domain(domain_id)
 
 
 # ============================================================================

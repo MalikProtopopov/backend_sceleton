@@ -273,6 +273,43 @@ class FeatureCatalogResponse(BaseModel):
     tenant_id: UUID = Field(..., description="Tenant ID for this catalog")
 
 
+# ============================================================================
+# Tenant Switcher Schemas
+# ============================================================================
+
+
+class TenantAccessInfo(BaseModel):
+    """Summary of a single tenant the user has access to."""
+
+    tenant_id: UUID
+    name: str
+    slug: str
+    logo_url: str | None = None
+    primary_color: str | None = None
+    admin_domain: str | None = Field(
+        default=None,
+        description="Primary admin-panel domain for this tenant (e.g. admin.client.com)",
+    )
+
+
+class MyTenantsResponse(BaseModel):
+    """Response for GET /auth/me/tenants."""
+
+    current_tenant_id: UUID
+    tenants: list[TenantAccessInfo]
+
+
+class SwitchTenantRequest(BaseModel):
+    """Request body for POST /auth/switch-tenant."""
+
+    tenant_id: UUID
+
+
+# ============================================================================
+# Password Reset Schemas
+# ============================================================================
+
+
 class ForgotPasswordRequest(BaseModel):
     """Request schema for forgot password."""
 

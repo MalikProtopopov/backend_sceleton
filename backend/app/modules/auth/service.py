@@ -208,7 +208,122 @@ class AuthService:
             expires_in=settings.jwt_access_token_expire_minutes * 60,
         )
 
-    # _log_action removed: use self.audit.log() from shared AuditService instead
+    # ------------------------------------------------------------------
+    # Multi-tenant: me/tenants & switch-tenant
+    # ------------------------------------------------------------------
+
+    async def get_user_tenants(
+        self, current_user: "AdminUser", current_tenant_id: UUID
+    ) -> dict:
+        """Return all tenants the current user's *email* has access to.
+
+        Looks up ``AdminUser`` rows across all tenants where ``email``
+        matches, ``is_active=True`` and ``deleted_at IS NULL``.
+        For each matching tenant also fetches primary admin domain from
+        ``tenant_domains``.
+        """
+        from app.modules.tenants.models import Tenant, TenantDomain
+
+        stmt = (
+            select(AdminUser)
+            .where(
+                AdminUser.email == current_user.email,
+                AdminUser.is_active.is_(True),
+                AdminUser.deleted_at.is_(None),
+            )
+            .options(selectinload(AdminUser.tenant).selectinload(Tenant.settings))
+        )
+        result = await self.db.execute(stmt)
+        user_rows = list(result.scalars().all())
+
+        tenants_info = []
+        for u in user_rows:
+            tenant = u.tenant
+            if tenant is None or tenant.deleted_at is not None or not tenant.is_active:
+                continue
+
+            # Primary domain lookup
+            domain_stmt = select(TenantDomain.domain).where(
+                TenantDomain.tenant_id == tenant.id,
+                TenantDomain.is_primary.is_(True),
+            )
+            domain_result = await self.db.execute(domain_stmt)
+            admin_domain = domain_result.scalar_one_or_none()
+
+            tenants_info.append({
+                "tenant_id": str(tenant.id),
+                "name": tenant.name,
+                "slug": tenant.slug,
+                "logo_url": tenant.logo_url,
+                "primary_color": tenant.primary_color,
+                "admin_domain": admin_domain,
+            })
+
+        return {
+            "current_tenant_id": str(current_tenant_id),
+            "tenants": tenants_info,
+        }
+
+    async def switch_tenant(
+        self,
+        current_user: "AdminUser",
+        target_tenant_id: UUID,
+        ip_address: str | None = None,
+    ) -> TokenPair:
+        """Switch the current user to a different tenant and issue new tokens.
+
+        Validates that:
+        1. The target tenant is active
+        2. An AdminUser with the same email exists in the target tenant
+        3. That AdminUser is active
+
+        Returns a fresh token pair scoped to the target tenant.
+        """
+        from app.modules.tenants.models import Tenant
+
+        # 1. Tenant must be active
+        await self._check_tenant_active(target_tenant_id)
+
+        # 2. Find the user record in the target tenant
+        stmt = (
+            select(AdminUser)
+            .where(
+                AdminUser.email == current_user.email,
+                AdminUser.tenant_id == target_tenant_id,
+                AdminUser.is_active.is_(True),
+                AdminUser.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(AdminUser.role)
+                .selectinload(Role.role_permissions)
+                .selectinload(RolePermission.permission)
+            )
+        )
+        result = await self.db.execute(stmt)
+        target_user = result.scalar_one_or_none()
+
+        if target_user is None:
+            raise InvalidCredentialsError("No access to this organization")
+
+        # 3. Issue new tokens for the target user/tenant
+        tokens = self._create_tokens(target_user)
+
+        # 4. Audit
+        await self.audit.log(
+            tenant_id=target_tenant_id,
+            user_id=target_user.id,
+            resource_type="auth",
+            resource_id=target_user.id,
+            action="switch_tenant",
+            ip_address=ip_address,
+            changes={
+                "from_tenant_id": str(current_user.tenant_id),
+                "to_tenant_id": str(target_tenant_id),
+            },
+        )
+        await self.db.commit()
+
+        return tokens
 
     async def request_password_reset(self, email: str, tenant_id: UUID) -> str | None:
         """Generate a password reset token and send email.

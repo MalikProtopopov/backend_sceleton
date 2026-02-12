@@ -287,6 +287,58 @@ async def get_tenant_status_cache() -> TenantStatusCache | None:
     return TenantStatusCache(_redis_client)
 
 
+class DomainTenantCache:
+    """Cache for domain → tenant resolution.
+
+    Stores JSON-encoded tenant info keyed by domain name.
+    Used by the public ``/public/tenants/by-domain/{domain}`` endpoint
+    so the admin SPA can resolve its hostname to a tenant without
+    hitting the database on every page load.
+    """
+
+    PREFIX = "domain_tenant:"
+    TTL = 300  # 5 minutes
+
+    def __init__(self, redis_client: Redis):
+        self.redis = redis_client
+
+    async def get(self, domain: str) -> str | None:
+        """Return cached JSON string for *domain*, or ``None``."""
+        key = f"{self.PREFIX}{domain.lower()}"
+        return await self.redis.get(key)
+
+    async def set(self, domain: str, data_json: str) -> None:
+        """Store *data_json* for *domain* with a 5-minute TTL."""
+        key = f"{self.PREFIX}{domain.lower()}"
+        await self.redis.setex(key, self.TTL, data_json)
+
+    async def invalidate(self, domain: str) -> None:
+        """Remove cached entry for *domain*."""
+        key = f"{self.PREFIX}{domain.lower()}"
+        await self.redis.delete(key)
+
+    async def invalidate_tenant(self, tenant_id: str) -> None:
+        """Remove **all** cached domains that belong to *tenant_id*.
+
+        This uses SCAN so it's safe for production Redis.
+        """
+        async for key in self.redis.scan_iter(match=f"{self.PREFIX}*"):
+            # The value is JSON; quick check for tenant_id substring
+            val = await self.redis.get(key)
+            if val and tenant_id in val:
+                await self.redis.delete(key)
+
+
+async def get_domain_tenant_cache() -> DomainTenantCache | None:
+    """Get domain → tenant cache instance.
+
+    Returns None if Redis is not initialized.
+    """
+    if _redis_client is None:
+        return None
+    return DomainTenantCache(_redis_client)
+
+
 class CacheClient:
     """Simple cache client wrapper for Redis.
     

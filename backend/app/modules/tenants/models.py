@@ -69,8 +69,70 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
         ),
     )
 
+    # Domains (admin panel custom domains)
+    domains: Mapped[list["TenantDomain"]] = relationship(
+        "TenantDomain",
+        back_populates="tenant",
+        lazy="selectin",
+    )
+
     def __repr__(self) -> str:
         return f"<Tenant {self.slug}>"
+
+
+class TenantDomain(Base, UUIDMixin, TimestampMixin):
+    """Custom admin-panel domains mapped to a tenant.
+
+    Allows each tenant to have one or more custom domains
+    (e.g. admin.client.com) that resolve to the shared admin SPA.
+    The frontend uses GET /public/tenants/by-domain/{domain} to
+    determine tenant_id at startup.
+    """
+
+    __tablename__ = "tenant_domains"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    domain: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Fully-qualified domain name, e.g. admin.client.com",
+    )
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="Primary domain shown in tenant switcher links",
+    )
+    ssl_status: Mapped[str] = mapped_column(
+        String(20),
+        default="pending",
+        nullable=False,
+        comment="SSL certificate status: pending, active, error",
+    )
+
+    # Relationship
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="domains")
+
+    __table_args__ = (
+        CheckConstraint(
+            "ssl_status IN ('pending', 'active', 'error')",
+            name="ck_tenant_domains_ssl_status",
+        ),
+        CheckConstraint(
+            "char_length(domain) >= 4",
+            name="ck_tenant_domains_domain_min_length",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TenantDomain {self.domain} tenant_id={self.tenant_id}>"
 
 
 class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):

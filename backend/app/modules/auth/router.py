@@ -29,6 +29,7 @@ from app.modules.auth.schemas import (
     LoginRequest,
     LoginResponse,
     MeResponse,
+    MyTenantsResponse,
     PasswordChange,
     PermissionListResponse,
     PermissionResponse,
@@ -37,6 +38,8 @@ from app.modules.auth.schemas import (
     RoleListResponse,
     RoleResponse,
     RoleUpdate,
+    SwitchTenantRequest,
+    TenantAccessInfo,
     TokenPair,
     TokenRefresh,
     UserCreate,
@@ -215,6 +218,50 @@ async def get_me(
         role=RoleResponse.model_validate(user.role) if user.role else None,
         permissions=permissions,
     )
+
+
+@router.get(
+    "/me/tenants",
+    response_model=MyTenantsResponse,
+    summary="List my tenants",
+    description=(
+        "Return all organizations the current user has access to "
+        "(same email, active, not deleted). Used by the tenant switcher."
+    ),
+)
+async def get_my_tenants(
+    user: AdminUser = Depends(get_current_active_user),
+    current_tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> MyTenantsResponse:
+    """List all tenants accessible to the current user."""
+    service = AuthService(db)
+    data = await service.get_user_tenants(user, current_tenant_id)
+    return MyTenantsResponse(
+        current_tenant_id=data["current_tenant_id"],
+        tenants=[TenantAccessInfo(**t) for t in data["tenants"]],
+    )
+
+
+@router.post(
+    "/switch-tenant",
+    response_model=TokenPair,
+    summary="Switch tenant",
+    description=(
+        "Switch the current user to a different organization. "
+        "Returns new access_token + refresh_token scoped to the target tenant."
+    ),
+)
+async def switch_tenant(
+    data: SwitchTenantRequest,
+    request: Request,
+    user: AdminUser = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> TokenPair:
+    """Switch to a different tenant and get new tokens."""
+    ip_address = request.client.host if request.client else None
+    service = AuthService(db)
+    return await service.switch_tenant(user, data.tenant_id, ip_address)
 
 
 @router.get(

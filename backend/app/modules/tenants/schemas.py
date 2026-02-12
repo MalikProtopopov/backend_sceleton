@@ -1,10 +1,78 @@
 """Pydantic schemas for tenants module."""
 
+import re
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+
+# ============================================================================
+# Tenant Domain Schemas
+# ============================================================================
+
+
+_DOMAIN_RE = re.compile(
+    r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$"
+)
+
+
+class TenantDomainCreate(BaseModel):
+    """Schema for adding a domain to a tenant."""
+
+    domain: str = Field(..., min_length=4, max_length=255, description="FQDN, e.g. admin.client.com")
+    is_primary: bool = Field(default=False, description="Mark as primary domain for this tenant")
+
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _DOMAIN_RE.match(v):
+            raise ValueError("Invalid domain format. Expected FQDN like admin.client.com")
+        return v
+
+
+class TenantDomainUpdate(BaseModel):
+    """Schema for updating a tenant domain."""
+
+    is_primary: bool | None = None
+    ssl_status: Literal["pending", "active", "error"] | None = None
+
+
+class TenantDomainResponse(BaseModel):
+    """Schema for tenant domain response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    domain: str
+    is_primary: bool
+    ssl_status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TenantDomainListResponse(BaseModel):
+    """Schema for list of tenant domains."""
+
+    items: list[TenantDomainResponse]
+    total: int
+
+
+class TenantByDomainResponse(BaseModel):
+    """Public response when resolving a tenant by hostname.
+
+    Used by the admin SPA at startup: GET /public/tenants/by-domain/{domain}
+    """
+
+    tenant_id: UUID
+    slug: str
+    name: str
+    logo_url: str | None = None
+    primary_color: str | None = None
+    site_url: str | None = None
 
 
 # ============================================================================

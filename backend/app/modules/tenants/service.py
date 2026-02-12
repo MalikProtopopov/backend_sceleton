@@ -1,5 +1,7 @@
 """Tenant service layer - business logic for tenants and feature flags."""
 
+import json
+import logging
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -8,14 +10,25 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import transactional
 from app.core.exceptions import AlreadyExistsError, NotFoundError
-from app.modules.tenants.models import AVAILABLE_FEATURES, FeatureFlag, Tenant, TenantSettings, get_feature_description
+from app.modules.tenants.models import (
+    AVAILABLE_FEATURES,
+    FeatureFlag,
+    Tenant,
+    TenantDomain,
+    TenantSettings,
+    get_feature_description,
+)
 from app.modules.tenants.schemas import (
     FeatureFlagCreate,
     FeatureFlagUpdate,
     TenantCreate,
+    TenantDomainCreate,
+    TenantDomainUpdate,
     TenantSettingsUpdate,
     TenantUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TenantService:
@@ -398,4 +411,175 @@ class FeatureFlagService:
         await self.db.refresh(flag)
 
         return flag
+
+
+class TenantDomainService:
+    """Service for tenant domain CRUD and resolution (domain → tenant)."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    # ------------------------------------------------------------------
+    # Public resolve (used by GET /public/tenants/by-domain/{domain})
+    # ------------------------------------------------------------------
+
+    async def resolve(self, domain: str) -> dict | None:
+        """Resolve a domain to tenant info dict.
+
+        Returns cached result from Redis when available.
+        On cache miss queries DB and stores in Redis for 5 min.
+        Returns ``None`` if the domain is not registered.
+        """
+        domain = domain.strip().lower()
+
+        # 1. Try Redis cache
+        from app.core.redis import get_domain_tenant_cache
+
+        cache = await get_domain_tenant_cache()
+        if cache:
+            cached = await cache.get(domain)
+            if cached is not None:
+                return json.loads(cached)
+
+        # 2. DB lookup
+        stmt = (
+            select(TenantDomain)
+            .where(TenantDomain.domain == domain)
+            .options(selectinload(TenantDomain.tenant).selectinload(Tenant.settings))
+        )
+        result = await self.db.execute(stmt)
+        td = result.scalar_one_or_none()
+
+        if td is None or td.tenant is None:
+            return None
+
+        tenant = td.tenant
+        if tenant.deleted_at is not None or not tenant.is_active:
+            return None
+
+        site_url = None
+        if tenant.settings and tenant.settings.site_url:
+            site_url = tenant.settings.site_url
+
+        data = {
+            "tenant_id": str(tenant.id),
+            "slug": tenant.slug,
+            "name": tenant.name,
+            "logo_url": tenant.logo_url,
+            "primary_color": tenant.primary_color,
+            "site_url": site_url,
+        }
+
+        # 3. Store in cache
+        if cache:
+            await cache.set(domain, json.dumps(data))
+
+        return data
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    async def list_domains(self, tenant_id: UUID) -> list[TenantDomain]:
+        """List all domains for a tenant."""
+        stmt = (
+            select(TenantDomain)
+            .where(TenantDomain.tenant_id == tenant_id)
+            .order_by(TenantDomain.is_primary.desc(), TenantDomain.created_at)
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    @transactional
+    async def add_domain(self, tenant_id: UUID, data: TenantDomainCreate) -> TenantDomain:
+        """Attach a new domain to a tenant."""
+        # Verify tenant exists
+        tenant_stmt = select(Tenant).where(Tenant.id == tenant_id, Tenant.deleted_at.is_(None))
+        if not (await self.db.execute(tenant_stmt)).scalar_one_or_none():
+            raise NotFoundError("Tenant", tenant_id)
+
+        # Check uniqueness
+        existing = await self.db.execute(
+            select(TenantDomain).where(TenantDomain.domain == data.domain)
+        )
+        if existing.scalar_one_or_none():
+            raise AlreadyExistsError("TenantDomain", "domain", data.domain)
+
+        # If is_primary, un-primary others
+        if data.is_primary:
+            await self._unset_primary(tenant_id)
+
+        td = TenantDomain(tenant_id=tenant_id, **data.model_dump())
+        self.db.add(td)
+        await self.db.flush()
+        await self.db.refresh(td)
+        return td
+
+    @transactional
+    async def update_domain(self, domain_id: UUID, data: TenantDomainUpdate) -> TenantDomain:
+        """Update domain attributes (is_primary, ssl_status)."""
+        td = await self._get_by_id(domain_id)
+        update = data.model_dump(exclude_unset=True)
+
+        if update.get("is_primary"):
+            await self._unset_primary(td.tenant_id)
+
+        for field, value in update.items():
+            setattr(td, field, value)
+
+        await self.db.flush()
+        await self.db.refresh(td)
+
+        # Invalidate cache
+        await self._invalidate_cache(td.domain)
+        return td
+
+    @transactional
+    async def remove_domain(self, domain_id: UUID) -> None:
+        """Remove a domain binding."""
+        td = await self._get_by_id(domain_id)
+        domain_str = td.domain
+        await self.db.delete(td)
+        await self.db.flush()
+
+        # Invalidate cache
+        await self._invalidate_cache(domain_str)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    async def get_primary_domain(self, tenant_id: UUID) -> str | None:
+        """Return the primary domain string for a tenant, or None."""
+        stmt = (
+            select(TenantDomain.domain)
+            .where(TenantDomain.tenant_id == tenant_id, TenantDomain.is_primary.is_(True))
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _get_by_id(self, domain_id: UUID) -> TenantDomain:
+        td = (await self.db.execute(
+            select(TenantDomain).where(TenantDomain.id == domain_id)
+        )).scalar_one_or_none()
+        if td is None:
+            raise NotFoundError("TenantDomain", domain_id)
+        return td
+
+    async def _unset_primary(self, tenant_id: UUID) -> None:
+        """Remove is_primary from all existing domains of the tenant."""
+        stmt = (
+            select(TenantDomain)
+            .where(TenantDomain.tenant_id == tenant_id, TenantDomain.is_primary.is_(True))
+        )
+        result = await self.db.execute(stmt)
+        for existing in result.scalars():
+            existing.is_primary = False
+
+    async def _invalidate_cache(self, domain: str) -> None:
+        from app.core.redis import get_domain_tenant_cache
+
+        cache = await get_domain_tenant_cache()
+        if cache:
+            await cache.invalidate(domain)
 
