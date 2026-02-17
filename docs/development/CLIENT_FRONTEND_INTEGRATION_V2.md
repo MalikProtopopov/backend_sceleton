@@ -79,6 +79,34 @@ POST /api/v1/public/inquiries?tenant_id=<uuid>
 
 Всё остальное в этом документе (логин, токены, сайдбар, каталог фич, 403 для админки, смена пароля и т.д.) относится к **админскому фронту**, публичному сайту не нужно.
 
+### 7. Верификация владения сайтом (опционально)
+
+Если нужна верификация для Яндекс.Вебмастера или Google Search Console:
+
+**Шаг 1**: Настроить проксирование верификационных файлов в `next.config.js` (rewrites):
+
+```typescript
+{
+  source: '/yandex_:code.html',
+  destination: `${API_BASE}/api/v1/public/tenants/${TENANT_ID}/verification/yandex_:code.html`,
+},
+{
+  source: '/google:code.html',
+  destination: `${API_BASE}/api/v1/public/tenants/${TENANT_ID}/verification/google:code.html`,
+},
+```
+
+**Шаг 2**: Для Google мета-тега добавить в layout:
+
+```typescript
+const analytics = await fetchPublic<TenantAnalytics>(`/public/tenants/${TENANT_ID}/analytics`);
+// analytics.google_verification_meta — значение для <meta name="google-site-verification" content="...">
+```
+
+**Шаг 3**: Администратор вводит коды в админке (раздел «Настройки» → «SEO и аналитика»).
+
+Подробнее: [CLIENT_FRONTEND_PUBLIC_API.md](../api/CLIENT_FRONTEND_PUBLIC_API.md) → секция «Верификация владения сайтом».
+
 ---
 
 ## 1. Authentication Flow (админский фронт)

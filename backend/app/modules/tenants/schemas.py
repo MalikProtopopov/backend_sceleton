@@ -195,6 +195,26 @@ class TenantSettingsBase(BaseModel):
         description="Custom content to include in llms.txt",
     )
 
+    # Webmaster verification codes
+    yandex_verification_code: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Yandex.Webmaster verification filename without .html (e.g. 'yandex_821edd51f146c052')",
+        examples=["yandex_821edd51f146c052"],
+    )
+    google_verification_code: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Google Search Console verification filename without .html (e.g. 'google1234567890abcdef')",
+        examples=["google1234567890abcdef"],
+    )
+    google_verification_meta: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Google Search Console meta tag content value (alternative to file method)",
+        examples=["1234567890abcdef1234567890abcdef"],
+    )
+
     # Email / SMTP configuration (per-tenant)
     email_provider: Literal["smtp", "sendgrid", "mailgun", "console"] | None = Field(
         default=None,
@@ -230,6 +250,36 @@ class TenantSettingsBase(BaseModel):
         default=True,
         description="Use STARTTLS for SMTP connection",
     )
+
+    @field_validator("yandex_verification_code")
+    @classmethod
+    def validate_yandex_code(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not re.match(r"^yandex_[a-f0-9]+$", v):
+            raise ValueError(
+                "Invalid Yandex verification code format. "
+                "Expected: yandex_[hex], e.g. yandex_821edd51f146c052"
+            )
+        return v
+
+    @field_validator("google_verification_code")
+    @classmethod
+    def validate_google_code(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not re.match(r"^google[a-f0-9]+$", v):
+            raise ValueError(
+                "Invalid Google verification code format. "
+                "Expected: google[hex], e.g. google1234567890abcdef"
+            )
+        return v
 
 
 class TenantSettingsUpdate(TenantSettingsBase):
@@ -420,14 +470,16 @@ class TenantPublicResponse(BaseModel):
 
 
 class TenantAnalyticsPublic(BaseModel):
-    """Public analytics scripts for frontend.
+    """Public analytics and verification scripts for frontend.
     
     ga_tracking_id: Google Analytics measurement ID (e.g. G-XXXXXXXXXX).
     ym_counter_id: Yandex.Metrika counter ID (e.g. 92699637) or full embed HTML snippet.
+    google_verification_meta: Google Search Console meta tag content value.
     """
 
     ga_tracking_id: str | None = None
     ym_counter_id: str | None = None
+    google_verification_meta: str | None = None
 
 
 # ============================================================================

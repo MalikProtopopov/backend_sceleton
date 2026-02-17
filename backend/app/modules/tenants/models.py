@@ -276,6 +276,23 @@ class TenantSettings(Base, UUIDMixin, TimestampMixin, VersionMixin):
         comment="Yandex.Metrika counter ID or embed code",
     )
 
+    # Webmaster verification codes
+    yandex_verification_code: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Yandex.Webmaster verification filename without .html (e.g. yandex_821edd51f146c052)",
+    )
+    google_verification_code: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Google Search Console verification filename without .html (e.g. google1234567890abcdef)",
+    )
+    google_verification_meta: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Google Search Console meta tag content attribute value (alternative to file)",
+    )
+
     # Relationship
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="settings")
 

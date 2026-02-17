@@ -49,6 +49,9 @@ The Tenants module provides multi-tenancy support with:
 | `default_og_image` | string | - | Default Open Graph image URL |
 | `ga_tracking_id` | string | - | Google Analytics ID |
 | `ym_counter_id` | string | - | Yandex Metrika counter ID |
+| `yandex_verification_code` | string | - | Yandex.Webmaster verification filename (without `.html`) |
+| `google_verification_code` | string | - | Google Search Console verification filename (without `.html`) |
+| `google_verification_meta` | string | - | Google Search Console meta tag `content` value |
 
 ---
 
@@ -288,7 +291,10 @@ Update tenant settings.
   "telegram_chat_id": "-1001234567890",
   "default_og_image": "https://cdn.example.com/og/default.jpg",
   "ga_tracking_id": "G-XXXXXXXXXX",
-  "ym_counter_id": "12345678"
+  "ym_counter_id": "12345678",
+  "yandex_verification_code": "yandex_821edd51f146c052",
+  "google_verification_code": "google1234567890abcdef",
+  "google_verification_meta": "1234567890abcdef1234567890abcdef"
 }
 ```
 
@@ -305,6 +311,9 @@ Update tenant settings.
 | `default_og_image` | string | No | Max 500 chars |
 | `ga_tracking_id` | string | No | Max 50 chars |
 | `ym_counter_id` | string | No | Max 20 chars |
+| `yandex_verification_code` | string | No | Max 255 chars, format: `yandex_[hex]` |
+| `google_verification_code` | string | No | Max 255 chars, format: `google[hex]` |
+| `google_verification_meta` | string | No | Max 500 chars |
 
 **Success Response (200):**
 ```json
@@ -519,6 +528,99 @@ const getNavItems = (tenant) => {
 
 ---
 
+## Webmaster Verification
+
+### Overview
+
+Webmaster verification allows proving site ownership to search engines:
+- **Yandex.Webmaster**: HTML file method
+- **Google Search Console**: HTML file OR meta tag method
+
+Verification codes are stored in `tenant_settings` and served dynamically via a public API endpoint.
+
+### Configuration Fields
+
+| Field | Format | Example | Method |
+|-------|--------|---------|--------|
+| `yandex_verification_code` | `yandex_[hex]` | `yandex_821edd51f146c052` | HTML file |
+| `google_verification_code` | `google[hex]` | `google1234567890abcdef` | HTML file |
+| `google_verification_meta` | free-form string | `1234567890abcdef1234567890abcdef` | Meta tag |
+
+### How to Get Verification Codes
+
+**Yandex.Webmaster:**
+1. Go to https://webmaster.yandex.ru/
+2. Add your site
+3. Choose "HTML file" verification method
+4. Copy the filename (e.g., `yandex_821edd51f146c052.html`)
+5. Remove the `.html` extension and paste into the `yandex_verification_code` field
+
+**Google Search Console (File method):**
+1. Go to https://search.google.com/search-console
+2. Add property
+3. Choose "HTML file" verification method
+4. Download the file and note its name (e.g., `google1234567890abcdef.html`)
+5. Remove the `.html` extension and paste into the `google_verification_code` field
+
+**Google Search Console (Meta tag method):**
+1. Go to https://search.google.com/search-console
+2. Add property
+3. Choose "HTML tag" verification method
+4. Copy the `content` attribute value from the meta tag
+5. Paste into the `google_verification_meta` field
+
+### Public Endpoint
+
+#### GET /api/v1/public/tenants/{tenant_id}/verification/{filename}
+
+Returns verification file content for webmaster tools. No authentication required.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tenant_id` | UUID | Tenant ID |
+| `filename` | string | Verification filename (e.g., `yandex_821edd51f146c052.html`) |
+
+**Example Request:**
+```bash
+curl https://api.example.com/api/v1/public/tenants/63d068f7-7a47-46fe-aeb0-c82588e995a4/verification/yandex_821edd51f146c052.html
+```
+
+**Success Response (200):**
+```html
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+</head>
+<body>Verification: 821edd51f146c052</body>
+</html>
+```
+
+**Error Response (404):** Verification code not configured or filename mismatch.
+```json
+{
+  "type": "https://api.cms.local/errors/not_found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Verification file 'yandex_wrong_code.html' not found"
+}
+```
+
+### Updated Analytics Endpoint
+
+**GET /api/v1/public/tenants/{tenant_id}/analytics** now also returns `google_verification_meta`:
+
+```json
+{
+  "ga_tracking_id": "G-XXXXXXXXXX",
+  "ym_counter_id": "12345678",
+  "google_verification_meta": "1234567890abcdef1234567890abcdef"
+}
+```
+
+---
+
 ## Frontend Integration
 
 ### Settings Page
@@ -622,6 +724,39 @@ const SettingsForm = ({ tenant }) => {
           placeholder="12345678"
           value={settings.ym_counter_id || ''}
           onChange={(v) => setSettings({ ...settings, ym_counter_id: v })}
+        />
+      </section>
+      
+      {/* Webmaster Verification */}
+      <section>
+        <h3>Webmaster Verification</h3>
+        <p className="help-text">
+          Verify site ownership for search engines.
+          Enter codes from Yandex.Webmaster or Google Search Console.
+        </p>
+        
+        <Input
+          label="Yandex.Webmaster Code"
+          placeholder="yandex_821edd51f146c052"
+          value={settings.yandex_verification_code || ''}
+          onChange={(v) => setSettings({ ...settings, yandex_verification_code: v })}
+          helpText="Filename without .html extension from Yandex.Webmaster"
+        />
+        
+        <Input
+          label="Google Verification Code (File)"
+          placeholder="google1234567890abcdef"
+          value={settings.google_verification_code || ''}
+          onChange={(v) => setSettings({ ...settings, google_verification_code: v })}
+          helpText="Filename without .html extension from Google Search Console"
+        />
+        
+        <Input
+          label="Google Verification Meta (Alternative)"
+          placeholder="1234567890abcdef1234567890abcdef"
+          value={settings.google_verification_meta || ''}
+          onChange={(v) => setSettings({ ...settings, google_verification_meta: v })}
+          helpText="Content attribute value from Google meta tag"
         />
       </section>
       

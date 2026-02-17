@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -163,7 +164,63 @@ async def get_tenant_analytics_public(
     return TenantAnalyticsPublic(
         ga_tracking_id=settings.ga_tracking_id or None,
         ym_counter_id=settings.ym_counter_id or None,
+        google_verification_meta=settings.google_verification_meta or None,
     )
+
+
+@router.get(
+    "/public/tenants/{tenant_id}/verification/{filename}",
+    response_class=HTMLResponse,
+    summary="Get webmaster verification file",
+    description=(
+        "Returns Yandex.Webmaster or Google Search Console verification file "
+        "for site ownership verification. The file content is generated "
+        "dynamically based on the verification code stored in tenant settings."
+    ),
+    tags=["Public"],
+)
+async def get_verification_file(
+    tenant_id: UUID,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Get verification file for Yandex.Webmaster or Google Search Console.
+
+    Supports:
+    - Yandex: yandex_*.html
+    - Google: google*.html
+    """
+    from app.core.exceptions import NotFoundError
+
+    service = TenantService(db)
+    tenant = await service.get_by_id(tenant_id)
+
+    if not tenant.settings:
+        raise NotFoundError("Verification file", filename)
+
+    # Yandex verification
+    if filename.startswith("yandex_") and filename.endswith(".html"):
+        code = tenant.settings.yandex_verification_code
+        if code and filename == f"{code}.html":
+            verification_value = code.removeprefix("yandex_")
+            content = (
+                "<html>\n"
+                "<head>\n"
+                '    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n'
+                "</head>\n"
+                f"<body>Verification: {verification_value}</body>\n"
+                "</html>"
+            )
+            return HTMLResponse(content=content)
+
+    # Google verification
+    if filename.startswith("google") and filename.endswith(".html"):
+        code = tenant.settings.google_verification_code
+        if code and filename == f"{code}.html":
+            content = f"google-site-verification: {filename}"
+            return HTMLResponse(content=content)
+
+    raise NotFoundError("Verification file", filename)
 
 
 # ============================================================================

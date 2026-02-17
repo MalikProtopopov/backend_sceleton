@@ -362,7 +362,8 @@ const getMediaUrl = (path: string | null) => {
 | SEO | /public/seo/meta | GET | No |
 | SEO | /public/sitemap.xml | GET | No |
 | SEO | /public/robots.txt | GET | No |
+| SEO | /public/tenants/{id}/verification/{filename} | GET | No |
 | Media | /media/{path} | GET | No |
 
-**Total Public Endpoints:** 23
+**Total Public Endpoints:** 24
 

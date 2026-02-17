@@ -698,6 +698,113 @@ async rewrites() {
 
 **Что нужно на клиентском фронте:** только rewrites выше и корректный `NEXT_PUBLIC_TENANT_ID`. URL сайта настраивается в админке (настройки тенанта → «URL сайта»).
 
+**Верификация владения сайтом (Webmaster Tools)**
+
+Для подтверждения владения сайтом в Яндекс.Вебмастере и Google Search Console бэкенд генерирует верификационные файлы динамически на основе кодов, сохранённых в настройках тенанта.
+
+**Метод 1: HTML-файлы (Яндекс и Google)**
+
+Добавить rewrites для проксирования верификационных файлов:
+
+```typescript
+// next.config.js — добавить к существующим rewrites:
+async rewrites() {
+  return [
+    // ... существующие rewrites для sitemap, robots ...
+    
+    // Яндекс.Вебмастер — верификационный файл
+    {
+      source: '/yandex_:code.html',
+      destination: `${API_BASE}/api/v1/public/tenants/${TENANT_ID}/verification/yandex_:code.html`,
+    },
+    // Google Search Console — верификационный файл
+    {
+      source: '/google:code.html',
+      destination: `${API_BASE}/api/v1/public/tenants/${TENANT_ID}/verification/google:code.html`,
+    },
+  ];
+}
+```
+
+Альтернатива — API route (если rewrites не подходят):
+
+```typescript
+// pages/api/[...verification].ts (или app/api/[...verification]/route.ts)
+export default async function handler(req, res) {
+  const { verification } = req.query;
+  const filename = Array.isArray(verification) ? verification.join('/') : verification;
+  
+  // Проверяем формат файла — только yandex_*.html и google*.html
+  if (!filename.match(/^(yandex_[a-f0-9]+|google[a-f0-9]+)\.html$/)) {
+    return res.status(404).send('Not found');
+  }
+  
+  const response = await fetch(
+    `${process.env.API_URL}/api/v1/public/tenants/${process.env.TENANT_ID}/verification/${filename}`
+  );
+  
+  if (response.ok) {
+    const html = await response.text();
+    res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+    res.status(200).send(html);
+  } else {
+    res.status(404).send('Not found');
+  }
+}
+```
+
+**Метод 2: Meta-тег (только Google)**
+
+Google Search Console поддерживает подтверждение через мета-тег. Значение мета-тега передаётся в эндпоинте аналитики:
+
+```typescript
+// GET /api/v1/public/tenants/{tenant_id}/analytics
+// Ответ теперь включает google_verification_meta:
+interface TenantAnalytics {
+  ga_tracking_id: string | null;
+  ym_counter_id: string | null;
+  google_verification_meta: string | null;  // НОВОЕ
+}
+
+// Использование в Next.js (app/layout.tsx):
+export async function generateMetadata() {
+  const analytics = await fetch(
+    `${API_BASE}/api/v1/public/tenants/${TENANT_ID}/analytics`
+  ).then(r => r.json());
+  
+  return {
+    // ... другие мета-теги
+    verification: analytics.google_verification_meta
+      ? { google: analytics.google_verification_meta }
+      : undefined,
+  };
+}
+
+// Или напрямую через Head:
+<Head>
+  {analytics.google_verification_meta && (
+    <meta
+      name="google-site-verification"
+      content={analytics.google_verification_meta}
+    />
+  )}
+</Head>
+```
+
+**Что настраивается в админке:**
+
+Администратор в админ-панели вводит коды верификации (настройки тенанта → раздел «SEO и аналитика»):
+
+| Поле | Формат | Пример | Описание |
+|------|--------|--------|----------|
+| `yandex_verification_code` | `yandex_[hex]` | `yandex_821edd51f146c052` | Имя файла без `.html` из Яндекс.Вебмастера |
+| `google_verification_code` | `google[hex]` | `google1234567890abcdef` | Имя файла без `.html` из Google Search Console |
+| `google_verification_meta` | строка | `1234567890abcdef...` | Значение `content` из мета-тега Google |
+
+После сохранения:
+- Верификационные файлы становятся доступны по URL: `https://yoursite.com/yandex_*.html` и `https://yoursite.com/google*.html` (при настроенных rewrites)
+- Мета-тег Google автоматически появляется в `<head>` сайта (при интеграции через analytics эндпоинт)
+
 ---
 
 ## Маппинг страниц на API
