@@ -157,8 +157,9 @@ class Settings(BaseSettings):
 
     # Single-tenant mode settings
     # When single_tenant_mode=True, the system automatically uses the default tenant
-    # without requiring X-Tenant-ID header on login
-    single_tenant_mode: bool = True
+    # without requiring X-Tenant-ID header on login.
+    # Set to False for multi-tenant deployments (recommended for production).
+    single_tenant_mode: bool = False
     default_tenant_slug: str = "main"
     default_tenant_name: str = "Main Site"
 

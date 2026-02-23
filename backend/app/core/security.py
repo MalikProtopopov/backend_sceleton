@@ -155,6 +155,34 @@ def decode_password_reset_token(token: str) -> dict[str, Any]:
     return payload
 
 
+def create_selection_token(email: str, tenant_ids: list[str]) -> str:
+    """Create a short-lived JWT (15 min) for the tenant-selection step.
+
+    Issued when a user with access to multiple tenants logs in
+    without specifying ``X-Tenant-ID``.  The token carries the
+    pre-verified email and the list of allowed tenant IDs so
+    ``POST /auth/select-tenant`` can finish login without asking
+    for the password again.
+    """
+    data = {
+        "email": email,
+        "tenant_ids": tenant_ids,
+        "type": "tenant_selection",
+        "exp": datetime.now(UTC) + timedelta(minutes=15),
+        "iat": datetime.now(UTC),
+        "jti": str(uuid4()),
+    }
+    return jwt.encode(data, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_selection_token(token: str) -> dict[str, Any]:
+    """Decode and validate a tenant-selection token."""
+    payload = decode_token(token)
+    if payload.get("type") != "tenant_selection":
+        raise InvalidTokenError("Invalid token type")
+    return payload
+
+
 # ============================================================================
 # Token Payload Schemas
 # ============================================================================

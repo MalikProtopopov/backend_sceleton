@@ -1,7 +1,7 @@
 """Pydantic schemas for authentication module."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -40,8 +40,14 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Login response with tokens and user info."""
+    """Login response with tokens and user info.
 
+    ``status`` is always ``"success"`` so the frontend can use a
+    discriminated union (``LoginResponse | TenantSelectionRequired``)
+    to determine which shape was returned from ``POST /auth/login``.
+    """
+
+    status: Literal["success"] = "success"
     tokens: TokenPair
     user: "UserResponse"
 
@@ -306,6 +312,53 @@ class SwitchTenantRequest(BaseModel):
 
 
 # ============================================================================
+# Smart Login (multi-tenant selection) Schemas
+# ============================================================================
+
+
+class TenantOption(BaseModel):
+    """A single tenant shown in the tenant-selection screen."""
+
+    tenant_id: UUID
+    name: str
+    slug: str
+    logo_url: str | None = None
+    primary_color: str | None = None
+    admin_domain: str | None = Field(
+        default=None,
+        description="Primary admin-panel domain (e.g. admin.client.com)",
+    )
+    role: str | None = Field(
+        default=None,
+        description="User's role name in this tenant",
+    )
+
+
+class TenantSelectionRequired(BaseModel):
+    """Returned by ``POST /auth/login`` when the user has access to
+    multiple tenants and no ``X-Tenant-ID`` header was provided.
+
+    The frontend must show a tenant picker and then call
+    ``POST /auth/select-tenant`` with the chosen ``tenant_id``
+    and the ``selection_token`` from this response.
+    """
+
+    status: Literal["tenant_selection_required"] = "tenant_selection_required"
+    tenants: list[TenantOption]
+    selection_token: str = Field(
+        ...,
+        description="Short-lived JWT (15 min) to finish login via POST /auth/select-tenant",
+    )
+
+
+class SelectTenantRequest(BaseModel):
+    """Request body for POST /auth/select-tenant."""
+
+    selection_token: str = Field(..., min_length=1)
+    tenant_id: UUID
+
+
+# ============================================================================
 # Password Reset Schemas
 # ============================================================================
 
@@ -325,6 +378,7 @@ class ResetPasswordRequest(BaseModel):
 
 # Fix forward references
 LoginResponse.model_rebuild()
+TenantSelectionRequired.model_rebuild()
 UserResponse.model_rebuild()
 RoleResponse.model_rebuild()
 

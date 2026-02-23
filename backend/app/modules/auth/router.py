@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import Pagination, get_tenant_from_header
+from app.core.dependencies import Pagination, get_optional_tenant_from_header, get_tenant_from_header
 from app.core.exceptions import PermissionDeniedError
 from app.core.image_upload import image_upload_service
 from app.core.logging import get_logger
@@ -38,8 +38,11 @@ from app.modules.auth.schemas import (
     RoleListResponse,
     RoleResponse,
     RoleUpdate,
+    SelectTenantRequest,
     SwitchTenantRequest,
     TenantAccessInfo,
+    TenantOption,
+    TenantSelectionRequired,
     TokenPair,
     TokenRefresh,
     UserCreate,
@@ -60,21 +63,64 @@ router = APIRouter()
 
 @router.post(
     "/login",
-    response_model=LoginResponse,
+    response_model=None,
     summary="Login",
-    description="Authenticate user and receive JWT tokens. Requires X-Tenant-ID header.",
+    description=(
+        "Authenticate user and receive JWT tokens. "
+        "X-Tenant-ID header is optional: when omitted the backend "
+        "auto-detects the tenant (or returns a tenant-selection "
+        "response if the user belongs to multiple organisations)."
+    ),
+    responses={
+        200: {
+            "description": "Login success or tenant selection required",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "success": {
+                            "summary": "Single tenant (or X-Tenant-ID provided)",
+                            "value": {
+                                "status": "success",
+                                "tokens": {
+                                    "access_token": "eyJ...",
+                                    "refresh_token": "eyJ...",
+                                    "token_type": "bearer",
+                                    "expires_in": 1800,
+                                },
+                                "user": {"id": "...", "email": "user@example.com"},
+                            },
+                        },
+                        "selection": {
+                            "summary": "Multiple tenants available",
+                            "value": {
+                                "status": "tenant_selection_required",
+                                "tenants": [
+                                    {
+                                        "tenant_id": "...",
+                                        "name": "Company 1",
+                                        "slug": "company1",
+                                        "role": "site_owner",
+                                    }
+                                ],
+                                "selection_token": "eyJ...",
+                            },
+                        },
+                    }
+                }
+            },
+        }
+    },
 )
 async def login(
     data: LoginRequest,
     request: Request,
-    tenant_id: UUID = Depends(get_tenant_from_header),
+    tenant_id: UUID | None = Depends(get_optional_tenant_from_header),
     db: AsyncSession = Depends(get_db),
-) -> LoginResponse:
+) -> LoginResponse | TenantSelectionRequired:
     """Authenticate user and return tokens.
-    
+
     Rate limited to 10 attempts per minute per IP address.
     """
-    # Rate limit login attempts (10 per minute per IP)
     ip_address = request.client.host if request.client else "unknown"
     from app.core.redis import get_redis_client, RateLimiter
     from app.core.exceptions import RateLimitExceededError
@@ -91,9 +137,59 @@ async def login(
             )
 
     service = AuthService(db)
+    result = await service.authenticate_smart(data, tenant_id, ip_address)
 
-    user, tokens = await service.authenticate(data, tenant_id, ip_address)
+    if isinstance(result, dict):
+        return TenantSelectionRequired(
+            tenants=[TenantOption(**t) for t in result["tenants"]],
+            selection_token=result["selection_token"],
+        )
 
+    user, tokens = result
+    return LoginResponse(
+        tokens=tokens,
+        user=UserResponse.model_validate(user),
+    )
+
+
+@router.post(
+    "/select-tenant",
+    response_model=LoginResponse,
+    summary="Select tenant after login",
+    description=(
+        "Complete the login flow for a user with multiple tenants. "
+        "Called after POST /auth/login returned "
+        "status='tenant_selection_required'. No Authorization header "
+        "needed -- the selection_token proves credentials were verified."
+    ),
+)
+async def select_tenant(
+    data: SelectTenantRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    """Finish multi-tenant login by choosing a specific tenant."""
+    ip_address = request.client.host if request.client else None
+
+    from app.core.redis import get_redis_client, RateLimiter
+    from app.core.exceptions import RateLimitExceededError
+
+    redis_client = get_redis_client()
+    if redis_client:
+        limiter = RateLimiter(redis_client)
+        allowed, _, retry_after = await limiter.is_allowed(
+            f"select_tenant:{ip_address}", max_requests=10, window_seconds=60,
+        )
+        if not allowed:
+            raise RateLimitExceededError(
+                message="Too many attempts. Please try again later.",
+                retry_after=retry_after,
+            )
+
+    service = AuthService(db)
+    user, tokens = await service.select_tenant(
+        data.selection_token, data.tenant_id, ip_address,
+    )
     return LoginResponse(
         tokens=tokens,
         user=UserResponse.model_validate(user),
@@ -255,13 +351,36 @@ async def get_my_tenants(
 async def switch_tenant(
     data: SwitchTenantRequest,
     request: Request,
+    token: TokenPayload = Depends(get_current_token),
     user: AdminUser = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> TokenPair:
-    """Switch to a different tenant and get new tokens."""
+    """Switch to a different tenant and get new tokens.
+
+    Rate-limited to 5 switches per minute per user.
+    """
+    from app.core.redis import get_redis_client, RateLimiter
+    from app.core.exceptions import RateLimitExceededError
+
+    redis_client = get_redis_client()
+    if redis_client:
+        limiter = RateLimiter(redis_client)
+        allowed, _, retry_after = await limiter.is_allowed(
+            f"switch_tenant:{user.id}", max_requests=5, window_seconds=60,
+        )
+        if not allowed:
+            raise RateLimitExceededError(
+                message="Too many tenant switches. Please try again later.",
+                retry_after=retry_after,
+            )
+
     ip_address = request.client.host if request.client else None
     service = AuthService(db)
-    return await service.switch_tenant(user, data.tenant_id, ip_address)
+    return await service.switch_tenant(
+        user, data.tenant_id, ip_address,
+        old_token_jti=token.jti,
+        old_token_expires_in=token.expires_in_seconds,
+    )
 
 
 @router.get(

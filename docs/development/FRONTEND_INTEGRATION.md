@@ -1,566 +1,347 @@
 # Frontend Integration Guide
 
+> **Версия**: 2.0
+> **Обновлено**: 2026-02-23
+> **Изменения**: Smart Login (без обязательного X-Tenant-ID), синхронизация паролей, select-tenant
+
 ## Authentication Flow
 
-### 1. Login (требует X-Tenant-ID)
+### 1. Smart Login
 
-**Важно:** Заголовок `X-Tenant-ID` нужен **только для логина**. После получения токена он уже не требуется.
+Заголовок `X-Tenant-ID` теперь **опциональный** при логине. Бэкенд самостоятельно определяет тенант.
 
 ```javascript
-// Пример с fetch
-const login = async (email, password) => {
-  const response = await fetch('http://localhost:8000/api/v1/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Tenant-ID': '2348d266-596f-420f-b046-a63ca3b504f9', // ← ОБЯЗАТЕЛЬНО!
-    },
-    body: JSON.stringify({
-      email,
-      password,
-    }),
-  })
-  
-  if (!response.ok) {
-    throw new Error('Login failed')
+const login = async (email, password, tenantId = null) => {
+  const headers = { 'Content-Type': 'application/json' };
+
+  // Передаём X-Tenant-ID только если тенант известен (например, из домена)
+  if (tenantId) {
+    headers['X-Tenant-ID'] = tenantId;
   }
-  
-  const data = await response.json()
-  
-  // Сохранить токены
-  localStorage.setItem('access_token', data.tokens.access_token)
-  localStorage.setItem('refresh_token', data.tokens.refresh_token)
-  
-  return data
-}
+
+  const response = await fetch('/api/v1/auth/login', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email, password }),
+  });
+
+  if (!response.ok) throw new Error('Login failed');
+
+  const data = await response.json();
+
+  if (data.status === 'success') {
+    // Один тенант или X-Tenant-ID передан — логин завершён
+    localStorage.setItem('access_token', data.tokens.access_token);
+    localStorage.setItem('refresh_token', data.tokens.refresh_token);
+    return { type: 'success', user: data.user };
+  }
+
+  if (data.status === 'tenant_selection_required') {
+    // Несколько тенантов — показать экран выбора
+    return {
+      type: 'tenant_selection',
+      tenants: data.tenants,
+      selectionToken: data.selection_token,
+    };
+  }
+};
 ```
 
-### 2. Axios Configuration
+### 2. Select Tenant (after login)
+
+Если логин вернул `tenant_selection_required`, пользователь выбирает организацию:
+
+```javascript
+const selectTenant = async (selectionToken, tenantId) => {
+  const response = await fetch('/api/v1/auth/select-tenant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      selection_token: selectionToken,
+      tenant_id: tenantId,
+    }),
+  });
+
+  if (!response.ok) throw new Error('Tenant selection failed');
+
+  const data = await response.json();
+
+  localStorage.setItem('access_token', data.tokens.access_token);
+  localStorage.setItem('refresh_token', data.tokens.refresh_token);
+
+  return data.user;
+};
+```
+
+**Важно:** `selection_token` хранить только в state компонента (НЕ в localStorage). Токен действует 15 минут.
+
+### 3. Axios Configuration
 
 ```javascript
 import axios from 'axios'
 
-// Создать инстанс
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api/v1',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1',
+  headers: { 'Content-Type': 'application/json' },
+});
 
-// Tenant ID - хранить в конфиге или env
-const TENANT_ID = '2348d266-596f-420f-b046-a63ca3b504f9'
-
-// Interceptor для логина - добавляет X-Tenant-ID
 api.interceptors.request.use((config) => {
-  // Для логина добавляем X-Tenant-ID
-  if (config.url === '/auth/login') {
-    config.headers['X-Tenant-ID'] = TENANT_ID
-  }
-  
-  // Для остальных запросов добавляем Authorization
-  const token = localStorage.getItem('access_token')
+  // JWT-токен на все авторизованные запросы
+  const token = localStorage.getItem('access_token');
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+    config.headers.Authorization = `Bearer ${token}`;
   }
-  
-  return config
-})
+
+  return config;
+});
 
 // Interceptor для refresh токена
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401 && !error.config._retry) {
-      error.config._retry = true
-      
+      error.config._retry = true;
+
       try {
-        const refreshToken = localStorage.getItem('refresh_token')
+        const refreshToken = localStorage.getItem('refresh_token');
         const { data } = await axios.post(
-          'http://localhost:8000/api/v1/auth/refresh',
+          `${api.defaults.baseURL}/auth/refresh`,
           { refresh_token: refreshToken }
-        )
-        
-        localStorage.setItem('access_token', data.access_token)
-        localStorage.setItem('refresh_token', data.refresh_token)
-        
-        error.config.headers.Authorization = `Bearer ${data.access_token}`
-        return api(error.config)
+        );
+
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+
+        error.config.headers.Authorization = `Bearer ${data.access_token}`;
+        return api(error.config);
       } catch (refreshError) {
-        // Refresh failed - logout
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        window.location.href = '/login'
-        return Promise.reject(refreshError)
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
       }
     }
-    
-    return Promise.reject(error)
-  }
-)
 
-export default api
+    return Promise.reject(error);
+  }
+);
+
+export default api;
 ```
 
-### 3. React Hook Example
+### 4. React Hook Example
 
 ```jsx
 // hooks/useAuth.js
-import { useState, useEffect } from 'react'
-import api from '../api'
-
-const TENANT_ID = '2348d266-596f-420f-b046-a63ca3b504f9'
+import { useState, useEffect } from 'react';
+import api from '../api';
 
 export const useAuth = () => {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    // Проверить, есть ли токен
-    const token = localStorage.getItem('access_token')
+    const token = localStorage.getItem('access_token');
     if (token) {
-      loadUser()
+      loadUser();
     } else {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [])
-  
+  }, []);
+
   const loadUser = async () => {
     try {
-      const { data } = await api.get('/auth/me')
-      setUser(data)
+      const { data } = await api.get('/auth/me');
+      setUser(data);
     } catch (error) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-  
-  const login = async (email, password) => {
-    const { data } = await api.post('/auth/login', 
-      { email, password },
-      {
-        headers: {
-          'X-Tenant-ID': TENANT_ID, // ← Только для логина!
-        }
-      }
-    )
-    
-    localStorage.setItem('access_token', data.tokens.access_token)
-    localStorage.setItem('refresh_token', data.tokens.refresh_token)
-    
-    setUser(data.user)
-    return data
-  }
-  
+  };
+
+  const login = async (email, password, tenantId = null) => {
+    const headers = {};
+    if (tenantId) {
+      headers['X-Tenant-ID'] = tenantId;
+    }
+
+    const { data } = await api.post('/auth/login', { email, password }, { headers });
+
+    if (data.status === 'success') {
+      localStorage.setItem('access_token', data.tokens.access_token);
+      localStorage.setItem('refresh_token', data.tokens.refresh_token);
+      setUser(data.user);
+      return { type: 'success', user: data.user };
+    }
+
+    // tenant_selection_required
+    return {
+      type: 'tenant_selection',
+      tenants: data.tenants,
+      selectionToken: data.selection_token,
+    };
+  };
+
+  const selectTenant = async (selectionToken, tenantId) => {
+    const { data } = await api.post('/auth/select-tenant', {
+      selection_token: selectionToken,
+      tenant_id: tenantId,
+    });
+
+    localStorage.setItem('access_token', data.tokens.access_token);
+    localStorage.setItem('refresh_token', data.tokens.refresh_token);
+    setUser(data.user);
+    return data.user;
+  };
+
+  const switchTenant = async (tenantId) => {
+    const { data } = await api.post('/auth/switch-tenant', {
+      tenant_id: tenantId,
+    });
+
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    window.location.reload();
+  };
+
   const logout = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    setUser(null)
-  }
-  
-  return { user, loading, login, logout }
-}
+    api.post('/auth/logout').catch(() => {});
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    setUser(null);
+  };
+
+  return { user, loading, login, selectTenant, switchTenant, logout };
+};
 ```
 
-### 4. Login Component Example
+### 5. Login Component Example
 
 ```jsx
-// components/LoginForm.jsx
-import { useState } from 'react'
-import { useAuth } from '../hooks/useAuth'
+import { useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
-const TENANT_ID = '2348d266-596f-420f-b046-a63ca3b504f9'
+export const LoginPage = ({ tenantId = null }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
-export const LoginForm = () => {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const { login } = useAuth()
-  
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    
+  // Tenant selection state
+  const [tenants, setTenants] = useState(null);
+  const [selectionToken, setSelectionToken] = useState(null);
+
+  const { login, selectTenant } = useAuth();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+
     try {
-      await login(email, password)
-      // Redirect to dashboard
-      window.location.href = '/dashboard'
+      const result = await login(email, password, tenantId);
+
+      if (result.type === 'success') {
+        window.location.href = '/dashboard';
+      } else {
+        // Show tenant picker
+        setTenants(result.tenants);
+        setSelectionToken(result.selectionToken);
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed')
+      setError(err.response?.data?.detail?.detail || 'Login failed');
     }
+  };
+
+  const handleSelectTenant = async (tid) => {
+    try {
+      await selectTenant(selectionToken, tid);
+      window.location.href = '/dashboard';
+    } catch (err) {
+      setError('Failed to select organization');
+    }
+  };
+
+  // Tenant selection screen
+  if (tenants) {
+    return (
+      <div>
+        <h2>Select Organization</h2>
+        {tenants.map((t) => (
+          <button key={t.tenant_id} onClick={() => handleSelectTenant(t.tenant_id)}>
+            {t.name} ({t.role})
+          </button>
+        ))}
+      </div>
+    );
   }
-  
+
+  // Login form
   return (
-    <form onSubmit={handleSubmit}>
-      <input
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="Email"
-        required
-      />
-      <input
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder="Password"
-        required
-      />
+    <form onSubmit={handleLogin}>
+      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required />
+      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
       {error && <div className="error">{error}</div>}
       <button type="submit">Login</button>
     </form>
-  )
-}
+  );
+};
 ```
 
-## Environment Variables
+## Important Notes
 
-Создайте `.env` файл в корне фронтенда:
+1. **X-Tenant-ID is OPTIONAL on `/auth/login`**
+   - Pass it if you know the tenant (e.g. from domain resolution)
+   - Omit it and the backend will auto-detect (or return a tenant picker list)
 
-```env
-VITE_API_URL=http://localhost:8000/api/v1
-VITE_TENANT_ID=2348d266-596f-420f-b046-a63ca3b504f9
-```
+2. **X-Tenant-ID is NOT needed after login**
+   - After receiving tokens, `tenant_id` is embedded in the JWT
+   - All subsequent requests use only `Authorization: Bearer {token}`
+   - Do NOT add `X-Tenant-ID` to the Axios interceptor for general requests
 
-Использование:
+3. **Tenant ID source:**
+   - From domain resolution: `GET /public/tenants/by-domain/{hostname}`
+   - From JWT (after login): decoded from token or from `GET /auth/me`
+   - Never store `tenant_id` separately in localStorage
 
-```javascript
-// config.js
-export const API_URL = import.meta.env.VITE_API_URL
-export const TENANT_ID = import.meta.env.VITE_TENANT_ID
-```
+4. **Password sync:**
+   - Changing password in one tenant automatically updates it in all tenants
+   - User always logs in with the same password across all organizations
 
-## Важные моменты
+5. **Token storage:**
+   - `access_token` -> `localStorage`
+   - `refresh_token` -> `localStorage`
+   - `selection_token` -> component state ONLY (never persist)
 
-1. **X-Tenant-ID нужен ТОЛЬКО для `/auth/login`**
-   - После логина tenant_id уже в JWT токене
-   - Для остальных запросов используйте только `Authorization: Bearer {token}`
-
-2. **Где хранить Tenant ID:**
-   - В `.env` файле (рекомендуется)
-   - В конфиге приложения
-   - НЕ в коде напрямую
-
-3. **После логина:**
-   - Все запросы используют только `Authorization` header
-   - Tenant ID автоматически извлекается из JWT токена
-
-## Получение Tenant ID
-
-Если вы не знаете Tenant ID, его можно получить:
-
-1. Из скрипта инициализации (был выведен при создании админа)
-2. Через API (если есть доступ):
-   ```bash
-   GET /api/v1/admin/tenants
-   ```
-3. Из базы данных:
-   ```sql
-   SELECT id, name, slug FROM tenants;
-   ```
-
-## Пример полного flow
-
-```javascript
-// 1. Login с X-Tenant-ID
-const loginResponse = await fetch('/api/v1/auth/login', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Tenant-ID': '2348d266-596f-420f-b046-a63ca3b504f9',
-  },
-  body: JSON.stringify({
-    email: 'admin@example.com',
-    password: 'admin123',
-  }),
-})
-
-const { tokens, user } = await loginResponse.json()
-
-// 2. Сохранить токены
-localStorage.setItem('access_token', tokens.access_token)
-
-// 3. Все последующие запросы - БЕЗ X-Tenant-ID
-const articlesResponse = await fetch('/api/v1/admin/articles', {
-  headers: {
-    'Authorization': `Bearer ${tokens.access_token}`,
-    // X-Tenant-ID НЕ нужен!
-  },
-})
-```
-
-
-
-Проверяю, как определить tenant на новом устройстве и зачем нужен tenant_id:
-
-
-[3 tools called]
-
-
-## Зачем нужен Tenant ID?
-
-Tenant ID нужен для multi-tenancy — изоляции данных между клиентами. Один backend обслуживает несколько организаций, и каждая должна видеть только свои данные.
+## Bootstrap Sequence
 
 ```
-┌─────────────────────────────────────┐
-│         Backend (один)              │
-├─────────────────────────────────────┤
-│  Tenant A (Компания 1)              │
-│  ├─ Users: user1@company1.com       │
-│  ├─ Articles: 50                    │
-│  └─ Services: 10                    │
-├─────────────────────────────────────┤
-│  Tenant B (Компания 2)              │
-│  ├─ Users: user2@company2.com      │
-│  ├─ Articles: 30                    │
-│  └─ Services: 5                     │
-└─────────────────────────────────────┘
+1. App loads
+2. Check localStorage for access_token
+   -> Yes: GET /auth/me
+      -> 200: user is logged in -> go to Dashboard, fetch /me/tenants
+      -> 401: try refresh -> if fail -> go to step 3
+   -> No: go to step 3
+3. Resolve domain: GET /public/tenants/by-domain/{hostname}
+   -> 200: save tenant info, show login form with tenant logo
+   -> 404: show login form with platform logo (generic domain)
+4. User submits login (with or without X-Tenant-ID)
+5. Check response.status:
+   -> "success": store tokens, GET /me/tenants, go to Dashboard
+   -> "tenant_selection_required": show tenant picker
+6. User picks tenant -> POST /auth/select-tenant
+7. Store tokens, GET /me/tenants, go to Dashboard
+8. If force_password_change === true -> redirect to /change-password
 ```
 
-Без tenant_id бекенд не поймет, к какому tenant относится пользователь.
+## Error Handling
 
-## Как получить Tenant ID на новом устройстве?
-
-### Вариант 1: По домену (рекомендуется)
-
-Если у каждого tenant свой домен (например, `client1.example.com`, `client2.example.com`), можно определить автоматически:
-
-```javascript
-// При загрузке страницы логина
-const getTenantByDomain = async () => {
-  const domain = window.location.hostname // "client1.example.com"
-  
-  // Публичный эндпоинт (нужно добавить на бекенде)
-  const response = await fetch(
-    `/api/v1/public/tenants/by-domain?domain=${domain}`
-  )
-  
-  if (response.ok) {
-    const tenant = await response.json()
-    return tenant.id
-  }
-  
-  return null
-}
-
-// На странице логина
-useEffect(() => {
-  const initTenant = async () => {
-    const tenantId = await getTenantByDomain()
-    if (tenantId) {
-      localStorage.setItem('tenant_id', tenantId)
-    }
-  }
-  initTenant()
-}, [])
-```
-
-Нужно добавить на бекенде:
-
-```python
-# В tenants/router.py
-@router.get("/public/tenants/by-domain", response_model=TenantResponse)
-async def get_tenant_by_domain(
-    domain: str = Query(...),
-    db: AsyncSession = Depends(get_db),
-) -> TenantResponse:
-    """Get tenant by domain (public endpoint for login)."""
-    service = TenantService(db)
-    tenant = await service.get_by_domain(domain)
-    return TenantResponse.model_validate(tenant)
-```
-
-### Вариант 2: По email пользователя
-
-Если email уникален в рамках tenant, можно определить tenant по email:
-
-```javascript
-// Перед логином - определить tenant по email
-const getTenantByEmail = async (email) => {
-  const response = await fetch(
-    `/api/v1/public/tenants/by-email?email=${encodeURIComponent(email)}`
-  )
-  
-  if (response.ok) {
-    const tenant = await response.json()
-    return tenant.id
-  }
-  
-  return null
-}
-
-// В форме логина
-const handleLogin = async (email, password) => {
-  // 1. Определить tenant по email
-  let tenantId = localStorage.getItem('tenant_id')
-  
-  if (!tenantId) {
-    tenantId = await getTenantByEmail(email)
-    if (tenantId) {
-      localStorage.setItem('tenant_id', tenantId)
-    } else {
-      throw new Error('Tenant not found for this email')
-    }
-  }
-  
-  // 2. Логин с tenant_id
-  const response = await fetch('/api/v1/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Tenant-ID': tenantId,
-    },
-    body: JSON.stringify({ email, password }),
-  })
-  
-  return response.json()
-}
-```
-
-### Вариант 3: Форма выбора tenant
-
-Если у пользователя доступ к нескольким tenant'ам:
-
-```javascript
-// Компонент выбора tenant перед логином
-const TenantSelector = ({ onSelect }) => {
-  const [tenants, setTenants] = useState([])
-  const [loading, setLoading] = useState(true)
-  
-  useEffect(() => {
-    // Получить список tenant'ов (публичный эндпоинт)
-    fetch('/api/v1/public/tenants')
-      .then(res => res.json())
-      .then(data => {
-        setTenants(data.items)
-        setLoading(false)
-      })
-  }, [])
-  
-  const handleSelect = (tenantId) => {
-    localStorage.setItem('tenant_id', tenantId)
-    onSelect(tenantId)
-  }
-  
-  if (loading) return <div>Loading...</div>
-  
-  return (
-    <div>
-      <h2>Выберите организацию</h2>
-      {tenants.map(tenant => (
-        <button 
-          key={tenant.id} 
-          onClick={() => handleSelect(tenant.id)}
-        >
-          {tenant.name}
-        </button>
-      ))}
-    </div>
-  )
-}
-```
-
-### Вариант 4: Комбинированный подход (лучший)
-
-Определять автоматически, с возможностью выбора:
-
-```javascript
-// utils/tenant.js
-export const getTenantId = async () => {
-  // 1. Проверить localStorage (если уже логинились)
-  let tenantId = localStorage.getItem('tenant_id')
-  if (tenantId) return tenantId
-  
-  // 2. Попробовать определить по домену
-  const domain = window.location.hostname
-  if (domain !== 'localhost' && domain !== '127.0.0.1') {
-    try {
-      const response = await fetch(
-        `/api/v1/public/tenants/by-domain?domain=${domain}`
-      )
-      if (response.ok) {
-        const tenant = await response.json()
-        tenantId = tenant.id
-        localStorage.setItem('tenant_id', tenantId)
-        return tenantId
-      }
-    } catch (e) {
-      console.warn('Could not determine tenant by domain', e)
-    }
-  }
-  
-  // 3. Если не удалось - показать форму выбора
-  return null
-}
-
-// В компоненте логина
-const LoginPage = () => {
-  const [tenantId, setTenantId] = useState(null)
-  const [showTenantSelector, setShowTenantSelector] = useState(false)
-  
-  useEffect(() => {
-    getTenantId().then(id => {
-      if (id) {
-        setTenantId(id)
-      } else {
-        setShowTenantSelector(true)
-      }
-    })
-  }, [])
-  
-  if (showTenantSelector) {
-    return <TenantSelector onSelect={(id) => {
-      setTenantId(id)
-      setShowTenantSelector(false)
-    }} />
-  }
-  
-  return <LoginForm tenantId={tenantId} />
-}
-```
-
-## Рекомендуемое решение
-
-Для production лучше использовать вариант 1 (по домену):
-
-1. Каждый tenant имеет свой домен: `client1.example.com`, `client2.example.com`
-2. На фронтенде автоматически определяем tenant по домену
-3. Сохраняем в localStorage для следующих разов
-4. Если не удалось определить — показываем форму выбора
-
-## Что нужно добавить на бекенде
-
-1. Публичный эндпоинт для получения tenant по домену
-2. Метод в сервисе `get_by_domain`
-
-```python
-# В tenants/service.py добавить:
-async def get_by_domain(self, domain: str) -> Tenant:
-    """Get tenant by domain."""
-    stmt = (
-        select(Tenant)
-        .where(Tenant.domain == domain)
-        .where(Tenant.is_active.is_(True))
-        .where(Tenant.deleted_at.is_(None))
-    )
-    result = await self.db.execute(stmt)
-    tenant = result.scalar_one_or_none()
-    
-    if not tenant:
-        raise NotFoundError("Tenant", domain)
-    
-    return tenant
-```
-
-## Итог
-
-- Зачем нужен: изоляция данных между клиентами (multi-tenancy)
-- Откуда брать на новом устройстве:
-  - По домену (автоматически)
-  - По email (если уникален)
-  - Через форму выбора
-  - Из localStorage (если уже логинились)
-
-Рекомендация: использовать определение по домену + сохранение в localStorage. Это работает на любом устройстве без дополнительных действий от пользователя.
+| Error Code | HTTP | Frontend Action |
+|---|---|---|
+| `tenant_selection_required` | 200 | Show tenant picker screen |
+| `invalid_credentials` | 401 | Show "Incorrect email or password" |
+| `tenant_inactive` | 403 | Full-screen block "Organization suspended" |
+| `feature_disabled` | 403 | Show "Section unavailable" with contact info |
+| `token_expired` | 401 | Try refresh; on failure -> login page |
+| `permission_denied` | 403 | Show "Insufficient permissions" |
+| Domain 404 | 404 | Show "Domain not configured" screen |

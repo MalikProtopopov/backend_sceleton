@@ -204,3 +204,41 @@ async def get_tenant_from_header(
 
 TenantFromHeader = Annotated[UUID, Depends(get_tenant_from_header)]
 
+
+async def get_optional_tenant_from_header(
+    x_tenant_id: str | None = Header(default=None, alias="X-Tenant-ID"),
+    db: AsyncSession = Depends(get_db),
+) -> UUID | None:
+    """Like ``get_tenant_from_header`` but returns ``None`` instead of
+    raising when the header is absent in multi-tenant mode.
+
+    Used by the smart-login endpoint so that ``X-Tenant-ID`` is optional:
+    * Header present  -> validate and return the UUID.
+    * Header absent   -> return ``None`` (caller handles the no-tenant path).
+    * Single-tenant   -> return default tenant (same as the strict variant).
+    """
+    from app.config import settings
+    from app.core.tenant import get_default_tenant_id, validate_tenant_exists
+
+    if settings.single_tenant_mode:
+        try:
+            return await get_default_tenant_id(db)
+        except RuntimeError as e:
+            raise DefaultTenantConfigError(str(e))
+
+    if x_tenant_id:
+        try:
+            tenant_id = UUID(x_tenant_id)
+        except ValueError:
+            raise InvalidTenantIdError(x_tenant_id)
+
+        if not await validate_tenant_exists(db, tenant_id):
+            raise TenantNotFoundError(tenant_id)
+
+        return tenant_id
+
+    return None
+
+
+OptionalTenantFromHeader = Annotated[UUID | None, Depends(get_optional_tenant_from_header)]
+

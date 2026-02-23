@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -209,6 +209,179 @@ class AuthService:
         )
 
     # ------------------------------------------------------------------
+    # Smart login (optional tenant_id)
+    # ------------------------------------------------------------------
+
+    async def authenticate_smart(
+        self,
+        data: LoginRequest,
+        tenant_id: UUID | None,
+        ip_address: str | None = None,
+    ) -> tuple[AdminUser, "TokenPair"] | dict:
+        """Smart login that works with or without an explicit tenant_id.
+
+        * ``tenant_id`` provided  -- delegates to :meth:`authenticate`.
+        * ``tenant_id`` is None   -- looks up *all* active AdminUser
+          records with the given email across tenants:
+          - 0 matches  -> ``InvalidCredentialsError``
+          - 1 match    -> auto-login (returns user + tokens)
+          - 2+ matches -> returns a dict with ``status``,
+            ``tenants`` list, and a short-lived ``selection_token``
+        """
+        if tenant_id is not None:
+            return await self.authenticate(data, tenant_id, ip_address)
+
+        from app.modules.tenants.models import Tenant, TenantDomain
+
+        stmt = (
+            select(AdminUser)
+            .where(
+                AdminUser.email == data.email,
+                AdminUser.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(AdminUser.role)
+                .selectinload(Role.role_permissions)
+                .selectinload(RolePermission.permission),
+                selectinload(AdminUser.tenant),
+            )
+        )
+        result = await self.db.execute(stmt)
+        users = list(result.scalars().all())
+
+        if not users:
+            raise InvalidCredentialsError()
+
+        # Verify password against the first user record (shared across tenants)
+        if not verify_password(data.password, users[0].password_hash):
+            raise InvalidCredentialsError()
+
+        # Keep only users whose tenant is active and not deleted
+        valid_users = [
+            u for u in users
+            if u.is_active
+            and u.tenant is not None
+            and u.tenant.is_active
+            and u.tenant.deleted_at is None
+        ]
+        if not valid_users:
+            raise InvalidCredentialsError("Account is disabled")
+
+        # --- Single tenant: auto-login ---
+        if len(valid_users) == 1:
+            user = valid_users[0]
+            user.last_login_at = datetime.now(UTC)
+            user.last_login_ip = ip_address
+            tokens = self._create_tokens(user)
+
+            await self.audit.log(
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                resource_type="auth",
+                resource_id=user.id,
+                action="login",
+                ip_address=ip_address,
+            )
+            await self.db.commit()
+            await self.db.refresh(user)
+            return user, tokens
+
+        # --- Multiple tenants: return selection payload ---
+        tenants_info: list[dict] = []
+        for u in valid_users:
+            tenant = u.tenant
+            domain_stmt = select(TenantDomain.domain).where(
+                TenantDomain.tenant_id == tenant.id,
+                TenantDomain.is_primary.is_(True),
+            )
+            domain_result = await self.db.execute(domain_stmt)
+            admin_domain = domain_result.scalar_one_or_none()
+
+            tenants_info.append({
+                "tenant_id": str(tenant.id),
+                "name": tenant.name,
+                "slug": tenant.slug,
+                "logo_url": tenant.logo_url,
+                "primary_color": tenant.primary_color,
+                "admin_domain": admin_domain,
+                "role": u.role.name if u.role else None,
+            })
+
+        from app.core.security import create_selection_token
+
+        selection_token = create_selection_token(
+            email=data.email,
+            tenant_ids=[str(u.tenant_id) for u in valid_users],
+        )
+
+        return {
+            "status": "tenant_selection_required",
+            "tenants": tenants_info,
+            "selection_token": selection_token,
+        }
+
+    async def select_tenant(
+        self,
+        selection_token: str,
+        tenant_id: UUID,
+        ip_address: str | None = None,
+    ) -> tuple[AdminUser, "TokenPair"]:
+        """Finish a multi-tenant login after the user picks a tenant.
+
+        Validates the short-lived ``selection_token`` issued by
+        :meth:`authenticate_smart`, then returns a full token pair
+        scoped to the chosen tenant.
+        """
+        from app.core.security import decode_selection_token
+
+        payload = decode_selection_token(selection_token)
+        email: str = payload["email"]
+        allowed_ids: list[str] = payload.get("tenant_ids", [])
+
+        if str(tenant_id) not in allowed_ids:
+            raise InvalidCredentialsError("No access to this organization")
+
+        await self._check_tenant_active(tenant_id)
+
+        stmt = (
+            select(AdminUser)
+            .where(
+                AdminUser.email == email,
+                AdminUser.tenant_id == tenant_id,
+                AdminUser.is_active.is_(True),
+                AdminUser.deleted_at.is_(None),
+            )
+            .options(
+                selectinload(AdminUser.role)
+                .selectinload(Role.role_permissions)
+                .selectinload(RolePermission.permission),
+            )
+        )
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            raise InvalidCredentialsError("No access to this organization")
+
+        user.last_login_at = datetime.now(UTC)
+        user.last_login_ip = ip_address
+        tokens = self._create_tokens(user)
+
+        await self.audit.log(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            resource_type="auth",
+            resource_id=user.id,
+            action="login",
+            ip_address=ip_address,
+            changes={"via": "select_tenant"},
+        )
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        return user, tokens
+
+    # ------------------------------------------------------------------
     # Multi-tenant: me/tenants & switch-tenant
     # ------------------------------------------------------------------
 
@@ -269,6 +442,9 @@ class AuthService:
         current_user: "AdminUser",
         target_tenant_id: UUID,
         ip_address: str | None = None,
+        *,
+        old_token_jti: str | None = None,
+        old_token_expires_in: int = 0,
     ) -> TokenPair:
         """Switch the current user to a different tenant and issue new tokens.
 
@@ -277,14 +453,15 @@ class AuthService:
         2. An AdminUser with the same email exists in the target tenant
         3. That AdminUser is active
 
+        If ``old_token_jti`` is provided the previous access token is
+        added to the Redis blacklist so it cannot be reused.
+
         Returns a fresh token pair scoped to the target tenant.
         """
         from app.modules.tenants.models import Tenant
 
-        # 1. Tenant must be active
         await self._check_tenant_active(target_tenant_id)
 
-        # 2. Find the user record in the target tenant
         stmt = (
             select(AdminUser)
             .where(
@@ -305,10 +482,16 @@ class AuthService:
         if target_user is None:
             raise InvalidCredentialsError("No access to this organization")
 
-        # 3. Issue new tokens for the target user/tenant
         tokens = self._create_tokens(target_user)
 
-        # 4. Audit
+        # Blacklist the old access token so it cannot be reused
+        if old_token_jti:
+            from app.core.redis import get_token_blacklist
+            blacklist = get_token_blacklist()
+            if blacklist:
+                ttl = max(old_token_expires_in, 1)
+                await blacklist.add(old_token_jti, ttl=ttl)
+
         await self.audit.log(
             tenant_id=target_tenant_id,
             user_id=target_user.id,
@@ -375,6 +558,10 @@ class AuthService:
     async def reset_password(self, token: str, new_password: str) -> None:
         """Reset user password using a valid reset token.
 
+        The new hash is also synced to every other ``AdminUser`` row
+        with the same email so the user keeps a single password across
+        all tenants.
+
         Args:
             token: Password reset JWT token
             new_password: New password to set
@@ -388,7 +575,6 @@ class AuthService:
         user_id = UUID(payload["sub"])
         tenant_id = UUID(payload["tenant_id"])
 
-        # Find user
         stmt = (
             select(AdminUser)
             .where(AdminUser.id == user_id)
@@ -401,9 +587,22 @@ class AuthService:
         if not user:
             raise InvalidTokenError("User not found")
 
-        # Update password
-        user.password_hash = hash_password(new_password)
+        new_hash = hash_password(new_password)
+        user.password_hash = new_hash
         user.force_password_change = False
+
+        # Sync password to all other tenant records with the same email
+        sync_stmt = (
+            update(AdminUser)
+            .where(
+                AdminUser.email == user.email,
+                AdminUser.id != user.id,
+                AdminUser.deleted_at.is_(None),
+            )
+            .values(password_hash=new_hash)
+        )
+        await self.db.execute(sync_stmt)
+
         await self.db.commit()
 
 
@@ -599,17 +798,34 @@ class UserService(BaseService[AdminUser]):
     async def change_password(
         self, user_id: UUID, tenant_id: UUID, data: PasswordChange
     ) -> None:
-        """Change user password. Clears force_password_change flag."""
+        """Change user password. Clears force_password_change flag.
+
+        The new hash is also synced to every other ``AdminUser`` row
+        with the same email so the user keeps a single password across
+        all tenants.
+        """
         user = await self.get_by_id(user_id, tenant_id)
 
         if not verify_password(data.current_password, user.password_hash):
             raise InvalidCredentialsError("Current password is incorrect")
 
-        user.password_hash = hash_password(data.new_password)
+        new_hash = hash_password(data.new_password)
+        user.password_hash = new_hash
         user.force_password_change = False
         await self.db.flush()
 
-        # Audit log: password changed
+        # Sync password to all other tenant records with the same email
+        sync_stmt = (
+            update(AdminUser)
+            .where(
+                AdminUser.email == user.email,
+                AdminUser.id != user.id,
+                AdminUser.deleted_at.is_(None),
+            )
+            .values(password_hash=new_hash)
+        )
+        await self.db.execute(sync_stmt)
+
         await self.audit.log(
             tenant_id=tenant_id,
             user_id=self._actor_id or user_id,

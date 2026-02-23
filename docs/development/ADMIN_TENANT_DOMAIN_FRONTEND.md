@@ -1,8 +1,9 @@
-# Документация для фронтенда админки: мульти-доменный режим + свитчер тенантов
+# Документация для фронтенда админки: мульти-тенантный режим
 
-> **Версия**: 1.0  
-> **Дата**: 2026-02-13  
-> **Backend**: `refactor/backend-analysis-implementation`
+> **Версия**: 2.0  
+> **Дата**: 2026-02-23  
+> **Backend branch**: `feat/tenant-domain-switcher`  
+> **Ключевое изменение v2**: Smart Login -- `X-Tenant-ID` при логине теперь опционален; добавлен `POST /auth/select-tenant`; пароль синхронизируется между тенантами.
 
 ---
 
@@ -10,10 +11,10 @@
 
 1. [Общая схема работы](#1-общая-схема-работы)
 2. [Резолв тенанта из домена](#2-резолв-тенанта-из-домена)
-3. [HTTP interceptor для X-Tenant-ID](#3-http-interceptor-для-x-tenant-id)
-4. [Стор тенанта (Pinia / Zustand / Redux)](#4-стор-тенанта)
+3. [HTTP interceptor (Axios)](#3-http-interceptor)
+4. [Сторы (Zustand)](#4-сторы)
 5. [Применение брендинга](#5-применение-брендинга)
-6. [Логин без выбора организации](#6-логин-без-выбора-организации)
+6. [Умный логин (Smart Login)](#6-умный-логин-smart-login)
 7. [Tenant Switcher — компонент для мульти-орг пользователей](#7-tenant-switcher)
 8. [Экраны ошибок](#8-экраны-ошибок)
 9. [Локальная разработка (/etc/hosts)](#9-локальная-разработка)
@@ -30,8 +31,11 @@ admin-acme.mediann.dev─┘
 ```
 
 1. Все админ-домены ведут на один и тот же SPA-деплой (Nginx `root` на один каталог).
-2. SPA при загрузке читает `window.location.hostname` и резолвит его в `tenant_id` через API.
-3. Все последующие API-запросы содержат заголовок `X-Tenant-ID`.
+2. SPA при загрузке читает `window.location.hostname` и резолвит его в `tenant_id` через `GET /public/tenants/by-domain/{hostname}`.
+3. **Логин** (`POST /auth/login`) — заголовок `X-Tenant-ID` **опционален**:
+   - Если домен резолвится — отправляется `X-Tenant-ID`, бэкенд входит сразу.
+   - Если домен не резолвится (общий домен) или хедер не передан — бэкенд определяет список доступных тенантов и может вернуть `selection_required`, после чего пользователь выбирает тенант → `POST /auth/select-tenant`.
+4. **После входа** (получены `access_token` + `tenant_id`) — все дальнейшие API-запросы **обязательно** содержат `X-Tenant-ID`.
 
 ---
 
@@ -82,7 +86,7 @@ interface TenantInfo {
   site_url: string | null;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL; // "https://api.mediann.dev/api/v1"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL; // "https://api.mediann.dev/api/v1"
 
 export async function resolveTenant(): Promise<TenantInfo> {
   const hostname = window.location.hostname;
@@ -96,99 +100,149 @@ export async function resolveTenant(): Promise<TenantInfo> {
 }
 ```
 
-**Важно:** вызывайте `resolveTenant()` **до** создания Vue/React app (в `main.ts`), чтобы `tenant_id` был доступен до первого API-вызова.
+**Важно:** резолв тенанта должен произойти **до** рендера остального приложения, чтобы `tenant_id` был доступен до первого API-вызова.
 
-```typescript
-// main.ts — пример для Vue 3 + Pinia
-import { createApp } from "vue";
-import { createPinia } from "pinia";
-import App from "./App.vue";
-import { resolveTenant } from "./lib/tenant-resolver";
-import { useTenantStore } from "./stores/tenant";
+```tsx
+// src/app/providers/TenantProvider.tsx
+"use client";
+import { useEffect, useState, type ReactNode } from "react";
+import { resolveTenant } from "@/shared/lib/tenant-resolver";
+import { useTenantStore } from "@/shared/stores/tenant";
 
-async function bootstrap() {
-  try {
-    const tenantInfo = await resolveTenant();
+export function TenantProvider({ children }: { children: ReactNode }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const setTenant = useTenantStore((s) => s.setTenant);
 
-    const app = createApp(App);
-    const pinia = createPinia();
-    app.use(pinia);
+  useEffect(() => {
+    resolveTenant()
+      .then((info) => {
+        setTenant({
+          tenantId: info.tenant_id,
+          slug: info.slug,
+          name: info.name,
+          logoUrl: info.logo_url,
+          primaryColor: info.primary_color,
+          siteUrl: info.site_url,
+        });
+        setStatus("ready");
+      })
+      .catch(() => setStatus("error"));
+  }, [setTenant]);
 
-    const tenantStore = useTenantStore(pinia);
-    tenantStore.setTenant(tenantInfo);
-
-    app.mount("#app");
-  } catch (err) {
-    // Показываем страницу "Домен не найден"
-    document.getElementById("app")!.innerHTML =
-      '<div class="error">Домен не настроен. Обратитесь к администратору.</div>';
-  }
+  if (status === "loading") return <div>Загрузка...</div>;
+  if (status === "error") return <div className="error">Домен не настроен. Обратитесь к администратору.</div>;
+  return <>{children}</>;
 }
-
-bootstrap();
 ```
+
+> **Примечание:** если SPA работает на общем домене (например `admin.mediann.dev`), резолв вернёт 404. В этом случае `TenantProvider` может перейти в режим «общего логина» — не показывать лого тенанта и не передавать `X-Tenant-ID` при логине.
 
 ---
 
-## 3. HTTP interceptor для X-Tenant-ID
+## 3. HTTP interceptor
 
-Каждый запрос к API **должен** содержать заголовок `X-Tenant-ID`.
+### Правила отправки `X-Tenant-ID`
 
-### Axios
+| Ситуация | `X-Tenant-ID` | Комментарий |
+|---|---|---|
+| `POST /auth/login` — домен резолвился | ✅ отправляем | Мгновенный вход |
+| `POST /auth/login` — общий домен / без резолва | ❌ не отправляем | Бэкенд вернёт `selection_required` или войдёт автоматически, если тенант один |
+| `POST /auth/select-tenant` | ❌ не нужен | `tenant_id` передаётся в теле запроса |
+| Все остальные запросы после входа | ✅ **обязательно** | Из стора / `localStorage` |
+
+### Axios (рекомендуемый пример)
 
 ```typescript
-// src/lib/api.ts
+// src/shared/api/instance.ts
 import axios from "axios";
-import { useTenantStore } from "@/stores/tenant";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: process.env.NEXT_PUBLIC_API_URL,
 });
 
 api.interceptors.request.use((config) => {
-  const tenantStore = useTenantStore();
-  if (tenantStore.tenantId) {
-    config.headers["X-Tenant-ID"] = tenantStore.tenantId;
-  }
-
-  // JWT token
+  // JWT
   const token = localStorage.getItem("access_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
+  // Tenant — добавляем только если уже известен
+  const tenantId = localStorage.getItem("tenant_id");
+  if (tenantId) {
+    config.headers["X-Tenant-ID"] = tenantId;
+  }
+
   return config;
 });
+
+api.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    if (error.response?.status === 401) {
+      // попытка refresh, или редирект на /login
+    }
+    return Promise.reject(error);
+  },
+);
 
 export default api;
 ```
 
-### Fetch (нативный)
-
-```typescript
-function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const tenantStore = useTenantStore();
-  const headers = new Headers(options.headers);
-  headers.set("X-Tenant-ID", tenantStore.tenantId);
-
-  const token = localStorage.getItem("access_token");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
-  return fetch(`${API_BASE}${url}`, { ...options, headers });
-}
-```
+> **Важно**: при логине через общий домен `tenant_id` ещё не известен — interceptor
+> просто не добавит заголовок, и это корректное поведение.
 
 ---
 
-## 4. Стор тенанта
+## 4. Сторы
 
-### Pinia (Vue 3)
+### Auth store (Zustand)
 
 ```typescript
-// src/stores/tenant.ts
-import { defineStore } from "pinia";
+// src/shared/stores/auth.ts
+import { create } from "zustand";
 
-interface TenantState {
+interface AuthState {
+  accessToken: string | null;
+  refreshToken: string | null;
+  selectionToken: string | null;         // временный токен для выбора тенанта
+
+  setTokens: (access: string, refresh: string) => void;
+  setSelectionToken: (token: string) => void;
+  clearSelectionToken: () => void;
+  logout: () => void;
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
+  accessToken: localStorage.getItem("access_token"),
+  refreshToken: localStorage.getItem("refresh_token"),
+  selectionToken: null,
+
+  setTokens: (access, refresh) => {
+    localStorage.setItem("access_token", access);
+    localStorage.setItem("refresh_token", refresh);
+    set({ accessToken: access, refreshToken: refresh, selectionToken: null });
+  },
+
+  setSelectionToken: (token) => set({ selectionToken: token }),
+  clearSelectionToken: () => set({ selectionToken: null }),
+
+  logout: () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("tenant_id");
+    set({ accessToken: null, refreshToken: null, selectionToken: null });
+  },
+}));
+```
+
+### Tenant store (Zustand)
+
+```typescript
+// src/shared/stores/tenant.ts
+import { create } from "zustand";
+
+interface TenantInfo {
   tenantId: string;
   slug: string;
   name: string;
@@ -197,34 +251,33 @@ interface TenantState {
   siteUrl: string | null;
 }
 
-export const useTenantStore = defineStore("tenant", {
-  state: (): TenantState => ({
-    tenantId: "",
-    slug: "",
-    name: "",
-    logoUrl: null,
-    primaryColor: null,
-    siteUrl: null,
-  }),
+interface TenantState extends TenantInfo {
+  setTenant: (info: TenantInfo) => void;
+  clear: () => void;
+}
 
-  actions: {
-    setTenant(info: {
-      tenant_id: string;
-      slug: string;
-      name: string;
-      logo_url: string | null;
-      primary_color: string | null;
-      site_url: string | null;
-    }) {
-      this.tenantId = info.tenant_id;
-      this.slug = info.slug;
-      this.name = info.name;
-      this.logoUrl = info.logo_url;
-      this.primaryColor = info.primary_color;
-      this.siteUrl = info.site_url;
-    },
+const initial: TenantInfo = {
+  tenantId: localStorage.getItem("tenant_id") ?? "",
+  slug: "",
+  name: "",
+  logoUrl: null,
+  primaryColor: null,
+  siteUrl: null,
+};
+
+export const useTenantStore = create<TenantState>((set) => ({
+  ...initial,
+
+  setTenant: (info) => {
+    localStorage.setItem("tenant_id", info.tenantId);
+    set(info);
   },
-});
+
+  clear: () => {
+    localStorage.removeItem("tenant_id");
+    set({ ...initial, tenantId: "" });
+  },
+}));
 ```
 
 ---
@@ -271,9 +324,15 @@ function applyBranding(color: string | null, logoUrl: string | null) {
 
 ---
 
-## 6. Логин без выбора организации
+## 6. Умный логин (Smart Login)
 
-Поскольку тенант уже определён из домена, форма логина НЕ содержит выбора организации.
+Заголовок `X-Tenant-ID` при логине теперь **опциональный**. Бэкенд сам определяет, к какому тенанту относится пользователь.
+
+### 6.1 Два сценария формы логина
+
+**Сценарий A — кастомный домен (тенант известен из домена):**
+
+SPA загружается на `admin.client1.com`, резолвит тенант, показывает лого и название компании. При отправке `POST /auth/login` передаётся `X-Tenant-ID`.
 
 ```
 ┌─────────────────────────────┐
@@ -287,11 +346,26 @@ function applyBranding(color: string | null, logoUrl: string | null) {
 └─────────────────────────────┘
 ```
 
-### Запрос
+**Сценарий B — общий домен (тенант неизвестен):**
+
+SPA загружается на `admin.mediann.dev`, домен не резолвится в конкретный тенант. Показывается лого платформы. `X-Tenant-ID` **не передаётся**.
+
+```
+┌─────────────────────────────┐
+│      [logo платформы]       │
+│                             │
+│   Email: [____________]     │
+│   Пароль: [___________]     │
+│                             │
+│      [ Войти ]              │
+└─────────────────────────────┘
+```
+
+### 6.2 Запрос
 
 ```http
 POST /api/v1/auth/login
-X-Tenant-ID: 550e8400-e29b-41d4-a716-446655440000
+X-Tenant-ID: 550e8400-...  (ОПЦИОНАЛЬНО — передавайте если тенант известен из домена)
 Content-Type: application/json
 
 {
@@ -300,10 +374,13 @@ Content-Type: application/json
 }
 ```
 
-### Ответ
+### 6.3 Ответ — вариант 1: один тенант (или `X-Tenant-ID` передан)
+
+Если у пользователя один тенант, или `X-Tenant-ID` был указан — обычный логин:
 
 ```json
 {
+  "status": "success",
   "tokens": {
     "access_token": "eyJ...",
     "refresh_token": "eyJ...",
@@ -316,10 +393,130 @@ Content-Type: application/json
     "email": "admin@client1.com",
     "first_name": "Иван",
     "last_name": "Петров",
-    ...
+    "force_password_change": false
   }
 }
 ```
+
+### 6.4 Ответ — вариант 2: несколько тенантов
+
+Если `X-Tenant-ID` НЕ передан и у пользователя доступ к 2+ организациям:
+
+```json
+{
+  "status": "tenant_selection_required",
+  "tenants": [
+    {
+      "tenant_id": "550e8400-...",
+      "name": "Компания 1",
+      "slug": "company1",
+      "logo_url": "https://cdn.mediann.dev/...",
+      "primary_color": "#1a5276",
+      "admin_domain": "admin.company1.com",
+      "role": "site_owner"
+    },
+    {
+      "tenant_id": "660f9500-...",
+      "name": "Компания 2",
+      "slug": "company2",
+      "logo_url": null,
+      "primary_color": "#27ae60",
+      "admin_domain": "admin.company2.com",
+      "role": "content_manager"
+    }
+  ],
+  "selection_token": "eyJ..."
+}
+```
+
+### 6.5 Экран выбора тенанта
+
+Показывается **только** если бэкенд вернул `status: "tenant_selection_required"`:
+
+```
+┌─────────────────────────────────┐
+│   Выберите организацию           │
+│                                  │
+│   ┌─────────────────────────┐    │
+│   │ [logo] Компания 1       │    │
+│   │        site_owner        │    │
+│   └─────────────────────────┘    │
+│   ┌─────────────────────────┐    │
+│   │ [logo] Компания 2       │    │
+│   │        content_manager   │    │
+│   └─────────────────────────┘    │
+│                                  │
+└─────────────────────────────────┘
+```
+
+### 6.6 Завершение логина — `POST /auth/select-tenant`
+
+После выбора организации фронтенд вызывает:
+
+```http
+POST /api/v1/auth/select-tenant
+Content-Type: application/json
+
+{
+  "selection_token": "eyJ...",
+  "tenant_id": "550e8400-..."
+}
+```
+
+**Авторизация не требуется** — `selection_token` подтверждает, что пароль уже проверен.
+
+**Ответ** — такой же `LoginResponse` как при обычном логине:
+
+```json
+{
+  "status": "success",
+  "tokens": {
+    "access_token": "eyJ...",
+    "refresh_token": "eyJ...",
+    "token_type": "bearer",
+    "expires_in": 1800
+  },
+  "user": { ... }
+}
+```
+
+### 6.7 Как фронтенд определяет тип ответа
+
+```typescript
+type LoginResult = LoginSuccess | TenantSelectionRequired;
+
+interface LoginSuccess {
+  status: "success";
+  tokens: TokenPair;
+  user: UserResponse;
+}
+
+interface TenantSelectionRequired {
+  status: "tenant_selection_required";
+  tenants: TenantOption[];
+  selection_token: string;
+}
+
+async function handleLogin(email: string, password: string) {
+  const result: LoginResult = await api.post("/auth/login", { email, password });
+
+  if (result.status === "success") {
+    localStorage.setItem("access_token", result.tokens.access_token);
+    localStorage.setItem("refresh_token", result.tokens.refresh_token);
+    router.push("/dashboard");
+  } else {
+    // result.status === "tenant_selection_required"
+    // Показать экран выбора тенанта, передать result.tenants и result.selection_token
+    showTenantPicker(result.tenants, result.selection_token);
+  }
+}
+```
+
+**Важно:** `selection_token` хранится ТОЛЬКО в state компонента (НЕ в localStorage). Он действует 15 минут.
+
+### 6.8 Смена пароля синхронизируется
+
+При смене пароля через `POST /auth/me/password` или через сброс пароля — новый пароль автоматически обновляется во **всех** тенантах, где есть учётная запись с этим email. Пользователь всегда входит с одним и тем же паролем.
 
 ---
 
@@ -382,7 +579,6 @@ function switchTenant(tenant: TenantAccessInfo) {
 ```http
 POST /api/v1/auth/switch-tenant
 Authorization: Bearer <access_token>
-X-Tenant-ID: <current>
 Content-Type: application/json
 
 {
@@ -418,42 +614,73 @@ async function switchTenantInPlace(targetTenantId: string) {
 }
 ```
 
-### 7.3 Компонент свитчера (Vue 3 пример)
+**Важно:** при switch-tenant бэкенд автоматически добавляет старый access_token в blacklist (Redis). Поэтому после переключения старый токен больше не работает.
 
-```vue
-<template>
-  <div v-if="tenants.length > 1" class="tenant-switcher">
-    <button @click="open = !open" class="switcher-toggle">
-      <img v-if="currentTenant?.logo_url" :src="currentTenant.logo_url" />
-      <span>{{ currentTenant?.name }}</span>
-      <ChevronIcon />
-    </button>
+Эндпоинт имеет rate-limit: **5 переключений в минуту** на пользователя.
 
-    <ul v-if="open" class="switcher-dropdown">
-      <li
-        v-for="t in tenants"
-        :key="t.tenant_id"
-        :class="{ active: t.tenant_id === currentTenantId }"
-        @click="switchTo(t)"
-      >
-        <img v-if="t.logo_url" :src="t.logo_url" class="tenant-logo" />
-        <div>
-          <div class="tenant-name">{{ t.name }}</div>
-          <div class="tenant-domain">{{ t.admin_domain }}</div>
-        </div>
-      </li>
-    </ul>
-  </div>
-</template>
+### 7.3 Компонент свитчера (React пример)
+
+```tsx
+"use client";
+import { useState } from "react";
+import { useTenantStore } from "@/shared/stores/tenant";
+
+interface TenantAccessInfo {
+  tenant_id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  admin_domain: string | null;
+}
+
+export function TenantSwitcher({
+  tenants,
+  currentTenantId,
+  onSwitch,
+}: {
+  tenants: TenantAccessInfo[];
+  currentTenantId: string;
+  onSwitch: (tenant: TenantAccessInfo) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (tenants.length <= 1) return null;
+
+  const current = tenants.find((t) => t.tenant_id === currentTenantId);
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-2">
+        {current?.logo_url && <img src={current.logo_url} className="h-6 w-6 rounded" />}
+        <span>{current?.name}</span>
+      </button>
+
+      {open && (
+        <ul className="absolute mt-1 w-60 rounded-lg border bg-white shadow-lg">
+          {tenants.map((t) => (
+            <li
+              key={t.tenant_id}
+              className={`flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-gray-50 ${
+                t.tenant_id === currentTenantId ? "bg-gray-100" : ""
+              }`}
+              onClick={() => { onSwitch(t); setOpen(false); }}
+            >
+              {t.logo_url && <img src={t.logo_url} className="h-8 w-8 rounded" />}
+              <div>
+                <div className="font-medium">{t.name}</div>
+                {t.admin_domain && <div className="text-xs text-gray-500">{t.admin_domain}</div>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 ```
 
 ### 7.4 Когда показывать свитчер
 
-```typescript
-const showSwitcher = computed(() => tenants.value.length > 1);
-```
-
-Если `tenants.length === 1`, свитчер не нужен. Показывайте только лого и название.
+Если `tenants.length === 1`, свитчер не нужен. Показывайте только лого и название. Компонент `TenantSwitcher` выше уже содержит эту проверку (`if (tenants.length <= 1) return null`).
 
 ---
 
@@ -540,7 +767,7 @@ npm run dev -- --host 0.0.0.0 --port 3000
 **Env-переменные для разработки:**
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
 ---
@@ -559,7 +786,8 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 
 | Метод | URL | Описание |
 |-------|-----|----------|
-| POST | `/auth/login` | Логин (требует `X-Tenant-ID`) |
+| POST | `/auth/login` | Умный логин (`X-Tenant-ID` опционален). Возвращает `LoginResponse` или `TenantSelectionRequired` |
+| POST | `/auth/select-tenant` | **Завершение логина** после выбора тенанта (без авторизации, использует `selection_token`) |
 | POST | `/auth/refresh` | Обновить токены |
 | POST | `/auth/logout` | Выход (отзыв токена) |
 | POST | `/auth/forgot-password` | Запрос сброса пароля |
@@ -601,6 +829,54 @@ interface TenantByDomainResponse {
 }
 ```
 
+#### LoginResponse (Smart Login)
+
+```typescript
+// Discriminated union: проверяйте поле status
+type LoginResult = LoginSuccess | TenantSelectionRequired;
+
+interface LoginSuccess {
+  status: "success";
+  tokens: TokenPair;
+  user: UserResponse;
+}
+
+interface TenantSelectionRequired {
+  status: "tenant_selection_required";
+  tenants: TenantOption[];
+  selection_token: string;  // JWT, 15 min TTL, хранить ТОЛЬКО в state
+}
+
+interface TenantOption {
+  tenant_id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  primary_color: string | null;
+  admin_domain: string | null;
+  role: string | null;  // роль пользователя в этом тенанте
+}
+
+interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+  token_type: "bearer";
+  expires_in: number;
+}
+```
+
+#### SelectTenantRequest / Response
+
+```typescript
+// POST /auth/select-tenant — Request body
+interface SelectTenantRequest {
+  selection_token: string;
+  tenant_id: string;
+}
+
+// Response — LoginSuccess (status: "success")
+```
+
 #### MyTenantsResponse
 
 ```typescript
@@ -622,18 +898,12 @@ interface TenantAccessInfo {
 #### SwitchTenantRequest / Response
 
 ```typescript
-// Request body
+// POST /auth/switch-tenant — Request body
 interface SwitchTenantRequest {
   tenant_id: string;
 }
 
-// Response — same as login tokens
-interface TokenPair {
-  access_token: string;
-  refresh_token: string;
-  token_type: "bearer";
-  expires_in: number;
-}
+// Response — TokenPair
 ```
 
 #### TenantDomainResponse
@@ -654,14 +924,52 @@ interface TenantDomainResponse {
 
 ## Чек-лист интеграции
 
+### Bootstrap
+
 - [ ] Резолв тенанта из `window.location.hostname` при загрузке SPA
-- [ ] Стор тенанта (Pinia/Zustand) заполняется до монтирования приложения
-- [ ] `X-Tenant-ID` header в каждом API-запросе (interceptor)
+- [ ] Стор тенанта (Zustand) заполняется до монтирования приложения
+- [ ] Если домен не резолвится — показать форму логина без лого (общий домен)
+- [ ] При наличии `access_token` в localStorage — проверить `GET /auth/me`
+
+### Логин
+
+- [ ] `X-Tenant-ID` header **только** в запросе `/auth/login` и **только** если тенант известен из домена
+- [ ] Обработка ответа `status: "success"` — сохранить токены, перейти на dashboard
+- [ ] Обработка ответа `status: "tenant_selection_required"` — показать экран выбора тенанта
+- [ ] Экран выбора тенанта: список с логотипом, названием и ролью
+- [ ] При выборе тенанта — `POST /auth/select-tenant` с `selection_token` + `tenant_id`
+- [ ] `selection_token` хранить ТОЛЬКО в state компонента (не в localStorage)
+- [ ] Проверка `force_password_change` — если `true`, редирект на смену пароля
+
+### После логина
+
+- [ ] `GET /auth/me/tenants` — определить нужен ли свитчер
+- [ ] `GET /auth/me/features` — каталог фич для sidebar
 - [ ] Брендинг: CSS-переменные из `primary_color` + `logo_url`
-- [ ] Форма логина без выбора организации (тенант из домена)
-- [ ] `GET /auth/me/tenants` после логина → определить нужен ли свитчер
+
+### Tenant Switcher
+
 - [ ] Свитчер отображается если `tenants.length > 1`
-- [ ] Переключение через редирект на `admin_domain` или `POST /switch-tenant`
+- [ ] Переключение через `POST /switch-tenant` → сохранить новые токены
+- [ ] После переключения — `window.location.reload()` для сброса всех кэшей
+- [ ] Loading overlay при переключении
+
+### Interceptors
+
+- [ ] `Authorization: Bearer {token}` на всех авторизованных запросах
+- [ ] `X-Tenant-ID` **обязательно** на всех запросах после логина (берётся из `localStorage` / стора)
+- [ ] При логине (`POST /auth/login`) — `X-Tenant-ID` добавляется **только** если тенант известен из домена
+- [ ] `POST /auth/select-tenant` — `X-Tenant-ID` **не** нужен (tenant_id в теле запроса)
+- [ ] 401 interceptor: попытка refresh → при ошибке → на логин
+- [ ] 403 `tenant_inactive` → полноэкранный блок «Организация приостановлена»
+- [ ] 403 `feature_disabled` → информация «Раздел недоступен»
+
+### Ошибки
+
 - [ ] Экран ошибки: домен не найден (404)
 - [ ] Экран ошибки: организация приостановлена (403)
+- [ ] Экран ошибки: нет доступа к организации (401 от switch-tenant)
+
+### Разработка
+
 - [ ] Локальная разработка через `/etc/hosts`
