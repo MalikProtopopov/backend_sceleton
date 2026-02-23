@@ -278,9 +278,41 @@ class AuthService:
         if not valid_users:
             raise InvalidCredentialsError("Account is disabled")
 
-        # --- Single tenant: auto-login ---
+        # --- Single tenant: auto-login or redirect ---
         if len(valid_users) == 1:
             user = valid_users[0]
+
+            # Cross-tenant guard: user found in a different tenant than
+            # the one resolved from the admin domain.
+            is_cross_tenant = (
+                tenant_id is not None and user.tenant_id != tenant_id
+            )
+            if is_cross_tenant:
+                is_privileged = user.is_superuser or (
+                    user.role and user.role.name == "platform_owner"
+                )
+                if not is_privileged:
+                    tenant = user.tenant
+                    domain_stmt = select(TenantDomain.domain).where(
+                        TenantDomain.tenant_id == tenant.id,
+                        TenantDomain.is_primary.is_(True),
+                    )
+                    domain_result = await self.db.execute(domain_stmt)
+                    admin_domain = domain_result.scalar_one_or_none()
+
+                    return {
+                        "status": "tenant_redirect_required",
+                        "tenant": {
+                            "tenant_id": str(tenant.id),
+                            "name": tenant.name,
+                            "slug": tenant.slug,
+                            "logo_url": tenant.logo_url,
+                            "primary_color": tenant.primary_color,
+                            "admin_domain": admin_domain,
+                            "role": user.role.name if user.role else None,
+                        },
+                    }
+
             user.last_login_at = datetime.now(UTC)
             user.last_login_ip = ip_address
             tokens = self._create_tokens(user)

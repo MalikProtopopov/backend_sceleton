@@ -429,7 +429,55 @@ Content-Type: application/json
 }
 ```
 
-### 6.5 Экран выбора тенанта
+### 6.5 Ответ — вариант 3: аккаунт в другой организации (redirect)
+
+Если `X-Tenant-ID` передан (из домена), но пользователь зарегистрирован только в **другом** тенанте и **не является** суперюзером / platform_owner:
+
+```json
+{
+  "status": "tenant_redirect_required",
+  "tenant": {
+    "tenant_id": "22c020ec-...",
+    "name": "Другая Компания",
+    "slug": "other-company",
+    "logo_url": "https://cdn.mediann.dev/...",
+    "primary_color": "#e74c3c",
+    "admin_domain": "admin.other-company.com",
+    "role": "editor"
+  },
+  "message": "Your account belongs to a different organization"
+}
+```
+
+> **Примечание:** суперюзеры и platform_owner получат `status: "success"` с токенами (cross-tenant авто-логин).
+
+### 6.5.1 Экран редиректа на другую организацию
+
+Показывается если бэкенд вернул `status: "tenant_redirect_required"`:
+
+```
+┌─────────────────────────────────────────┐
+│                                         │
+│   Ваш аккаунт принадлежит              │
+│   организации «Другая Компания»         │
+│                                         │
+│   [logo]                                │
+│                                         │
+│   ┌─────────────────────────────────┐   │
+│   │  Перейти в admin.other-co.com   │   │
+│   └─────────────────────────────────┘   │
+│                                         │
+│   Или обратитесь к администратору       │
+│   вашей организации                     │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+Логика кнопки:
+- Если `tenant.admin_domain` **не null** — кнопка ведёт на `https://{admin_domain}`
+- Если `tenant.admin_domain` **null** — кнопка скрыта, показать текст «Обратитесь к администратору вашей организации для получения ссылки на админ-панель»
+
+### 6.6 Экран выбора тенанта
 
 Показывается **только** если бэкенд вернул `status: "tenant_selection_required"`:
 
@@ -483,7 +531,7 @@ Content-Type: application/json
 ### 6.7 Как фронтенд определяет тип ответа
 
 ```typescript
-type LoginResult = LoginSuccess | TenantSelectionRequired;
+type LoginResult = LoginSuccess | TenantSelectionRequired | TenantRedirectRequired;
 
 interface LoginSuccess {
   status: "success";
@@ -497,17 +545,30 @@ interface TenantSelectionRequired {
   selection_token: string;
 }
 
+interface TenantRedirectRequired {
+  status: "tenant_redirect_required";
+  tenant: TenantOption;
+  message: string;
+}
+
 async function handleLogin(email: string, password: string) {
   const result: LoginResult = await api.post("/auth/login", { email, password });
 
-  if (result.status === "success") {
-    localStorage.setItem("access_token", result.tokens.access_token);
-    localStorage.setItem("refresh_token", result.tokens.refresh_token);
-    router.push("/dashboard");
-  } else {
-    // result.status === "tenant_selection_required"
-    // Показать экран выбора тенанта, передать result.tenants и result.selection_token
-    showTenantPicker(result.tenants, result.selection_token);
+  switch (result.status) {
+    case "success":
+      localStorage.setItem("access_token", result.tokens.access_token);
+      localStorage.setItem("refresh_token", result.tokens.refresh_token);
+      router.push("/dashboard");
+      break;
+
+    case "tenant_selection_required":
+      showTenantPicker(result.tenants, result.selection_token);
+      break;
+
+    case "tenant_redirect_required":
+      // Показать экран редиректа с информацией о тенанте пользователя
+      showTenantRedirect(result.tenant, result.message);
+      break;
   }
 }
 ```
@@ -786,7 +847,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 
 | Метод | URL | Описание |
 |-------|-----|----------|
-| POST | `/auth/login` | Умный логин (`X-Tenant-ID` опционален). Возвращает `LoginResponse` или `TenantSelectionRequired` |
+| POST | `/auth/login` | Умный логин (`X-Tenant-ID` опционален). Возвращает `LoginResponse`, `TenantSelectionRequired` или `TenantRedirectRequired` |
 | POST | `/auth/select-tenant` | **Завершение логина** после выбора тенанта (без авторизации, использует `selection_token`) |
 | POST | `/auth/refresh` | Обновить токены |
 | POST | `/auth/logout` | Выход (отзыв токена) |
@@ -833,7 +894,7 @@ interface TenantByDomainResponse {
 
 ```typescript
 // Discriminated union: проверяйте поле status
-type LoginResult = LoginSuccess | TenantSelectionRequired;
+type LoginResult = LoginSuccess | TenantSelectionRequired | TenantRedirectRequired;
 
 interface LoginSuccess {
   status: "success";
@@ -845,6 +906,12 @@ interface TenantSelectionRequired {
   status: "tenant_selection_required";
   tenants: TenantOption[];
   selection_token: string;  // JWT, 15 min TTL, хранить ТОЛЬКО в state
+}
+
+interface TenantRedirectRequired {
+  status: "tenant_redirect_required";
+  tenant: TenantOption;     // единственный тенант, в котором зарегистрирован юзер
+  message: string;          // "Your account belongs to a different organization"
 }
 
 interface TenantOption {
@@ -936,6 +1003,8 @@ interface TenantDomainResponse {
 - [ ] `X-Tenant-ID` header **только** в запросе `/auth/login` и **только** если тенант известен из домена
 - [ ] Обработка ответа `status: "success"` — сохранить токены, перейти на dashboard
 - [ ] Обработка ответа `status: "tenant_selection_required"` — показать экран выбора тенанта
+- [ ] Обработка ответа `status: "tenant_redirect_required"` — показать экран редиректа на организацию пользователя
+- [ ] Экран редиректа: если `tenant.admin_domain` есть — кнопка «Перейти», иначе — «Обратитесь к администратору»
 - [ ] Экран выбора тенанта: список с логотипом, названием и ролью
 - [ ] При выборе тенанта — `POST /auth/select-tenant` с `selection_token` + `tenant_id`
 - [ ] `selection_token` хранить ТОЛЬКО в state компонента (не в localStorage)

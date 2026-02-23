@@ -352,6 +352,20 @@ class TenantSelectionRequired(BaseModel):
     )
 
 
+class TenantRedirectRequired(BaseModel):
+    """Returned by ``POST /auth/login`` when the user belongs to a
+    single tenant that differs from the domain's tenant.
+
+    The frontend should display a message and offer to redirect the user
+    to their organisation's admin domain.  If ``tenant.admin_domain`` is
+    ``None``, show a generic "contact your administrator" message.
+    """
+
+    status: Literal["tenant_redirect_required"] = "tenant_redirect_required"
+    tenant: TenantOption
+    message: str = "Your account belongs to a different organization"
+
+
 class SelectTenantRequest(BaseModel):
     """Request body for POST /auth/select-tenant."""
 

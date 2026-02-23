@@ -42,6 +42,7 @@ from app.modules.auth.schemas import (
     SwitchTenantRequest,
     TenantAccessInfo,
     TenantOption,
+    TenantRedirectRequired,
     TenantSelectionRequired,
     TokenPair,
     TokenRefresh,
@@ -73,7 +74,7 @@ router = APIRouter()
     ),
     responses={
         200: {
-            "description": "Login success or tenant selection required",
+            "description": "Login success, tenant selection, or tenant redirect",
             "content": {
                 "application/json": {
                     "examples": {
@@ -105,6 +106,20 @@ router = APIRouter()
                                 "selection_token": "eyJ...",
                             },
                         },
+                        "redirect": {
+                            "summary": "User belongs to a different organization",
+                            "value": {
+                                "status": "tenant_redirect_required",
+                                "tenant": {
+                                    "tenant_id": "...",
+                                    "name": "Other Org",
+                                    "slug": "other-org",
+                                    "admin_domain": "admin.other-org.com",
+                                    "role": "editor",
+                                },
+                                "message": "Your account belongs to a different organization",
+                            },
+                        },
                     }
                 }
             },
@@ -116,7 +131,7 @@ async def login(
     request: Request,
     tenant_id: UUID | None = Depends(get_optional_tenant_from_header),
     db: AsyncSession = Depends(get_db),
-) -> LoginResponse | TenantSelectionRequired:
+) -> LoginResponse | TenantSelectionRequired | TenantRedirectRequired:
     """Authenticate user and return tokens.
 
     Rate limited to 10 attempts per minute per IP address.
@@ -140,6 +155,11 @@ async def login(
     result = await service.authenticate_smart(data, tenant_id, ip_address)
 
     if isinstance(result, dict):
+        status = result.get("status")
+        if status == "tenant_redirect_required":
+            return TenantRedirectRequired(
+                tenant=TenantOption(**result["tenant"]),
+            )
         return TenantSelectionRequired(
             tenants=[TenantOption(**t) for t in result["tenants"]],
             selection_token=result["selection_token"],
