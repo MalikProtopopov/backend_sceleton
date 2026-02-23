@@ -32,6 +32,11 @@ Thumbs.db
 .AppleDouble
 .LSOverride
 
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
 # Project specific
 *.plan.md
 plans/
