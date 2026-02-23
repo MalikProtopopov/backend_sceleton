@@ -191,14 +191,20 @@ class TenantService:
     async def update(self, tenant_id: UUID, data: TenantUpdate) -> Tenant:
         """Update tenant with optimistic locking.
         
-        Invalidates Redis tenant status cache when is_active changes.
+        Invalidates Redis caches:
+        - tenant_status_cache when is_active changes
+        - domain_tenant_cache when any by-domain-visible field changes
+          (name, logo_url, primary_color, is_active)
         """
         tenant = await self.get_by_id(tenant_id)
         tenant.check_version(data.version)
 
-        # Track is_active change for cache invalidation
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
         is_active_changed = "is_active" in update_data
+
+        # Fields that are returned by GET /public/tenants/by-domain/{domain}
+        domain_visible_fields = {"name", "logo_url", "primary_color", "is_active"}
+        domain_cache_dirty = bool(domain_visible_fields & update_data.keys())
 
         # Track changes for audit log
         changes: dict = {}
@@ -230,6 +236,18 @@ class TenantService:
             if cache:
                 await cache.invalidate(str(tenant_id))
             get_cors_origins_cache().invalidate()
+
+        # Invalidate domain_tenant_cache so by-domain resolution picks up
+        # changes to name, primary_color, logo_url, is_active immediately.
+        if domain_cache_dirty:
+            from app.core.redis import get_domain_tenant_cache
+
+            cache = await get_domain_tenant_cache()
+            if cache:
+                stmt = select(TenantDomain.domain).where(TenantDomain.tenant_id == tenant_id)
+                result = await self.db.execute(stmt)
+                for (domain_str,) in result.all():
+                    await cache.invalidate(domain_str)
 
         return tenant
 
