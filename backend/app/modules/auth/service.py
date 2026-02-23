@@ -220,16 +220,27 @@ class AuthService:
     ) -> tuple[AdminUser, "TokenPair"] | dict:
         """Smart login that works with or without an explicit tenant_id.
 
-        * ``tenant_id`` provided  -- delegates to :meth:`authenticate`.
-        * ``tenant_id`` is None   -- looks up *all* active AdminUser
-          records with the given email across tenants:
+        * ``tenant_id`` provided **and user exists in that tenant**
+          -- delegates to :meth:`authenticate`.
+        * Otherwise -- looks up *all* active AdminUser records with the
+          given email across tenants:
           - 0 matches  -> ``InvalidCredentialsError``
           - 1 match    -> auto-login (returns user + tokens)
           - 2+ matches -> returns a dict with ``status``,
             ``tenants`` list, and a short-lived ``selection_token``
+
+        This ensures that a user logging in from any admin domain
+        (even one mapped to a different tenant) can still authenticate.
         """
         if tenant_id is not None:
-            return await self.authenticate(data, tenant_id, ip_address)
+            exists_stmt = select(AdminUser.id).where(
+                AdminUser.tenant_id == tenant_id,
+                AdminUser.email == data.email,
+                AdminUser.deleted_at.is_(None),
+            )
+            exists_result = await self.db.execute(exists_stmt)
+            if exists_result.scalar_one_or_none() is not None:
+                return await self.authenticate(data, tenant_id, ip_address)
 
         from app.modules.tenants.models import Tenant, TenantDomain
 
