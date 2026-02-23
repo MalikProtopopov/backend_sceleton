@@ -110,6 +110,7 @@ class UserResponse(UserBase):
     avatar_url: str | None = None
     last_login_at: datetime | None = None
     role: "RoleResponse | None" = None
+    version: int
     created_at: datetime
     updated_at: datetime
 
