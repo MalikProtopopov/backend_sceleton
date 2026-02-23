@@ -626,18 +626,15 @@ async def get_user(
     so that cross-tenant user profiles are always reachable.
     """
     effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+    is_privileged = user.is_superuser or (
+        user.role and user.role.name == "platform_owner"
+    )
 
     service = UserService(db)
 
     try:
         found_user = await service.get_by_id(user_id, effective_tenant_id)
     except Exception:
-        # If user not found in the effective tenant AND the caller is
-        # a superuser / platform_owner without an explicit tenant_id,
-        # try a global (cross-tenant) lookup.
-        is_privileged = user.is_superuser or (
-            user.role and user.role.name == "platform_owner"
-        )
         if is_privileged and target_tenant_id is None:
             found_user = await service.get_by_id_global(user_id)
         else:
@@ -668,14 +665,14 @@ async def update_user(
     so that cross-tenant user updates always work.
     """
     effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+    is_privileged = user.is_superuser or (
+        user.role and user.role.name == "platform_owner"
+    )
 
     service = UserService(db, actor_id=user.id)
     try:
         updated_user = await service.update(user_id, effective_tenant_id, data)
     except NotFoundError:
-        is_privileged = user.is_superuser or (
-            user.role and user.role.name == "platform_owner"
-        )
         if is_privileged and target_tenant_id is None:
             found_user = await service.get_by_id_global(user_id)
             updated_user = await service.update(user_id, found_user.tenant_id, data)
@@ -704,14 +701,14 @@ async def delete_user(
     first tries the current tenant, then falls back to a global lookup.
     """
     effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
+    is_privileged = user.is_superuser or (
+        user.role and user.role.name == "platform_owner"
+    )
 
     service = UserService(db, actor_id=user.id)
     try:
         await service.soft_delete(user_id, effective_tenant_id)
     except NotFoundError:
-        is_privileged = user.is_superuser or (
-            user.role and user.role.name == "platform_owner"
-        )
         if is_privileged and target_tenant_id is None:
             found_user = await service.get_by_id_global(user_id)
             await service.soft_delete(user_id, found_user.tenant_id)
