@@ -690,11 +690,11 @@ class UserService(BaseService[AdminUser]):
         Sets force_password_change=True for new users.
         Sends welcome email when send_credentials=True.
         """
-        # Check email uniqueness in tenant (including soft-deleted to match DB constraint)
         existing = await self.db.execute(
             select(AdminUser)
             .where(AdminUser.tenant_id == tenant_id)
             .where(AdminUser.email == data.email)
+            .where(AdminUser.deleted_at.is_(None))
         )
         if existing.scalar_one_or_none():
             raise AlreadyExistsError("User", "email", data.email)

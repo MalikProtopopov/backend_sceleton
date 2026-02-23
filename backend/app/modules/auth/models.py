@@ -187,7 +187,13 @@ class AdminUser(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="users")
 
     __table_args__ = (
-        UniqueConstraint("tenant_id", "email", name="uq_admin_users_tenant_email"),
+        Index(
+            "uq_admin_users_tenant_email",
+            "tenant_id",
+            "email",
+            unique=True,
+            postgresql_where="deleted_at IS NULL",
+        ),
         Index("ix_admin_users_email", "email"),
         Index("ix_admin_users_role", "role_id"),
         Index(
