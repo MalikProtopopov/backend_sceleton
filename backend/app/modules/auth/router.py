@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Pagination, get_optional_tenant_from_header, get_tenant_from_header
-from app.core.exceptions import PermissionDeniedError
+from app.core.exceptions import NotFoundError, PermissionDeniedError
 from app.core.image_upload import image_upload_service
 from app.core.logging import get_logger
 from app.core.redis import get_token_blacklist
@@ -661,11 +661,26 @@ async def update_user(
     current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
-    """Update user."""
+    """Update user.
+
+    For superusers / platform owners: if tenant_id is not specified,
+    first tries the current tenant, then falls back to a global lookup
+    so that cross-tenant user updates always work.
+    """
     effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
 
     service = UserService(db, actor_id=user.id)
-    updated_user = await service.update(user_id, effective_tenant_id, data)
+    try:
+        updated_user = await service.update(user_id, effective_tenant_id, data)
+    except NotFoundError:
+        is_privileged = user.is_superuser or (
+            user.role and user.role.name == "platform_owner"
+        )
+        if is_privileged and target_tenant_id is None:
+            found_user = await service.get_by_id_global(user_id)
+            updated_user = await service.update(user_id, found_user.tenant_id, data)
+        else:
+            raise
     return UserResponse.model_validate(updated_user)
 
 
@@ -683,11 +698,25 @@ async def delete_user(
     current_tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft delete a user."""
+    """Soft delete a user.
+
+    For superusers / platform owners: if tenant_id is not specified,
+    first tries the current tenant, then falls back to a global lookup.
+    """
     effective_tenant_id = _resolve_effective_tenant(user, target_tenant_id, current_tenant_id)
 
     service = UserService(db, actor_id=user.id)
-    await service.soft_delete(user_id, effective_tenant_id)
+    try:
+        await service.soft_delete(user_id, effective_tenant_id)
+    except NotFoundError:
+        is_privileged = user.is_superuser or (
+            user.role and user.role.name == "platform_owner"
+        )
+        if is_privileged and target_tenant_id is None:
+            found_user = await service.get_by_id_global(user_id)
+            await service.soft_delete(user_id, found_user.tenant_id)
+        else:
+            raise
 
 
 @router.post(
