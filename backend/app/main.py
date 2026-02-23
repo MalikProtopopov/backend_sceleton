@@ -4,15 +4,15 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.database import check_db_connection, close_db
 from app.core.exceptions import AppException
 from app.core.logging import get_logger, setup_logging
-from app.core.redis import check_redis_connection, close_redis, init_redis
+from app.core.redis import check_redis_connection, close_redis, get_cors_origins_cache, init_redis
 from app.middleware.cache import CacheHeadersMiddleware
+from app.middleware.cors import DynamicCORSMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 
@@ -46,6 +46,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await init_redis()
     except Exception as e:
         logger.warning("redis_init_failed", error=str(e))
+
+    # Warm up dynamic CORS origins cache
+    cors_cache = get_cors_origins_cache()
+    cors_cache.set_static_origins(settings.cors_origins)
+    try:
+        await cors_cache.get_allowed_origins()
+    except Exception as e:
+        logger.warning("cors_origins_warmup_failed", error=str(e))
 
     yield
 
@@ -82,16 +90,9 @@ def create_app() -> FastAPI:
 
 def _setup_middleware(app: FastAPI) -> None:
     """Configure application middleware."""
-    # CORS - origins are restricted via CORS_ORIGINS env var;
-    # methods and headers use wildcard to avoid breaking preflight
-    # when frontend sends unexpected headers (Pragma, Sec-*, etc.)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS - dynamic origins loaded from DB (tenant_domains + tenant_settings.site_url)
+    # combined with static fallback from CORS_ORIGINS env var.
+    app.add_middleware(DynamicCORSMiddleware)
 
     # Cache headers (runs last on response, adds Cache-Control and ETag)
     app.add_middleware(CacheHeadersMiddleware)

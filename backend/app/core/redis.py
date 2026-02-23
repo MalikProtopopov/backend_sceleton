@@ -1,8 +1,10 @@
 """Redis client wrapper for caching and rate limiting."""
 
+import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlparse
 
 import redis.asyncio as redis
 from redis.asyncio import Redis
@@ -399,5 +401,117 @@ class CacheClient:
     async def ttl(self, key: str) -> int:
         """Get remaining TTL for a key."""
         return await self.redis.ttl(f"cache:{key}")
+
+
+# ============================================================================
+# Dynamic CORS origins cache
+# ============================================================================
+
+
+class CORSOriginsCache:
+    """In-memory cache of allowed CORS origins backed by the database.
+
+    Combines static origins from ``CORS_ORIGINS`` env var with dynamic
+    origins derived from ``tenant_domains`` and ``tenant_settings.site_url``.
+    The cache auto-refreshes every ``TTL`` seconds or can be explicitly
+    invalidated when domains / settings change.
+    """
+
+    TTL = 300  # 5 minutes
+
+    def __init__(self) -> None:
+        self._origins: set[str] = set()
+        self._loaded_at: float = 0.0
+        self._static_origins: set[str] = set()
+
+    def set_static_origins(self, origins: list[str]) -> None:
+        """Store the static fallback origins from .env (called once at startup)."""
+        self._static_origins = {o.rstrip("/") for o in origins if o}
+
+    async def get_allowed_origins(self) -> set[str]:
+        """Return the full set of allowed origins (static + dynamic).
+
+        Reloads from the database when the TTL has elapsed.
+        """
+        now = time.monotonic()
+        if self._origins and (now - self._loaded_at) < self.TTL:
+            return self._origins
+
+        try:
+            db_origins = await self._load_from_db()
+        except Exception:
+            logger.warning("cors_origins_load_failed", exc_info=True)
+            db_origins = set()
+
+        self._origins = self._static_origins | db_origins
+        self._loaded_at = now
+        logger.info(
+            "cors_origins_refreshed",
+            total=len(self._origins),
+            static=len(self._static_origins),
+            dynamic=len(db_origins),
+        )
+        return self._origins
+
+    def invalidate(self) -> None:
+        """Force a reload on the next ``get_allowed_origins`` call."""
+        self._loaded_at = 0.0
+
+    def is_origin_allowed(self, origin: str) -> bool:
+        """Fast synchronous check against the already-loaded set."""
+        return origin.rstrip("/") in self._origins
+
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _load_from_db() -> set[str]:
+        from sqlalchemy import select, text
+
+        from app.core.database import async_session_factory
+
+        query = text("""
+            SELECT 'https://' || td.domain AS origin
+            FROM tenant_domains td
+            JOIN tenants t ON t.id = td.tenant_id
+            WHERE t.deleted_at IS NULL AND t.is_active = true
+            UNION
+            SELECT ts.site_url AS origin
+            FROM tenant_settings ts
+            JOIN tenants t ON t.id = ts.tenant_id
+            WHERE t.deleted_at IS NULL AND t.is_active = true
+              AND ts.site_url IS NOT NULL AND ts.site_url != ''
+        """)
+
+        origins: set[str] = set()
+        async with async_session_factory() as session:
+            result = await session.execute(query)
+            for (raw_origin,) in result:
+                origin = _normalize_origin(raw_origin)
+                if origin:
+                    origins.add(origin)
+        return origins
+
+
+def _normalize_origin(url: str) -> str:
+    """Extract ``scheme://host[:port]`` from a URL, stripping path/query."""
+    url = url.strip().rstrip("/")
+    if not url:
+        return ""
+    parsed = urlparse(url if "://" in url else f"https://{url}")
+    if not parsed.scheme or not parsed.hostname:
+        return ""
+    origin = f"{parsed.scheme}://{parsed.hostname}"
+    if parsed.port and parsed.port not in (80, 443):
+        origin += f":{parsed.port}"
+    return origin
+
+
+# Module-level singleton
+_cors_origins_cache = CORSOriginsCache()
+
+
+def get_cors_origins_cache() -> CORSOriginsCache:
+    """Return the module-level CORS origins cache singleton."""
+    return _cors_origins_cache
 
 

@@ -45,8 +45,9 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
 
-    # CORS - stored as comma-separated string in env
-    # Common frontend dev ports: 3000 (Next.js), 3001, 5173 (Vite), 8080, 5174
+    # CORS - static fallback origins from env.
+    # Dynamic origins are loaded from DB (tenant_domains + tenant_settings.site_url).
+    # These env origins are ALWAYS included (for localhost dev, platform domains, etc.)
     cors_origins_str: str = Field(
         default="http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:5174,http://localhost:8080",
         alias="cors_origins"

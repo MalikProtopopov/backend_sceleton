@@ -157,7 +157,10 @@ class TenantSettingsBase(BaseModel):
     site_url: str | None = Field(
         default=None,
         max_length=500,
-        description="Frontend base URL for sitemap and robots.txt (e.g. https://mediann.dev). Used in <loc> and Sitemap:.",
+        description=(
+            "Frontend base URL (e.g. https://mediann.dev). "
+            "Used for SEO (sitemap, robots.txt) and automatically added to allowed CORS origins."
+        ),
     )
     
     # SEO sitemap configuration
@@ -250,6 +253,20 @@ class TenantSettingsBase(BaseModel):
         default=True,
         description="Use STARTTLS for SMTP connection",
     )
+
+    @field_validator("site_url")
+    @classmethod
+    def validate_site_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip().rstrip("/")
+        if not v:
+            return None
+        if not re.match(r"^https?://[a-zA-Z0-9]", v):
+            raise ValueError(
+                "site_url must be a valid URL starting with http:// or https://"
+            )
+        return v
 
     @field_validator("yandex_verification_code")
     @classmethod

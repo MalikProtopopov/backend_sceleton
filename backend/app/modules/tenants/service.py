@@ -225,10 +225,11 @@ class TenantService:
 
         # Invalidate tenant status cache if is_active changed
         if is_active_changed:
-            from app.core.redis import get_tenant_status_cache
+            from app.core.redis import get_cors_origins_cache, get_tenant_status_cache
             cache = await get_tenant_status_cache()
             if cache:
                 await cache.invalidate(str(tenant_id))
+            get_cors_origins_cache().invalidate()
 
         return tenant
 
@@ -249,11 +250,12 @@ class TenantService:
             changes={"name": tenant.name},
         )
 
-        # Invalidate tenant status cache
-        from app.core.redis import get_tenant_status_cache
+        # Invalidate tenant status cache + CORS origins
+        from app.core.redis import get_cors_origins_cache, get_tenant_status_cache
         cache = await get_tenant_status_cache()
         if cache:
             await cache.invalidate(str(tenant_id))
+        get_cors_origins_cache().invalidate()
 
     async def get_settings(self, tenant_id: UUID) -> TenantSettings | None:
         """Get tenant settings by tenant ID.
@@ -312,6 +314,10 @@ class TenantService:
 
         await self.db.commit()
         await self.db.refresh(settings)
+
+        if "site_url" in update_data:
+            from app.core.redis import get_cors_origins_cache
+            get_cors_origins_cache().invalidate()
 
         return settings
 
@@ -513,6 +519,8 @@ class TenantDomainService:
         self.db.add(td)
         await self.db.flush()
         await self.db.refresh(td)
+
+        self._invalidate_cors_cache()
         return td
 
     @transactional
@@ -530,8 +538,8 @@ class TenantDomainService:
         await self.db.flush()
         await self.db.refresh(td)
 
-        # Invalidate cache
         await self._invalidate_cache(td.domain)
+        self._invalidate_cors_cache()
         return td
 
     @transactional
@@ -542,8 +550,8 @@ class TenantDomainService:
         await self.db.delete(td)
         await self.db.flush()
 
-        # Invalidate cache
         await self._invalidate_cache(domain_str)
+        self._invalidate_cors_cache()
 
     # ------------------------------------------------------------------
     # Helpers
@@ -582,4 +590,9 @@ class TenantDomainService:
         cache = await get_domain_tenant_cache()
         if cache:
             await cache.invalidate(domain)
+
+    @staticmethod
+    def _invalidate_cors_cache() -> None:
+        from app.core.redis import get_cors_origins_cache
+        get_cors_origins_cache().invalidate()
 
