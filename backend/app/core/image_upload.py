@@ -80,20 +80,24 @@ class ImageUploadService:
         content_type: str,
     ) -> str:
         """Generate S3 key for the image.
-        
-        Format: {tenant_id}/{folder}/{entity_id}.{ext}
-        
+
+        Format: {tenant_id}/{folder}/{entity_id}_{unique_suffix}.{ext}
+
+        A unique suffix is appended so that replacing an image always
+        produces a different URL, bypassing browser and CDN caches.
+
         Args:
             tenant_id: Tenant UUID
             folder: Folder name (e.g., 'articles', 'employees')
             entity_id: Entity UUID
             content_type: MIME type of the image
-            
+
         Returns:
             S3 key string
         """
         ext = self.EXTENSION_MAP.get(content_type, "jpg")
-        return f"{tenant_id}/{folder}/{entity_id}.{ext}"
+        suffix = uuid.uuid4().hex[:8]
+        return f"{tenant_id}/{folder}/{entity_id}_{suffix}.{ext}"
 
     def _extract_s3_key_from_url(self, image_url: str) -> str | None:
         """Extract S3 key from image URL.
@@ -187,11 +191,14 @@ class ImageUploadService:
                 )
 
             # Upload to S3
+            # CacheControl is set so that browsers/CDNs re-validate images
+            # rather than serving stale copies after a replace operation.
             self.s3.client.put_object(
                 Bucket=settings.s3_bucket_name,
                 Key=s3_key,
                 Body=content,
                 ContentType=file.content_type or "image/jpeg",
+                CacheControl="public, max-age=31536000, immutable",
             )
 
             # Get the URL
