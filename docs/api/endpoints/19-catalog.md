@@ -19,9 +19,10 @@
 8. [Product Aliases](#8-product-aliases)
 9. [Product Analogs](#9-product-analogs)
 10. [Product Categories (привязка)](#10-product-categories)
-11. [Публичные эндпоинты (без авторизации)](#11-публичные-эндпоинты)
-12. [RBAC permissions](#12-rbac-permissions)
-13. [TypeScript-типы](#13-typescript-типы)
+11. [Product Content Blocks](#11-product-content-blocks)
+12. [Публичные эндпоинты (без авторизации)](#12-публичные-эндпоинты)
+13. [RBAC permissions](#13-rbac-permissions)
+14. [TypeScript-типы](#14-typescript-типы)
 
 ---
 
@@ -655,7 +656,7 @@ curl -X POST /api/v1/admin/products/{id}/images \
 
 ---
 
-## 11. Публичные эндпоинты
+## 12. Публичные эндпоинты
 
 Не требуют авторизации. Используют `?tenant_id={uuid}`.  
 Требуют включённый feature flag `catalog_module` для тенанта.
@@ -747,6 +748,12 @@ curl -X POST /api/v1/admin/products/{id}/images \
 
 Детальная карточка продукта по slug.
 
+**Query:**
+| Параметр | Тип | Описание |
+|----------|-----|----------|
+| `tenant_id` | UUID | Обязательно |
+| `locale` | string | Фильтр контент-блоков по локали, например `ru` или `en` |
+
 **Response 200:**
 ```json
 {
@@ -778,6 +785,22 @@ curl -X POST /api/v1/admin/products/{id}/images \
   "prices": [
     { "price_type": "regular", "amount": "1500.00", "currency": "RUB" },
     { "price_type": "sale", "amount": "1200.00", "currency": "RUB" }
+  ],
+  "content_blocks": [
+    {
+      "id": "uuid",
+      "locale": "ru",
+      "block_type": "text",
+      "sort_order": 0,
+      "title": "О продукте",
+      "content": "<p>Детальное описание с HTML-форматированием</p>",
+      "media_url": null,
+      "thumbnail_url": null,
+      "link_url": null,
+      "link_label": null,
+      "device_type": "both",
+      "block_metadata": null
+    }
   ]
 }
 ```
@@ -809,7 +832,96 @@ Content-Type: application/json
 
 ---
 
-## 12. RBAC permissions
+## 11. Product Content Blocks
+
+Контент-блоки — это гибкий способ прикрепить к товару структурированный контент: тексты, изображения, видео, галереи, ссылки (аналогично блокам для статей и услуг).
+
+### GET /api/v1/admin/products/{product_id}/content-blocks
+
+Список контент-блоков товара. Требует: `catalog:read`.
+
+**Query:** `locale` (опционально, фильтр по локали)
+
+**Response 200:** `ContentBlock[]`
+
+---
+
+### POST /api/v1/admin/products/{product_id}/content-blocks
+
+Добавить контент-блок. Требует: `catalog:update`.
+
+**Request:**
+```json
+{
+  "locale": "ru",
+  "block_type": "text",
+  "sort_order": 0,
+  "title": "О продукте",
+  "content": "<p>Расширенное описание</p>",
+  "media_url": null,
+  "thumbnail_url": null,
+  "link_url": null,
+  "link_label": null,
+  "device_type": "both",
+  "block_metadata": null
+}
+```
+
+**Типы блоков (`block_type`):**
+| Тип | Описание |
+|-----|----------|
+| `text` | HTML-текст с заголовком |
+| `image` | Изображение (`media_url` + `block_metadata.alt`) |
+| `video` | Видео (`media_url`, `thumbnail_url`, `block_metadata.provider`) |
+| `gallery` | Галерея (`block_metadata.images: [{url, alt}]`) |
+| `link` | Ссылка-кнопка (`link_url`, `link_label`) |
+| `result` | Кейс/результат (смешанный) |
+
+**Response 201:** `ContentBlock`
+
+---
+
+### PATCH /api/v1/admin/products/{product_id}/content-blocks/{block_id}
+
+Обновить контент-блок. Требует: `catalog:update`.
+
+**Request:** любые поля из `ContentBlockCreate` (все опциональны).
+
+**Response 200:** `ContentBlock`
+
+---
+
+### DELETE /api/v1/admin/products/{product_id}/content-blocks/{block_id}
+
+Удалить контент-блок. Требует: `catalog:delete`.
+
+**Response 204:** No Content
+
+---
+
+### POST /api/v1/admin/products/{product_id}/content-blocks/reorder
+
+Изменить порядок блоков в конкретной локали. Требует: `catalog:update`.
+
+**Request:**
+```json
+{
+  "locale": "ru",
+  "block_ids": ["uuid-1", "uuid-2", "uuid-3"]
+}
+```
+
+**Response 200:** `ContentBlock[]` в новом порядке
+
+---
+
+## 12. Публичные эндпоинты (без авторизации)
+
+> Публичный эндпоинт `GET /public/products/{slug}` возвращает поле `content_blocks[]` — отфильтрованные по `locale` если передан query-параметр `?locale=ru`.
+
+---
+
+## 13. RBAC permissions
 
 | Permission | Описание |
 |------------|---------|
@@ -827,7 +939,7 @@ Content-Type: application/json
 
 ---
 
-## 13. TypeScript-типы
+## 14. TypeScript-типы
 
 ```typescript
 // UOM
@@ -937,6 +1049,35 @@ interface ProductPublic {
   cover_url: string | null;  // URL обложки (первое изображение с is_cover=true)
 }
 
+interface ContentBlock {
+  id: string;
+  locale: string;
+  block_type: 'text' | 'image' | 'video' | 'gallery' | 'link' | 'result';
+  sort_order: number;
+  title: string | null;
+  content: string | null;         // HTML for text blocks
+  media_url: string | null;       // image or video URL
+  thumbnail_url: string | null;   // video thumbnail
+  link_url: string | null;
+  link_label: string | null;
+  device_type: 'mobile' | 'desktop' | 'both' | null;
+  block_metadata: Record<string, unknown> | null; // alt, caption, images[], provider, icon
+}
+
+interface ContentBlockCreate {
+  locale: string;
+  block_type: ContentBlock['block_type'];
+  sort_order?: number;
+  title?: string | null;
+  content?: string | null;
+  media_url?: string | null;
+  thumbnail_url?: string | null;
+  link_url?: string | null;
+  link_label?: string | null;
+  device_type?: ContentBlock['device_type'];
+  block_metadata?: Record<string, unknown> | null;
+}
+
 interface ProductPublicDetail {
   id: string;
   slug: string;
@@ -949,6 +1090,7 @@ interface ProductPublicDetail {
   chars: { name: string; value_text: string }[];
   categories: { id: string; title: string; slug: string; parent_id: string | null; description: string | null; image_url: string | null }[];
   prices: { price_type: string; amount: string; currency: string }[];
+  content_blocks: ContentBlock[];
 }
 
 // Paginated responses
@@ -966,24 +1108,30 @@ interface PagedResponse<T> {
 
 ### Страница каталога (клиентский фронт)
 ```
-GET /public/categories?tenant_id=...            → дерево категорий (меню)
-GET /public/products?tenant_id=...              → список товаров
-GET /public/products?tenant_id=...&category=... → список по категории
-GET /public/products/{slug}?tenant_id=...       → карточка товара
-POST /public/inquiries?tenant_id=...            → оставить заявку на товар
+GET /public/categories?tenant_id=...                    → дерево категорий (меню)
+GET /public/products?tenant_id=...                      → список товаров
+GET /public/products?tenant_id=...&category=...         → список по категории
+GET /public/products/{slug}?tenant_id=...               → карточка товара (включает content_blocks[])
+GET /public/products/{slug}?tenant_id=...&locale=ru     → карточка с блоками отфильтрованными по локали
+POST /public/inquiries?tenant_id=...                    → оставить заявку на товар
 ```
 
 ### Страница управления каталогом (админ-панель)
 ```
-GET /admin/uoms                                 → справочник ед. измерения
-GET /admin/categories/tree                      → дерево категорий
-GET /admin/products?search=...&isActive=true    → список товаров
-POST /admin/products                            → создать товар
-GET /admin/products/{id}?include=chars,prices   → карточка товара
-PATCH /admin/products/{id}                      → редактировать
-PUT /admin/products/{id}/chars                  → bulk-редактировать характеристики
-POST /admin/products/{id}/images                → загрузить фото
-POST /admin/products/{id}/prices                → добавить цену
-DELETE /admin/products/{id}                     → удалить (soft)
-GET /admin/inquiries?productId={id}             → заявки на этот товар
+GET /admin/uoms                                         → справочник ед. измерения
+GET /admin/categories/tree                              → дерево категорий
+GET /admin/products?search=...&isActive=true            → список товаров
+POST /admin/products                                    → создать товар
+GET /admin/products/{id}?include=chars,prices           → карточка товара
+PATCH /admin/products/{id}                              → редактировать
+PUT /admin/products/{id}/chars                          → bulk-редактировать характеристики
+POST /admin/products/{id}/images                        → загрузить фото
+POST /admin/products/{id}/prices                        → добавить цену
+GET /admin/products/{id}/content-blocks?locale=ru       → контент-блоки товара
+POST /admin/products/{id}/content-blocks                → добавить блок
+PATCH /admin/products/{id}/content-blocks/{block_id}    → обновить блок
+DELETE /admin/products/{id}/content-blocks/{block_id}   → удалить блок
+POST /admin/products/{id}/content-blocks/reorder        → изменить порядок
+DELETE /admin/products/{id}                             → удалить (soft)
+GET /admin/inquiries?productId={id}                     → заявки на этот товар
 ```

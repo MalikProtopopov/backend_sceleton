@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.content.schemas import ContentBlockResponse
+
 
 # ============================================================================
 # UOM Schemas
@@ -381,6 +383,7 @@ class ProductPublicDetailResponse(BaseModel):
     chars: list[ProductCharPublicResponse] = Field(default_factory=list)
     categories: list[CategoryPublicResponse] = Field(default_factory=list)
     prices: list[ProductPricePublicResponse] = Field(default_factory=list)
+    content_blocks: list[ContentBlockResponse] = Field(default_factory=list)
 
 
 class ProductPublicListResponse(BaseModel):

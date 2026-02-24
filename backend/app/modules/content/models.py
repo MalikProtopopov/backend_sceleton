@@ -786,7 +786,7 @@ class ContentBlock(Base, UUIDMixin, TimestampMixin, TenantMixin, SortOrderMixin)
             "sort_order",
         ),
         CheckConstraint(
-            "entity_type IN ('article', 'case', 'service', 'employee')",
+            "entity_type IN ('article', 'case', 'service', 'employee', 'product')",
             name="ck_content_blocks_entity_type",
         ),
         CheckConstraint(

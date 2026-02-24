@@ -51,6 +51,13 @@ from app.modules.catalog.service import (
     ProductService,
     UOMService,
 )
+from app.modules.content.schemas import (
+    ContentBlockCreate,
+    ContentBlockReorderRequest,
+    ContentBlockResponse,
+    ContentBlockUpdate,
+)
+from app.modules.content.services.content_block_service import ContentBlockService
 
 router = APIRouter()
 
@@ -163,7 +170,8 @@ async def list_products_public(
 )
 async def get_product_public(
     slug: str,
-    tenant_id: PublicTenantId,
+    locale: str | None = Query(default=None, description="Filter content blocks by locale (e.g. 'ru', 'en')"),
+    tenant_id: PublicTenantId = ...,
     db: AsyncSession = Depends(get_db),
 ) -> ProductPublicDetailResponse:
     service = ProductService(db)
@@ -173,6 +181,9 @@ async def get_product_public(
     for pc in (product.categories or []):
         if pc.category:
             categories.append(CategoryPublicResponse.model_validate(pc.category))
+
+    block_service = ContentBlockService(db)
+    blocks = await block_service.list_blocks("product", product.id, product.tenant_id, locale)
 
     return ProductPublicDetailResponse(
         id=product.id,
@@ -186,6 +197,7 @@ async def get_product_public(
         chars=[{"name": c.name, "value_text": c.value_text} for c in (product.chars or [])],
         categories=categories,
         prices=[{"price_type": p.price_type, "amount": p.amount, "currency": p.currency} for p in (product.prices or [])],
+        content_blocks=[ContentBlockResponse.model_validate(b) for b in blocks],
     )
 
 
@@ -802,3 +814,110 @@ async def set_product_cover_image(
 ) -> None:
     service = ProductImageService(db)
     await service.set_cover(product_id, image_id, tenant_id)
+
+
+# ============================================================================
+# Admin Routes - Product Content Blocks
+# ============================================================================
+
+
+@router.get(
+    "/admin/products/{product_id}/content-blocks",
+    response_model=list[ContentBlockResponse],
+    summary="List product content blocks",
+    tags=["Admin - Catalog"],
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:read"))],
+)
+async def list_product_content_blocks(
+    product_id: UUID,
+    locale: str | None = Query(default=None, description="Filter by locale"),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """List content blocks for a product, optionally filtered by locale."""
+    product_service = ProductService(db)
+    await product_service.get_by_id(product_id, tenant_id)
+
+    service = ContentBlockService(db)
+    blocks = await service.list_blocks("product", product_id, tenant_id, locale)
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
+
+
+@router.post(
+    "/admin/products/{product_id}/content-blocks",
+    response_model=ContentBlockResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add product content block",
+    tags=["Admin - Catalog"],
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:update"))],
+)
+async def add_product_content_block(
+    product_id: UUID,
+    data: ContentBlockCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Add a content block to a product (text, image, video, gallery, link)."""
+    product_service = ProductService(db)
+    await product_service.get_by_id(product_id, tenant_id)
+
+    service = ContentBlockService(db)
+    block = await service.add_block("product", product_id, tenant_id, data)
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.patch(
+    "/admin/products/{product_id}/content-blocks/{block_id}",
+    response_model=ContentBlockResponse,
+    summary="Update product content block",
+    tags=["Admin - Catalog"],
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:update"))],
+)
+async def update_product_content_block(
+    product_id: UUID,
+    block_id: UUID,
+    data: ContentBlockUpdate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ContentBlockResponse:
+    """Update a product content block."""
+    service = ContentBlockService(db)
+    block = await service.update_block(block_id, "product", product_id, tenant_id, data)
+    return ContentBlockResponse.model_validate(block)
+
+
+@router.delete(
+    "/admin/products/{product_id}/content-blocks/{block_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete product content block",
+    tags=["Admin - Catalog"],
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:delete"))],
+)
+async def delete_product_content_block(
+    product_id: UUID,
+    block_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a content block from a product."""
+    service = ContentBlockService(db)
+    await service.delete_block(block_id, "product", product_id, tenant_id)
+
+
+@router.post(
+    "/admin/products/{product_id}/content-blocks/reorder",
+    response_model=list[ContentBlockResponse],
+    summary="Reorder product content blocks",
+    tags=["Admin - Catalog"],
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:update"))],
+)
+async def reorder_product_content_blocks(
+    product_id: UUID,
+    data: ContentBlockReorderRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ContentBlockResponse]:
+    """Reorder content blocks for a product in a specific locale."""
+    service = ContentBlockService(db)
+    blocks = await service.reorder_blocks("product", product_id, tenant_id, data.locale, data.block_ids)
+    return [ContentBlockResponse.model_validate(b) for b in blocks]
