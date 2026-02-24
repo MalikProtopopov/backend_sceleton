@@ -12,6 +12,17 @@ from app.core.logging import get_logger
 from app.services.domain_provisioning import DomainProvisioningService
 from app.tasks.broker import broker
 
+# Import all models so SQLAlchemy can resolve cross-module relationships
+# (e.g. Tenant.relationship("AdminUser")) before mappers are configured.
+import app.modules.auth.models  # noqa: F401
+import app.modules.tenants.models  # noqa: F401
+import app.modules.company.models  # noqa: F401
+import app.modules.documents.models  # noqa: F401
+import app.modules.leads.models  # noqa: F401
+import app.modules.notifications.models  # noqa: F401
+import app.modules.content.models  # noqa: F401
+import app.modules.assets.models  # noqa: F401
+
 logger = get_logger(__name__)
 
 _MAX_POLL_ATTEMPTS = 10
