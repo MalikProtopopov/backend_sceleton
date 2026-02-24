@@ -1,7 +1,7 @@
 """Add domain provisioning fields to tenant_domains.
 
-Revision ID: 025
-Revises: 024
+Revision ID: 027
+Revises: 026
 Create Date: 2026-02-24
 
 Adds dns_verified_at, ssl_provisioned_at timestamps and extends
@@ -13,8 +13,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "025"
-down_revision: Union[str, None] = "024"
+revision: str = "027"
+down_revision: Union[str, None] = "026"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
