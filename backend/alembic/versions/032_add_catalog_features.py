@@ -54,15 +54,16 @@ def upgrade() -> None:
         ("catalog:delete", "Delete Catalog Items", "catalog", "delete"),
     ]
     for code, name, resource, action in catalog_perms:
+        # Escape single quotes in name for SQL
+        name_esc = name.replace("'", "''")
         op.execute(
-            sa.text("""
+            sa.text(f"""
                 INSERT INTO permissions (id, code, name, resource, action, created_at, updated_at)
-                SELECT gen_random_uuid(), :code, :name, :resource, :action, NOW(), NOW()
+                SELECT gen_random_uuid(), '{code}', '{name_esc}', '{resource}', '{action}', NOW(), NOW()
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM permissions WHERE code = :code
+                    SELECT 1 FROM permissions WHERE code = '{code}'
                 )
-            """),
-            {"code": code, "name": name, "resource": resource, "action": action},
+            """)
         )
 
 
