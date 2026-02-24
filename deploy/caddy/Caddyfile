@@ -2,12 +2,13 @@
 # Caddy reverse proxy for Mediann multi-tenant platform
 # Docker deployment: Caddy and backend are in the same Docker network.
 # Backend is accessible as "backend:8000" inside the network.
+# Admin panel is accessible as "admin:3000" inside the network.
 # =============================================================================
 
 {
 	email ssl@mediann.dev
 
-	# Before issuing a certificate for any domain, Caddy asks FastAPI
+	# Before issuing a certificate for any unknown domain, Caddy asks FastAPI
 	# whether this domain is allowed. Returns 200 = issue cert, 403 = deny.
 	on_demand_tls {
 		ask http://backend:8000/internal/domains/check
@@ -15,8 +16,19 @@
 }
 
 # ---------------------------------------------------------------------------
-# All domains — on-demand TLS (Let's Encrypt HTTP-01 challenge)
-# Covers: *.mediann.dev subdomains AND custom tenant domains
+# Admin panel (admin.mediann.dev) → Next.js container on port 3000
+# ---------------------------------------------------------------------------
+admin.mediann.dev {
+	reverse_proxy admin:3000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+	}
+}
+
+# ---------------------------------------------------------------------------
+# API + custom tenant domains — on-demand TLS
+# Covers: api.mediann.dev, *.mediann.dev subdomains, custom client domains
 # ---------------------------------------------------------------------------
 :443 {
 	tls {
