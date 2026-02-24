@@ -11,8 +11,6 @@
 	# whether this domain is allowed. Returns 200 = issue cert, 403 = deny.
 	on_demand_tls {
 		ask http://backend:8000/internal/domains/check
-		interval 2m
-		burst 5
 	}
 }
 
