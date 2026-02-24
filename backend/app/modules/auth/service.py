@@ -217,6 +217,7 @@ class AuthService:
         data: LoginRequest,
         tenant_id: UUID | None,
         ip_address: str | None = None,
+        request_origin: str | None = None,
     ) -> tuple[AdminUser, "TokenPair"] | dict:
         """Smart login that works with or without an explicit tenant_id.
 
@@ -299,6 +300,19 @@ class AuthService:
                     )
                     domain_result = await self.db.execute(domain_stmt)
                     admin_domain = domain_result.scalar_one_or_none()
+
+                    # If the request already comes from the user's own tenant
+                    # domain (custom domain like admin.yastvo.com), skip the
+                    # redirect and log in directly against the correct tenant.
+                    origin_host = None
+                    if request_origin:
+                        from urllib.parse import urlparse
+                        origin_host = urlparse(request_origin).hostname
+
+                    if admin_domain and origin_host and origin_host == admin_domain:
+                        return await self.authenticate(
+                            data, user.tenant_id, ip_address
+                        )
 
                     return {
                         "status": "tenant_redirect_required",

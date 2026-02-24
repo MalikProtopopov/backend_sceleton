@@ -152,7 +152,8 @@ async def login(
             )
 
     service = AuthService(db)
-    result = await service.authenticate_smart(data, tenant_id, ip_address)
+    request_origin = request.headers.get("origin") or request.headers.get("referer")
+    result = await service.authenticate_smart(data, tenant_id, ip_address, request_origin)
 
     if isinstance(result, dict):
         status = result.get("status")
