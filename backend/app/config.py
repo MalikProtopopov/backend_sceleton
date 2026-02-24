@@ -168,6 +168,9 @@ class Settings(BaseSettings):
     caddy_admin_url: str = "http://localhost:2019"
     platform_cname_target: str = "tenants.mediann.dev"
     platform_domain_suffix: str = ".mediann.dev"
+    # Public IP of the platform server (used for apex-domain A-record verification).
+    # Set this to the server's public IP in production.
+    platform_server_ip: str = ""
 
     @property
     def is_production(self) -> bool:

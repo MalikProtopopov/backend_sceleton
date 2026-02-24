@@ -19,6 +19,17 @@ router = APIRouter()
 
 _LOCALHOST_IPS = {"127.0.0.1", "::1"}
 
+# Docker bridge networks use 172.16-31.x.x / 10.x.x.x ranges.
+# When Caddy runs in Docker and calls the backend in the same network,
+# the client IP will be the Caddy container's Docker IP — allow it.
+def _is_internal_ip(ip: str) -> bool:
+    return (
+        ip in _LOCALHOST_IPS
+        or ip.startswith("172.")
+        or ip.startswith("10.")
+        or ip.startswith("192.168.")
+    )
+
 
 @router.get(
     "/domains/check",
@@ -43,7 +54,7 @@ async def check_domain_for_caddy(
     Security: only localhost is allowed to call this endpoint.
     """
     client_host = request.client.host if request.client else ""
-    if client_host not in _LOCALHOST_IPS:
+    if not _is_internal_ip(client_host):
         logger.warning(
             "internal_check_rejected",
             client_host=client_host,
