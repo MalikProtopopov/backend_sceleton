@@ -150,8 +150,9 @@ class InquiryCreatePublic(BaseModel):
     telegram: str | None = Field(default=None, max_length=255)
     consent: bool | None = None
 
-    # Service context
+    # Context: service or product the inquiry is about
     service_id: UUID | None = None
+    product_id: UUID | None = None
 
     # Analytics
     analytics: InquiryAnalytics | None = None
@@ -189,6 +190,17 @@ class InquiryUpdate(BaseModel):
     notes: str | None = None
 
 
+class InquiryProductBrief(BaseModel):
+    """Brief product info embedded in inquiry response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str
+    sku: str
+    name: str | None = None  # product title
+
+
 class InquiryResponse(BaseModel):
     """Schema for inquiry response."""
 
@@ -207,8 +219,10 @@ class InquiryResponse(BaseModel):
     company: str | None = None
     message: str | None = None
 
-    # Service
+    # Context
     service_id: UUID | None = None
+    product_id: UUID | None = None
+    product: InquiryProductBrief | None = None
 
     # UTM
     utm_source: str | None = None

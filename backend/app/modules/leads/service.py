@@ -12,6 +12,7 @@ from app.core.database import transactional
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.core.pagination import paginate_query
+from app.modules.catalog.models import Product
 from app.modules.leads.models import Inquiry, InquiryForm, InquiryStatus
 from app.modules.leads.schemas import (
     FORM_SLUG_MVP_BRIEF,
@@ -98,7 +99,10 @@ class InquiryService(BaseService[Inquiry]):
 
     def _get_default_options(self) -> list:
         """Get default eager loading options."""
-        return [selectinload(Inquiry.form)]
+        return [
+            selectinload(Inquiry.form),
+            selectinload(Inquiry.product),
+        ]
 
     async def get_by_id(self, inquiry_id: UUID, tenant_id: UUID) -> Inquiry:
         """Get inquiry by ID."""
@@ -112,6 +116,7 @@ class InquiryService(BaseService[Inquiry]):
         status: str | None = None,
         form_id: UUID | None = None,
         form_slug: str | None = None,
+        product_id: UUID | None = None,
         assigned_to: UUID | None = None,
         utm_source: str | None = None,
         search: str | None = None,
@@ -127,6 +132,8 @@ class InquiryService(BaseService[Inquiry]):
             form = await form_service.get_by_slug(form_slug, tenant_id)
             if form:
                 filters.append(Inquiry.form_id == form.id)
+        if product_id:
+            filters.append(Inquiry.product_id == product_id)
         if assigned_to:
             filters.append(Inquiry.assigned_to == assigned_to)
         if utm_source:
@@ -219,6 +226,19 @@ class InquiryService(BaseService[Inquiry]):
         custom_fields, message = self._build_custom_fields_and_message(data)
         analytics = data.analytics or InquiryAnalytics()
 
+        # Validate product belongs to this tenant if provided
+        product_id = None
+        if data.product_id:
+            stmt = (
+                select(Product)
+                .where(Product.id == data.product_id)
+                .where(Product.tenant_id == tenant_id)
+                .where(Product.deleted_at.is_(None))
+            )
+            product = (await self.db.execute(stmt)).scalar_one_or_none()
+            if product:
+                product_id = product.id
+
         inquiry = Inquiry(
             tenant_id=tenant_id,
             form_id=form_id,
@@ -229,6 +249,7 @@ class InquiryService(BaseService[Inquiry]):
             company=data.company,
             message=message,
             service_id=data.service_id,
+            product_id=product_id,
             utm_source=analytics.utm_source,
             utm_medium=analytics.utm_medium,
             utm_campaign=analytics.utm_campaign,
@@ -252,14 +273,16 @@ class InquiryService(BaseService[Inquiry]):
 
         self.db.add(inquiry)
         await self.db.flush()
-        await self.db.refresh(inquiry)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(inquiry)
         await self.db.refresh(inquiry, ["form"])
+        await self.db.refresh(inquiry, ["product"])
 
         logger.info(
             "inquiry_created",
             inquiry_id=str(inquiry.id),
             tenant_id=str(tenant_id),
             form_id=str(form_id) if form_id else None,
+            product_id=str(product_id) if product_id else None,
             utm_source=analytics.utm_source,
             device_type=analytics.device_type,
         )
@@ -321,8 +344,9 @@ class InquiryService(BaseService[Inquiry]):
             setattr(inquiry, field, value)
 
         await self.db.flush()
-        await self.db.refresh(inquiry)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(inquiry)
         await self.db.refresh(inquiry, ["form"])
+        await self.db.refresh(inquiry, ["product"])
 
         return inquiry
 

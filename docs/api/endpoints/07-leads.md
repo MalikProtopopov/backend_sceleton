@@ -155,10 +155,12 @@ List all inquiries with pagination and filters.
 | `page` | integer | 1 | Page number |
 | `pageSize` | integer | 20 | Items per page |
 | `status` | string | - | Filter by status |
-| `formId` | UUID | - | Filter by form |
+| `formId` | UUID | - | Filter by form UUID |
 | `formSlug` | string | - | Filter by form slug: `quick`, `mvp-brief` |
+| `productId` | UUID | - | **NEW** Filter inquiries linked to a specific product |
 | `assignedTo` | UUID | - | Filter by assigned user |
 | `utmSource` | string | - | Filter by UTM source |
+| `search` | string | - | Search in name, email, company, phone |
 
 **Example Request:**
 ```bash
@@ -180,8 +182,15 @@ Authorization: Bearer {token}
         "email": "ivan@example.com",
         "phone": "+7 999 123-45-67",
       "company": "ООО Компания",
-      "message": "Хочу узнать о ваших услугах...",
+      "message": "Хочу узнать о продукте...",
       "service_id": null,
+      "product_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "product": {
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "slug": "widget-pro-2000",
+        "sku": "WP-2000",
+        "name": "Widget Pro 2000"
+      },
       "utm_source": "google",
       "utm_medium": "cpc",
       "utm_campaign": "brand",
@@ -335,7 +344,8 @@ Submit an inquiry (public form submission).
   "message": "Хочу узнать о ваших услугах...",
   "telegram": "@ivan_dev",
   "consent": true,
-  "service_id": "service-uuid",
+  "service_id": null,
+  "product_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "analytics": {
     "utm_source": "google",
     "utm_medium": "cpc",
@@ -372,7 +382,8 @@ Submit an inquiry (public form submission).
 | `consent` | boolean | No | true required for submission |
 | `idea` | string | If form_slug=mvp-brief | 10-2000 chars |
 | `market`, `audience`, `audienceSize`, `aiRequired`, `appTypes`, `integrations`, `budget`, `urgency`, `source` | various | No | Stored in custom_fields |
-| `service_id` | UUID | No | Link to service |
+| `service_id` | UUID | No | Link to a service |
+| `product_id` | UUID | No | **NEW** Link to a product (FK to `products.id`, must belong to same tenant) |
 | `analytics` | object | No | Analytics data |
 | `custom_fields` | object | No | Custom form fields (merged with brief fields) |
 

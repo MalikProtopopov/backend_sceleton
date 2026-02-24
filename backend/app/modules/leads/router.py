@@ -22,10 +22,28 @@ from app.modules.leads.schemas import (
     InquiryFormResponse,
     InquiryFormUpdate,
     InquiryListResponse,
+    InquiryProductBrief,
     InquiryResponse,
     InquiryUpdate,
 )
 from app.modules.leads.service import InquiryFormService, InquiryService
+
+
+def _build_inquiry_response(inquiry) -> InquiryResponse:
+    """Build InquiryResponse with enriched form_slug and product fields."""
+    updates: dict = {}
+    if inquiry.form:
+        updates["form_slug"] = inquiry.form.slug
+    if inquiry.product:
+        p = inquiry.product
+        updates["product"] = InquiryProductBrief(
+            id=p.id,
+            slug=p.slug,
+            sku=p.sku,
+            name=p.title,
+        )
+    r = InquiryResponse.model_validate(inquiry)
+    return r.model_copy(update=updates) if updates else r
 
 router = APIRouter()
 
@@ -68,10 +86,7 @@ async def create_inquiry_public(
     service = InquiryService(db)
     inquiry = await service.create_from_public(tenant_id, data, ip_address)
 
-    # Build response BEFORE any additional db operations to avoid MissingGreenlet
-    response = InquiryResponse.model_validate(inquiry)
-    if inquiry.form:
-        response = response.model_copy(update={"form_slug": inquiry.form.slug})
+    response = _build_inquiry_response(inquiry)
 
     # Send notifications if enabled for this tenant (fire-and-forget)
     await _send_inquiry_notification(db, tenant_id, inquiry)
@@ -165,9 +180,7 @@ async def create_inquiry_public_multipart(
     service = InquiryService(db)
     inquiry = await service.create_from_public(tenant_id, data, ip_address)
 
-    response = InquiryResponse.model_validate(inquiry)
-    if inquiry.form:
-        response = response.model_copy(update={"form_slug": inquiry.form.slug})
+    response = _build_inquiry_response(inquiry)
 
     await _send_inquiry_notification(db, tenant_id, inquiry)
 
@@ -359,6 +372,7 @@ async def list_inquiries(
     status: str | None = Query(default=None),
     form_id: UUID | None = Query(default=None, alias="formId"),
     form_slug: str | None = Query(default=None, alias="formSlug", description="Filter by form slug: quick, mvp-brief"),
+    product_id: UUID | None = Query(default=None, alias="productId", description="Filter by product UUID"),
     assigned_to: UUID | None = Query(default=None, alias="assignedTo"),
     utm_source: str | None = Query(default=None, alias="utmSource"),
     search: str | None = Query(default=None, description="Search in name, email, company, phone"),
@@ -374,19 +388,14 @@ async def list_inquiries(
         status=status,
         form_id=form_id,
         form_slug=form_slug,
+        product_id=product_id,
         assigned_to=assigned_to,
         utm_source=utm_source,
         search=search,
     )
 
-    def _inquiry_response(inquiry) -> InquiryResponse:
-        r = InquiryResponse.model_validate(inquiry)
-        if inquiry.form:
-            return r.model_copy(update={"form_slug": inquiry.form.slug})
-        return r
-
     return InquiryListResponse(
-        items=[_inquiry_response(i) for i in inquiries],
+        items=[_build_inquiry_response(i) for i in inquiries],
         total=total,
         page=pagination.page,
         page_size=pagination.page_size,
@@ -426,10 +435,7 @@ async def get_inquiry(
     """Get inquiry by ID."""
     service = InquiryService(db)
     inquiry = await service.get_by_id(inquiry_id, tenant_id)
-    r = InquiryResponse.model_validate(inquiry)
-    if inquiry.form:
-        r = r.model_copy(update={"form_slug": inquiry.form.slug})
-    return r
+    return _build_inquiry_response(inquiry)
 
 
 @router.patch(
@@ -448,10 +454,7 @@ async def update_inquiry(
     """Update an inquiry (status, assignment, notes)."""
     service = InquiryService(db)
     inquiry = await service.update(inquiry_id, tenant_id, data)
-    r = InquiryResponse.model_validate(inquiry)
-    if inquiry.form:
-        r = r.model_copy(update={"form_slug": inquiry.form.slug})
-    return r
+    return _build_inquiry_response(inquiry)
 
 
 @router.delete(

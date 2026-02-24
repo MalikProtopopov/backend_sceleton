@@ -1,8 +1,14 @@
 """Leads module database models."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.modules.catalog.models import Product
 
 from sqlalchemy import (
     Boolean,
@@ -138,11 +144,18 @@ class Inquiry(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, TenantMixin):
     # Message/comment
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # ========== Service Context ==========
-    # Which service/page the inquiry is about
+    # ========== Context ==========
+    # Which service the inquiry is about
     service_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("services.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Which product the inquiry is about
+    product_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -216,6 +229,9 @@ class Inquiry(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, TenantMixin):
     form: Mapped["InquiryForm | None"] = relationship(
         "InquiryForm", back_populates="inquiries"
     )
+    product: Mapped["Product | None"] = relationship(  # type: ignore[name-defined]
+        "Product", foreign_keys=[product_id], lazy="noload"
+    )
 
     __table_args__ = (
         Index("ix_inquiries_tenant", "tenant_id"),
@@ -223,6 +239,7 @@ class Inquiry(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, TenantMixin):
         Index("ix_inquiries_created", "tenant_id", "created_at"),
         Index("ix_inquiries_form", "form_id"),
         Index("ix_inquiries_service", "service_id"),
+        Index("ix_inquiries_product", "product_id"),
         Index("ix_inquiries_assigned", "assigned_to"),
         # Analytics indexes
         Index("ix_inquiries_utm_source", "tenant_id", "utm_source"),
