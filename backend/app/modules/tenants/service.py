@@ -287,6 +287,7 @@ class TenantService:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    @transactional
     async def update_settings(
         self, tenant_id: UUID, data: TenantSettingsUpdate
     ) -> TenantSettings:
@@ -330,7 +331,7 @@ class TenantService:
             else:
                 settings.email_api_key_encrypted = None
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(settings)
 
         if "site_url" in update_data:
@@ -338,6 +339,16 @@ class TenantService:
             get_cors_origins_cache().invalidate()
 
         return settings
+
+
+    @transactional
+    async def update_logo_url(self, tenant_id: UUID, url: str | None) -> Tenant:
+        """Update or clear the tenant logo URL."""
+        tenant = await self.get_by_id(tenant_id)
+        tenant.logo_url = url
+        await self.db.flush()
+        await self.db.refresh(tenant)
+        return tenant
 
 
 class FeatureFlagService:

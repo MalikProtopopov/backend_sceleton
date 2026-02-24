@@ -4,13 +4,14 @@ These endpoints are called by infrastructure services (e.g. Caddy)
 and must NOT be exposed to the public internet.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.database import get_db
+from app.core.exceptions import PermissionDeniedError
 from app.core.logging import get_logger
 from app.modules.tenants.models import TenantDomain
 
@@ -60,7 +61,7 @@ async def check_domain_for_caddy(
             client_host=client_host,
             domain=domain,
         )
-        raise HTTPException(status_code=403, detail="Internal only")
+        raise PermissionDeniedError(message="Internal only")
 
     settings = get_settings()
     domain_lower = domain.strip().lower()
@@ -82,4 +83,4 @@ async def check_domain_for_caddy(
         return Response(status_code=200)
 
     logger.info("caddy_domain_denied", domain=domain_lower)
-    raise HTTPException(status_code=403, detail="Domain not registered")
+    raise PermissionDeniedError(message="Domain not registered")

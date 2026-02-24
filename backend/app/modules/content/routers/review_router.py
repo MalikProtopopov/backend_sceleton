@@ -24,7 +24,7 @@ from app.modules.content.schemas import (
     ReviewResponse,
     ReviewUpdate,
 )
-from app.modules.content.service import CaseService, ReviewService
+from app.modules.content.services import CaseService, ReviewService
 
 router = APIRouter()
 
@@ -304,9 +304,7 @@ async def upload_review_author_photo(
         old_image_url=review.author_photo_url,
     )
     
-    review.author_photo_url = new_url
-    await db.commit()
-    review = await service.get_by_id(review_id, tenant_id)
+    review = await service.update_author_photo_url(review_id, tenant_id, new_url)
     
     return ReviewResponse.model_validate(review)
 
@@ -329,8 +327,7 @@ async def delete_review_author_photo(
     
     if review.author_photo_url:
         await image_upload_service.delete_image(review.author_photo_url)
-        review.author_photo_url = None
-        await db.commit()
+        await service.update_author_photo_url(review_id, tenant_id, None)
 
 
 # ============================================================================

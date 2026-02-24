@@ -107,7 +107,7 @@ class RateLimiter:
         limiter = RateLimiter(redis_client)
         allowed = await limiter.is_allowed("user:123", max_requests=100, window_seconds=60)
         if not allowed:
-            raise HTTPException(429, "Rate limit exceeded")
+            raise RateLimitExceededError()
     """
     
     def __init__(self, redis_client: Redis):

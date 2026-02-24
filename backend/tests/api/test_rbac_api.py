@@ -54,3 +54,43 @@ class TestRBACEnforcement:
     ):
         resp = await client.get("/api/v1/admin/articles")
         assert resp.status_code == 401
+
+    # ------------------------------------------------------------------ #
+    # Catalog permissions
+    # ------------------------------------------------------------------ #
+
+    async def test_editor_cannot_create_product(
+        self, editor_client: AsyncClient, tenant_active
+    ):
+        """Editor has catalog:read only, should get 403 on POST /admin/products."""
+        resp = await editor_client.post(
+            "/api/v1/admin/products",
+            json={
+                "sku": "TEST-001",
+                "title": "Test Product",
+            },
+        )
+        assert_error_response(resp, 403, "permission_denied", {"restriction_level": "user"})
+
+    async def test_content_manager_can_create_product(
+        self, cm_client: AsyncClient, tenant_active
+    ):
+        """Content manager has catalog:* permissions, should get 201 on POST /admin/products."""
+        resp = await cm_client.post(
+            "/api/v1/admin/products",
+            json={
+                "sku": "CM-PROD-001",
+                "title": "CM Test Product",
+            },
+        )
+        assert resp.status_code in (200, 201)
+
+    async def test_unauthenticated_admin_products_returns_401(
+        self, client: AsyncClient
+    ):
+        """Unauthenticated request to /admin/products should return 401."""
+        resp = await client.post(
+            "/api/v1/admin/products",
+            json={"sku": "ANON-001", "title": "Anonymous"},
+        )
+        assert resp.status_code == 401

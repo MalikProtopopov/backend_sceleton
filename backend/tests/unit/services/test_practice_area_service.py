@@ -8,7 +8,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError
 from app.modules.company.models import PracticeArea, PracticeAreaLocale
-from app.modules.company.service import PracticeAreaService
+from app.modules.company.services import PracticeAreaService
 
 
 class TestPracticeAreaService:

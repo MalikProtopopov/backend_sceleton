@@ -309,6 +309,11 @@ DEFAULT_PERMISSIONS = [
     ("faq:read", "Read FAQ", "faq", "read"),
     ("faq:update", "Update FAQ", "faq", "update"),
     ("faq:delete", "Delete FAQ", "faq", "delete"),
+    # Catalog
+    ("catalog:create", "Create Catalog Items", "catalog", "create"),
+    ("catalog:read", "Read Catalog Items", "catalog", "read"),
+    ("catalog:update", "Update Catalog Items", "catalog", "update"),
+    ("catalog:delete", "Delete Catalog Items", "catalog", "delete"),
     # Inquiries
     ("inquiries:read", "Read Inquiries", "inquiries", "read"),
     ("inquiries:update", "Update Inquiries", "inquiries", "update"),
@@ -346,6 +351,7 @@ DEFAULT_ROLES = {
             "articles:*",
             "services:*",
             "employees:*",
+            "catalog:*",
             "cases:*",
             "reviews:*",
             "faq:*",
@@ -357,12 +363,13 @@ DEFAULT_ROLES = {
         ],
     },
     "content_manager": {
-        "description": "Manage articles, FAQ, services",
+        "description": "Manage articles, FAQ, services, catalog",
         "permissions": [
             "articles:*",
             "services:read",
             "services:update",
             "employees:read",
+            "catalog:*",
             "faq:*",
         ],
     },
@@ -381,6 +388,7 @@ DEFAULT_ROLES = {
             "articles:create",
             "articles:read",
             "articles:update",
+            "catalog:read",
             "faq:create",
             "faq:read",
             "faq:update",

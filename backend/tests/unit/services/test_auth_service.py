@@ -1,7 +1,7 @@
 """Unit tests for authentication service."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -10,11 +10,12 @@ from app.core.exceptions import (
     InvalidCredentialsError,
     InvalidTokenError,
     NotFoundError,
+    TenantInactiveError,
 )
 from app.core.security import create_refresh_token, hash_password
 from app.modules.auth.models import AdminUser, Role
 from app.modules.auth.schemas import LoginRequest
-from app.modules.auth.service import AuthService, UserService
+from app.modules.auth.services import AuthService, UserService
 
 
 # Pre-computed hash for testing
@@ -116,9 +117,13 @@ class TestAuthService:
         mock_db: AsyncMock,
     ) -> None:
         """Authentication for non-existent user should raise InvalidCredentialsError."""
-        mock_result = Mock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
+        tenant_check_result = Mock()
+        tenant_check_result.scalar_one_or_none.return_value = True
+
+        user_result = Mock()
+        user_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute.side_effect = [tenant_check_result, user_result]
 
         login_data = LoginRequest(email="nonexistent@example.com", password="any_password")
 
@@ -208,12 +213,87 @@ class TestAuthService:
             "email": "deleted@example.com",
         })
 
-        mock_result = Mock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db.execute.return_value = mock_result
+        tenant_check_result = Mock()
+        tenant_check_result.scalar_one_or_none.return_value = True
+
+        user_result = Mock()
+        user_result.scalar_one_or_none.return_value = None
+
+        mock_db.execute.side_effect = [tenant_check_result, user_result]
 
         with pytest.raises(InvalidTokenError, match="User not found"):
             await auth_service.refresh_tokens(refresh_token)
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_login_returns_both_tokens(
+        self,
+        auth_service: AuthService,
+        mock_db: AsyncMock,
+        sample_user: AdminUser,
+    ) -> None:
+        """Successful login must return both access_token and refresh_token."""
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = sample_user
+        mock_db.execute.return_value = mock_result
+
+        login_data = LoginRequest(email="test@example.com", password=CORRECT_PASSWORD)
+
+        user, tokens = await auth_service.authenticate(
+            data=login_data,
+            tenant_id=sample_user.tenant_id,
+            ip_address="127.0.0.1",
+        )
+
+        assert tokens.access_token is not None and len(tokens.access_token) > 0
+        assert tokens.refresh_token is not None and len(tokens.refresh_token) > 0
+        assert tokens.access_token != tokens.refresh_token
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_refresh_returns_new_token_pair(
+        self,
+        auth_service: AuthService,
+        mock_db: AsyncMock,
+        sample_user: AdminUser,
+    ) -> None:
+        """Refresh should return a new access_token and refresh_token pair."""
+        original_refresh = create_refresh_token({
+            "sub": str(sample_user.id),
+            "tenant_id": str(sample_user.tenant_id),
+            "email": sample_user.email,
+        })
+
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = sample_user
+        mock_db.execute.return_value = mock_result
+
+        tokens = await auth_service.refresh_tokens(original_refresh)
+
+        assert tokens.access_token is not None
+        assert tokens.refresh_token is not None
+        assert tokens.refresh_token != original_refresh
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_authenticate_inactive_tenant(
+        self,
+        auth_service: AuthService,
+        mock_db: AsyncMock,
+        sample_user: AdminUser,
+    ) -> None:
+        """Login with an inactive (suspended) tenant should raise TenantInactiveError."""
+        tenant_result = Mock()
+        tenant_result.scalar_one_or_none.return_value = False  # is_active=False
+        mock_db.execute.return_value = tenant_result
+
+        login_data = LoginRequest(email="test@example.com", password=CORRECT_PASSWORD)
+
+        with pytest.raises(TenantInactiveError):
+            await auth_service.authenticate(
+                data=login_data,
+                tenant_id=sample_user.tenant_id,
+            )
 
 
 class TestUserService:

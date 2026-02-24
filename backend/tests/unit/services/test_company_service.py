@@ -8,7 +8,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError, DuplicatePriceError, DuplicateTagError
 from app.modules.company.models import Service, ServiceLocale, ServicePrice, ServiceTag
-from app.modules.company.service import ServiceService
+from app.modules.company.services import ServiceService
 
 
 class TestServiceService:

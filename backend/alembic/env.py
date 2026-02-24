@@ -27,6 +27,13 @@ from app.modules.content.models import (  # noqa: F401
 from app.modules.leads.models import InquiryForm, Inquiry  # noqa: F401
 from app.modules.seo.models import SEORoute, Redirect  # noqa: F401
 from app.modules.assets.models import FileAsset  # noqa: F401
+from app.modules.catalog.models import (  # noqa: F401
+    UOM, Category, Product, ProductImage, ProductChar,
+    ProductAlias, ProductAnalog, ProductCategory, ProductPrice,
+)
+from app.modules.parameters.models import (  # noqa: F401
+    Parameter, ParameterValue, ProductCharacteristic,
+)
 
 # Alembic Config object
 config = context.config

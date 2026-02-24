@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.core.exceptions import FeatureDisabledError
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.modules.content.schemas import BulkOperationRequest, BulkOperationResponse
-from app.modules.content.service import BulkOperationService
+from app.modules.content.services import BulkOperationService
 from app.modules.tenants.service import FeatureFlagService
 
 router = APIRouter()

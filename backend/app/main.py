@@ -144,6 +144,7 @@ def _setup_routers(app: FastAPI) -> None:
     from app.modules.assets.router import media_router, router as assets_router
     from app.modules.audit.router import router as audit_router
     from app.modules.auth.router import router as auth_router
+    from app.modules.catalog.router import router as catalog_router
     from app.modules.company.router import router as company_router
     from app.modules.content.router import router as content_router
     from app.modules.dashboard.router import router as dashboard_router
@@ -152,6 +153,7 @@ def _setup_routers(app: FastAPI) -> None:
     from app.modules.health.router import router as health_router
     from app.modules.internal.router import router as internal_router
     from app.modules.leads.router import router as leads_router
+    from app.modules.parameters.router import router as parameters_router
     from app.modules.platform_dashboard.router import router as platform_dashboard_router
     from app.modules.seo.router import router as seo_router
     from app.modules.telegram.router import router as telegram_router
@@ -233,6 +235,16 @@ def _setup_routers(app: FastAPI) -> None:
         telegram_router,
         prefix=settings.api_prefix,
         tags=["Telegram"],
+    )
+    app.include_router(
+        catalog_router,
+        prefix=settings.api_prefix,
+        tags=["Catalog"],
+    )
+    app.include_router(
+        parameters_router,
+        prefix=settings.api_prefix,
+        tags=["Parameters"],
     )
 
     # Public media endpoint (without API prefix)

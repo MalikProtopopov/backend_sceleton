@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.content.models import Article, ArticleLocale, ArticleStatus
-from app.modules.content.service import ArticleService
+from app.modules.content.services import ArticleService
 from app.modules.tenants.models import Tenant
 
 

@@ -146,6 +146,7 @@ tenant_faq_disabled = _make_disabled_tenant_fixture("faq_module")
 tenant_team_disabled = _make_disabled_tenant_fixture("team_module")
 tenant_services_disabled = _make_disabled_tenant_fixture("services_module")
 tenant_seo_disabled = _make_disabled_tenant_fixture("seo_advanced")
+tenant_catalog_disabled = _make_disabled_tenant_fixture("catalog_module")
 
 
 # ============================================================================
@@ -285,6 +286,7 @@ def site_owner_token(site_owner_user: AdminUser, tenant_active: Tenant) -> str:
             "services:read", "services:create", "services:update", "services:delete",
             "employees:read", "employees:create", "employees:update", "employees:delete",
             "inquiries:read", "inquiries:update", "inquiries:delete",
+            "catalog:read", "catalog:create", "catalog:update", "catalog:delete",
             "seo:read", "seo:update",
             "settings:read", "settings:update",
             "users:read", "users:create", "users:update", "users:delete", "users:manage",
@@ -327,6 +329,7 @@ def cm_token(cm_user: AdminUser, tenant_active: Tenant) -> str:
         tenant_active,
         [
             "articles:read", "articles:create", "articles:update",
+            "catalog:read", "catalog:create", "catalog:update", "catalog:delete",
             "faq:read", "faq:create", "faq:update",
             "services:read", "services:update",
             "employees:read",
@@ -366,7 +369,7 @@ def editor_token(editor_user: AdminUser, tenant_active: Tenant) -> str:
     return _make_token(
         editor_user,
         tenant_active,
-        ["articles:read", "articles:create", "articles:update", "faq:read", "faq:create", "faq:update"],
+        ["articles:read", "articles:create", "articles:update", "catalog:read", "faq:read", "faq:create", "faq:update"],
     )
 
 

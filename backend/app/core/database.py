@@ -111,10 +111,10 @@ def transactional(func: Callable[P, R]) -> Callable[P, R]:
         if db is None:
             db = kwargs.get("db")
 
-        # Check for self.db (service classes)
+        # Check for self.db (service classes) -- duck-type to support AsyncMock in tests
         if db is None and args:
             first_arg = args[0]
-            if hasattr(first_arg, "db") and isinstance(first_arg.db, AsyncSession):
+            if hasattr(first_arg, "db") and hasattr(first_arg.db, "commit"):
                 db = first_arg.db
 
         if db is None:

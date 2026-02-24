@@ -43,7 +43,7 @@ from app.modules.company.schemas import (
     PracticeAreaResponse,
     PracticeAreaUpdate,
 )
-from app.modules.company.service import (
+from app.modules.company.services import (
     AdvantageService,
     ContactService,
     PracticeAreaService,

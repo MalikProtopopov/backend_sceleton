@@ -71,8 +71,8 @@ def check_tenant_access(
         return
     if tenant_id != current_tenant_id:
         raise PermissionDeniedError(
+            message="You can only access your own tenant",
             required_permission="platform:read",
-            detail="You can only access your own tenant",
         )
 
 
@@ -391,10 +391,7 @@ async def upload_tenant_logo(
         old_image_url=tenant.logo_url,
     )
     
-    # Update tenant
-    tenant.logo_url = new_url
-    await db.commit()
-    await db.refresh(tenant)
+    tenant = await service.update_logo_url(tenant_id, new_url)
     
     return TenantResponse.model_validate(tenant)
 
@@ -423,8 +420,7 @@ async def delete_tenant_logo(
     
     if tenant.logo_url:
         await image_upload_service.delete_image(tenant.logo_url)
-        tenant.logo_url = None
-        await db.commit()
+        await service.update_logo_url(tenant_id, None)
 
 
 # ============================================================================
@@ -566,7 +562,6 @@ async def verify_domain_dns(
 
     service = DomainProvisioningService(db)
     result = await service.verify_dns_only(domain_id)
-    await db.commit()
 
     if result["ok"]:
         await provision_domain_task.kiq(str(domain_id))
@@ -635,9 +630,6 @@ async def send_email_test(
         to_email=data.to_email,
         tenant_id=tenant_id,
     )
-
-    # Commit the email log entry
-    await db.commit()
 
     # Determine the provider used
     config = await email_service._resolve_config(tenant_id)

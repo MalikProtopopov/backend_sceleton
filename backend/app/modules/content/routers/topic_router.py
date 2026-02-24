@@ -23,7 +23,7 @@ from app.modules.content.schemas import (
     TopicUpdate,
     TopicWithArticlesCountPublicResponse,
 )
-from app.modules.content.service import TopicService
+from app.modules.content.services import TopicService
 
 router = APIRouter()
 

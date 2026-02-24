@@ -11,6 +11,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import transactional
 from app.core.logging import get_logger
 from app.modules.tenants.models import TenantDomain
 from app.services.caddy_client import get_caddy_client
@@ -87,6 +88,7 @@ class DomainProvisioningService:
             logger.info("ssl_status_now_active", domain=td.domain)
         return td.ssl_status
 
+    @transactional
     async def verify_dns_only(self, domain_id: UUID) -> dict:
         """Run DNS check without triggering cert issuance.
 

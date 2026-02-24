@@ -22,7 +22,7 @@ class TestUserServiceCreate:
 
     @pytest.fixture
     def user_service(self, mock_db):
-        from app.modules.auth.service import UserService
+        from app.modules.auth.services import UserService
         svc = UserService(mock_db, actor_id=uuid4())
         svc._audit_svc = AsyncMock()
         return svc
@@ -117,7 +117,7 @@ class TestUserServiceChangePassword:
 
     @pytest.fixture
     def user_service(self, mock_db):
-        from app.modules.auth.service import UserService
+        from app.modules.auth.services import UserService
         svc = UserService(mock_db, actor_id=uuid4())
         svc._audit_svc = AsyncMock()
         return svc

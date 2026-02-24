@@ -8,7 +8,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError
 from app.modules.content.models import Article, ArticleLocale, ArticleStatus
-from app.modules.content.service import ArticleService
+from app.modules.content.services import ArticleService
 
 
 class TestArticleService:
@@ -210,7 +210,7 @@ class TestArticleService:
         count_result.scalar.return_value = 1
 
         list_result = Mock()
-        list_result.scalars.return_value.all.return_value = [published_article]
+        list_result.scalars.return_value.unique.return_value.all.return_value = [published_article]
 
         mock_db.execute.side_effect = [count_result, list_result]
 
@@ -245,33 +245,37 @@ class TestArticleService:
     @pytest.mark.asyncio
     async def test_check_slug_unique_available(
         self,
-        article_service: ArticleService,
         mock_db: AsyncMock,
     ) -> None:
         """Check slug should pass when slug is available."""
+        from app.core.locale_helpers import check_slug_unique
+
         mock_result = Mock()
         mock_result.scalar_one_or_none.return_value = None
         mock_db.execute.return_value = mock_result
 
-        # Should not raise
-        await article_service._check_slug_unique(uuid4(), "new-slug", "en")
+        await check_slug_unique(
+            mock_db, ArticleLocale, Article, "article_id",
+            "new-slug", "en", uuid4(),
+        )
 
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_check_slug_unique_taken(
         self,
-        article_service: ArticleService,
         mock_db: AsyncMock,
         sample_article: Article,
     ) -> None:
         """Check slug should raise error when slug is taken."""
         from app.core.exceptions import SlugAlreadyExistsError
+        from app.core.locale_helpers import check_slug_unique
 
         mock_result = Mock()
         mock_result.scalar_one_or_none.return_value = sample_article.locales[0]
         mock_db.execute.return_value = mock_result
 
         with pytest.raises(SlugAlreadyExistsError):
-            await article_service._check_slug_unique(
-                sample_article.tenant_id, "test-article", "en"
+            await check_slug_unique(
+                mock_db, ArticleLocale, Article, "article_id",
+                "test-article", "en", sample_article.tenant_id,
             )

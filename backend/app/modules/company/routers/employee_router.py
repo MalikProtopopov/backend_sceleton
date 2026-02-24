@@ -25,14 +25,14 @@ from app.modules.company.schemas import (
     EmployeeResponse,
     EmployeeUpdate,
 )
-from app.modules.company.service import EmployeeService
+from app.modules.company.services import EmployeeService
 from app.modules.content.schemas import (
     ContentBlockCreate,
     ContentBlockReorderRequest,
     ContentBlockResponse,
     ContentBlockUpdate,
 )
-from app.modules.content.service import ContentBlockService
+from app.modules.content.services import ContentBlockService
 
 router = APIRouter()
 
@@ -232,9 +232,7 @@ async def upload_employee_photo(
         old_image_url=emp.photo_url,
     )
     
-    emp.photo_url = new_url
-    await db.commit()
-    emp = await service.get_by_id(employee_id, tenant_id)
+    emp = await service.update_photo_url(employee_id, tenant_id, new_url)
     
     return EmployeeResponse.model_validate(emp)
 
@@ -257,8 +255,7 @@ async def delete_employee_photo(
     
     if emp.photo_url:
         await image_upload_service.delete_image(emp.photo_url)
-        emp.photo_url = None
-        await db.commit()
+        await service.update_photo_url(employee_id, tenant_id, None)
 
 
 # ============================================================================
@@ -307,7 +304,6 @@ async def add_employee_content_block(
     await employee_service.get_by_id(employee_id, tenant_id)
     service = ContentBlockService(db)
     block = await service.add_block("employee", employee_id, tenant_id, data)
-    await db.commit()
     return ContentBlockResponse.model_validate(block)
 
 
@@ -330,7 +326,6 @@ async def update_employee_content_block(
     block = await service.update_block(
         block_id, "employee", employee_id, tenant_id, data
     )
-    await db.commit()
     return ContentBlockResponse.model_validate(block)
 
 
@@ -350,7 +345,6 @@ async def delete_employee_content_block(
     """Delete a content block from an employee."""
     service = ContentBlockService(db)
     await service.delete_block(block_id, "employee", employee_id, tenant_id)
-    await db.commit()
 
 
 @router.post(
@@ -371,7 +365,6 @@ async def reorder_employee_content_blocks(
     blocks = await service.reorder_blocks(
         "employee", employee_id, tenant_id, data.locale, data.block_ids
     )
-    await db.commit()
     return [ContentBlockResponse.model_validate(b) for b in blocks]
 
 

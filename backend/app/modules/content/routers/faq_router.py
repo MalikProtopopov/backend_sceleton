@@ -20,7 +20,7 @@ from app.modules.content.schemas import (
     FAQResponse,
     FAQUpdate,
 )
-from app.modules.content.service import FAQService
+from app.modules.content.services import FAQService
 
 router = APIRouter()
 

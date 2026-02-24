@@ -99,6 +99,23 @@ class TestAdminFeatureGating:
         resp = await superuser_client.get("/api/v1/admin/articles")
         assert resp.status_code != 403
 
+    async def test_admin_products_disabled(
+        self, site_owner_client: AsyncClient, tenant_active, db_session
+    ):
+        await set_feature_flag(db_session, tenant_active.id, "catalog_module", False)
+        resp = await site_owner_client.get("/api/v1/admin/products")
+        assert_error_response(
+            resp, 403, "feature_disabled",
+            {"restriction_level": "organization", "feature": "catalog_module"},
+        )
+
+    async def test_admin_products_enabled(
+        self, site_owner_client: AsyncClient, tenant_active, db_session
+    ):
+        await set_feature_flag(db_session, tenant_active.id, "catalog_module", True)
+        resp = await site_owner_client.get("/api/v1/admin/products")
+        assert resp.status_code == 200
+
     async def test_feature_disabled_error_has_contact_admin(
         self, site_owner_client: AsyncClient, tenant_active, db_session
     ):

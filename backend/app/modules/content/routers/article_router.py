@@ -30,7 +30,7 @@ from app.modules.content.schemas import (
     ContentBlockResponse,
     ContentBlockUpdate,
 )
-from app.modules.content.service import ArticleService, ContentBlockService
+from app.modules.content.services import ArticleService, ContentBlockService
 
 router = APIRouter()
 
@@ -294,9 +294,7 @@ async def upload_article_cover_image(
         old_image_url=article.cover_image_url,
     )
     
-    article.cover_image_url = new_url
-    await db.commit()
-    article = await service.get_by_id(article_id, tenant_id)
+    article = await service.update_cover_image_url(article_id, tenant_id, new_url)
     
     return await _article_response_with_blocks(article, db, tenant_id)
 
@@ -319,8 +317,7 @@ async def delete_article_cover_image(
     
     if article.cover_image_url:
         await image_upload_service.delete_image(article.cover_image_url)
-        article.cover_image_url = None
-        await db.commit()
+        await service.update_cover_image_url(article_id, tenant_id, None)
 
 
 # ============================================================================
@@ -435,7 +432,6 @@ async def add_article_content_block(
     
     service = ContentBlockService(db)
     block = await service.add_block("article", article_id, tenant_id, data)
-    await db.commit()
     return ContentBlockResponse.model_validate(block)
 
 
@@ -456,7 +452,6 @@ async def update_article_content_block(
     """Update an article content block."""
     service = ContentBlockService(db)
     block = await service.update_block(block_id, "article", article_id, tenant_id, data)
-    await db.commit()
     return ContentBlockResponse.model_validate(block)
 
 
@@ -476,7 +471,6 @@ async def delete_article_content_block(
     """Delete a content block from an article."""
     service = ContentBlockService(db)
     await service.delete_block(block_id, "article", article_id, tenant_id)
-    await db.commit()
 
 
 @router.post(
@@ -495,5 +489,4 @@ async def reorder_article_content_blocks(
     """Reorder content blocks for an article in a specific locale."""
     service = ContentBlockService(db)
     blocks = await service.reorder_blocks("article", article_id, tenant_id, data.locale, data.block_ids)
-    await db.commit()
     return [ContentBlockResponse.model_validate(b) for b in blocks]

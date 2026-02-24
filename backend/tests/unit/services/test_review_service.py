@@ -8,7 +8,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError
 from app.modules.content.models import Review, ReviewStatus
-from app.modules.content.service import ReviewService
+from app.modules.content.services import ReviewService
 
 
 class TestReviewService:

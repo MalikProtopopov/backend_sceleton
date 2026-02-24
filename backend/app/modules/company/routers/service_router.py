@@ -30,14 +30,14 @@ from app.modules.company.schemas import (
     ServiceTagResponse,
     ServiceUpdate,
 )
-from app.modules.company.service import ServiceService
+from app.modules.company.services import ServiceService
 from app.modules.content.schemas import (
     ContentBlockCreate,
     ContentBlockReorderRequest,
     ContentBlockResponse,
     ContentBlockUpdate,
 )
-from app.modules.content.service import CaseService, ContentBlockService, ReviewService
+from app.modules.content.services import CaseService, ContentBlockService, ReviewService
 
 router = APIRouter()
 
@@ -254,9 +254,7 @@ async def upload_service_image(
         old_image_url=svc.image_url,
     )
     
-    svc.image_url = new_url
-    await db.commit()
-    svc = await service.get_by_id(service_id, tenant_id)
+    svc = await service.update_image_url(service_id, tenant_id, new_url)
     
     return await _service_response_with_blocks(svc, db, tenant_id)
 
@@ -279,8 +277,7 @@ async def delete_service_image(
     
     if svc.image_url:
         await image_upload_service.delete_image(svc.image_url)
-        svc.image_url = None
-        await db.commit()
+        await service.update_image_url(service_id, tenant_id, None)
 
 
 # ============================================================================
@@ -521,7 +518,6 @@ async def add_service_content_block(
     
     service = ContentBlockService(db)
     block = await service.add_block("service", service_id, tenant_id, data)
-    await db.commit()
     return ContentBlockResponse.model_validate(block)
 
 
@@ -542,7 +538,6 @@ async def update_service_content_block(
     """Update a service content block."""
     service = ContentBlockService(db)
     block = await service.update_block(block_id, "service", service_id, tenant_id, data)
-    await db.commit()
     return ContentBlockResponse.model_validate(block)
 
 
@@ -562,7 +557,6 @@ async def delete_service_content_block(
     """Delete a content block from a service."""
     service = ContentBlockService(db)
     await service.delete_block(block_id, "service", service_id, tenant_id)
-    await db.commit()
 
 
 @router.post(
@@ -581,5 +575,4 @@ async def reorder_service_content_blocks(
     """Reorder content blocks for a service in a specific locale."""
     service = ContentBlockService(db)
     blocks = await service.reorder_blocks("service", service_id, tenant_id, data.locale, data.block_ids)
-    await db.commit()
     return [ContentBlockResponse.model_validate(b) for b in blocks]

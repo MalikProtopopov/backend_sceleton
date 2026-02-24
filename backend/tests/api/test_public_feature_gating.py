@@ -94,6 +94,33 @@ class TestPublicFeatureGating:
         )
         assert resp.status_code != 404 or "feature_not_available" not in resp.text
 
+    async def test_public_products_feature_disabled_returns_404(
+        self, client: AsyncClient, tenant_catalog_disabled
+    ):
+        resp = await client.get(
+            "/api/v1/public/products",
+            params={"tenant_id": str(tenant_catalog_disabled.id)},
+        )
+        assert_error_response(resp, 404, "feature_not_available", {"feature": "catalog_module"})
+
+    async def test_public_products_feature_enabled_returns_200(
+        self, client: AsyncClient, tenant_active
+    ):
+        resp = await client.get(
+            "/api/v1/public/products",
+            params={"tenant_id": str(tenant_active.id)},
+        )
+        assert resp.status_code == 200
+
+    async def test_public_categories_feature_disabled_returns_404(
+        self, client: AsyncClient, tenant_catalog_disabled
+    ):
+        resp = await client.get(
+            "/api/v1/public/categories",
+            params={"tenant_id": str(tenant_catalog_disabled.id)},
+        )
+        assert_error_response(resp, 404, "feature_not_available", {"feature": "catalog_module"})
+
     async def test_feature_not_available_has_hint_field(
         self, client: AsyncClient, tenant_blog_disabled
     ):

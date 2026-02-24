@@ -20,7 +20,6 @@ from app.modules.content.schemas import (
     CasePublicResponse,
     ContentBlockResponse,
     FAQPublicResponse,
-    ReviewAuthorContactResponse,
     ReviewMinimalResponse,
     TopicDetailPublicResponse,
     TopicPublicResponse,
@@ -285,19 +284,11 @@ def map_case_to_minimal_response(case: Case, locale: str) -> CaseMinimalResponse
         case.locales[0] if case.locales else None
     )
     
-    # Map contacts
     contacts = [
-        CaseContactResponse(
-            id=c.id,
-            contact_type=c.contact_type,
-            value=c.value,
-            sort_order=c.sort_order,
-        )
-        for c in case.contacts
+        CaseContactResponse.model_validate(c) for c in case.contacts
     ] if case.contacts else []
     
     if not locale_data:
-        # If no locale data, return minimal info without title
         return CaseMinimalResponse(
             id=case.id,
             slug="",
@@ -326,28 +317,7 @@ def map_review_to_minimal_response(review: Review) -> ReviewMinimalResponse:
     Returns:
         ReviewMinimalResponse with minimal data
     """
-    # Map author contacts
-    author_contacts = [
-        ReviewAuthorContactResponse(
-            id=c.id,
-            contact_type=c.contact_type,
-            value=c.value,
-            sort_order=c.sort_order,
-        )
-        for c in review.author_contacts
-    ] if review.author_contacts else []
-    
-    return ReviewMinimalResponse(
-        id=review.id,
-        rating=review.rating,
-        author_name=review.author_name,
-        author_company=review.author_company,
-        author_position=review.author_position,
-        author_photo_url=review.author_photo_url,
-        content=review.content,
-        review_date=review.review_date,
-        author_contacts=author_contacts,
-    )
+    return ReviewMinimalResponse.model_validate(review)
 
 
 def map_reviews_to_minimal_response(reviews: list[Review]) -> list[ReviewMinimalResponse]:
@@ -390,15 +360,8 @@ def map_case_to_public_response(
     # Map reviews if provided
     reviews_response = map_reviews_to_minimal_response(reviews) if reviews else []
     
-    # Map contacts
     contacts = [
-        CaseContactResponse(
-            id=c.id,
-            contact_type=c.contact_type,
-            value=c.value,
-            sort_order=c.sort_order,
-        )
-        for c in case.contacts
+        CaseContactResponse.model_validate(c) for c in case.contacts
     ] if case.contacts else []
     
     # Map content blocks

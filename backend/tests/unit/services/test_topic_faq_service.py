@@ -8,7 +8,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError
 from app.modules.content.models import Topic, TopicLocale, FAQ, FAQLocale
-from app.modules.content.service import TopicService, FAQService
+from app.modules.content.services import TopicService, FAQService
 
 
 class TestTopicService:
@@ -241,11 +241,13 @@ class TestFAQService:
         """List FAQs should return empty list when no FAQs."""
         mock_result = Mock()
         mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar.return_value = 0
         mock_db.execute.return_value = mock_result
 
-        faqs = await faq_service.list_faqs(uuid4())
+        faqs, total = await faq_service.list_faqs(uuid4())
 
         assert faqs == []
+        assert total == 0
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -258,9 +260,10 @@ class TestFAQService:
         """List FAQs should filter by category."""
         mock_result = Mock()
         mock_result.scalars.return_value.all.return_value = [sample_faq]
+        mock_result.scalar.return_value = 1
         mock_db.execute.return_value = mock_result
 
-        faqs = await faq_service.list_faqs(
+        faqs, total = await faq_service.list_faqs(
             sample_faq.tenant_id,
             category="General",
         )
@@ -278,9 +281,10 @@ class TestFAQService:
         """List FAQs should filter by is_published."""
         mock_result = Mock()
         mock_result.scalars.return_value.all.return_value = [sample_faq]
+        mock_result.scalar.return_value = 1
         mock_db.execute.return_value = mock_result
 
-        faqs = await faq_service.list_faqs(
+        faqs, total = await faq_service.list_faqs(
             sample_faq.tenant_id,
             is_published=True,
         )

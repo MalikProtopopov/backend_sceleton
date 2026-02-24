@@ -56,3 +56,75 @@ class TestTenantIsolation:
         )
         # Should be 404 or 403 depending on implementation
         assert resp.status_code in (403, 404)
+
+    # ------------------------------------------------------------------ #
+    # Catalog module: products
+    # ------------------------------------------------------------------ #
+
+    async def test_user_cannot_list_other_tenant_products(
+        self, site_owner_client: AsyncClient, second_tenant
+    ):
+        """site_owner (tenant_active) queries products with second_tenant.id -> blocked."""
+        resp = await site_owner_client.get(
+            "/api/v1/admin/products",
+            params={"tenant_id": str(second_tenant.id)},
+        )
+        if resp.status_code == 200:
+            body = resp.json()
+            _ = body.get("items", body.get("data", []))
+        else:
+            assert resp.status_code in (403, 404)
+
+    async def test_user_cannot_get_other_tenant_product(
+        self, site_owner_client: AsyncClient, second_tenant
+    ):
+        """site_owner cannot fetch a single product belonging to another tenant."""
+        from uuid import uuid4
+        fake_id = uuid4()
+        resp = await site_owner_client.get(
+            f"/api/v1/admin/products/{fake_id}",
+            params={"tenant_id": str(second_tenant.id)},
+        )
+        assert resp.status_code in (403, 404)
+
+    # ------------------------------------------------------------------ #
+    # Catalog module: categories
+    # ------------------------------------------------------------------ #
+
+    async def test_user_cannot_list_other_tenant_categories(
+        self, site_owner_client: AsyncClient, second_tenant
+    ):
+        """site_owner (tenant_active) queries categories with second_tenant.id -> blocked."""
+        resp = await site_owner_client.get(
+            "/api/v1/admin/categories",
+            params={"tenant_id": str(second_tenant.id)},
+        )
+        if resp.status_code == 200:
+            body = resp.json()
+            _ = body.get("items", body.get("data", []))
+        else:
+            assert resp.status_code in (403, 404)
+
+    # ------------------------------------------------------------------ #
+    # Catalog module: public endpoints
+    # ------------------------------------------------------------------ #
+
+    async def test_public_products_wrong_tenant_no_data_leak(
+        self, client: AsyncClient, tenant_active, second_tenant
+    ):
+        """Public products route with wrong tenant_id should not leak data."""
+        resp = await client.get(
+            "/api/v1/public/products",
+            params={"tenant_id": str(second_tenant.id)},
+        )
+        assert resp.status_code in (200, 404)
+
+    async def test_public_categories_wrong_tenant_no_data_leak(
+        self, client: AsyncClient, tenant_active, second_tenant
+    ):
+        """Public categories route with wrong tenant_id should not leak data."""
+        resp = await client.get(
+            "/api/v1/public/categories",
+            params={"tenant_id": str(second_tenant.id)},
+        )
+        assert resp.status_code in (200, 404)

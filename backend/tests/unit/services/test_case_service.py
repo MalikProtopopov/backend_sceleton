@@ -14,7 +14,7 @@ from app.modules.content.models import (
     CaseServiceLink,
 )
 from app.modules.company.models import Service
-from app.modules.content.service import CaseService
+from app.modules.content.services import CaseService
 
 
 class TestCaseService:

@@ -17,6 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.database import transactional
+from app.core.exceptions import ValidationError
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -145,6 +147,7 @@ class EmailService:
             tenant_id=tenant_id,
         )
 
+    @transactional
     async def send_test_email(
         self,
         to_email: str,
@@ -334,7 +337,7 @@ class EmailService:
         import aiosmtplib
 
         if not config.smtp_host:
-            raise ValueError("SMTP host is not configured")
+            raise ValidationError("SMTP host is not configured")
 
         msg = MIMEMultipart()
         msg["From"] = f"{config.from_name} <{config.from_address}>"

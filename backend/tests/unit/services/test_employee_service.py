@@ -13,7 +13,7 @@ from app.modules.company.models import (
     EmployeePracticeArea,
     PracticeArea,
 )
-from app.modules.company.service import EmployeeService
+from app.modules.company.services import EmployeeService
 
 
 class TestEmployeeService:

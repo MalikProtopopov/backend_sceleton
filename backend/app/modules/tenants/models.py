@@ -440,6 +440,13 @@ AVAILABLE_FEATURES: dict[str, dict[str, str]] = {
         "description_ru": "Детальная аналитика лидов (UTM, устройства, гео)",
         "category": "platform",
     },
+    "catalog_module": {
+        "title": "Product Catalog",
+        "title_ru": "Каталог товаров",
+        "description": "Product catalog with categories, prices, and characteristics",
+        "description_ru": "Каталог товаров с категориями, ценами и характеристиками",
+        "category": "commerce",
+    },
 }
 
 

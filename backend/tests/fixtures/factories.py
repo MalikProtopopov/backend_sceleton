@@ -7,6 +7,7 @@ import factory
 from faker import Faker
 
 from app.modules.auth.models import AdminUser, AuditLog, Permission, Role, RolePermission
+from app.modules.catalog.models import Category, Product, ProductImage, UOM
 from app.modules.company.models import Employee, Service
 from app.modules.content.models import FAQ, Article, ArticleLocale, Review, Topic
 from app.modules.leads.models import Inquiry
@@ -223,7 +224,7 @@ class FeatureFlagFactory(factory.Factory):
         elements=[
             "blog_module", "cases_module", "reviews_module", "faq_module",
             "team_module", "services_module", "seo_advanced", "multilang",
-            "analytics_advanced",
+            "analytics_advanced", "catalog_module",
         ],
     )
     enabled = True
@@ -279,4 +280,67 @@ class RolePermissionFactory(factory.Factory):
     id = factory.LazyFunction(uuid4)
     role_id = factory.LazyFunction(uuid4)
     permission_id = factory.LazyFunction(uuid4)
+
+
+class UOMFactory(factory.Factory):
+    class Meta:
+        model = UOM
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    name = factory.Faker("random_element", elements=["Kilogram", "Piece", "Meter", "Liter"])
+    code = factory.LazyFunction(lambda: fake.lexify(text="???").upper())
+    symbol = factory.Faker("random_element", elements=["kg", "pcs", "m", "L"])
+    is_active = True
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class CategoryFactory(factory.Factory):
+    class Meta:
+        model = Category
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    title = factory.LazyFunction(lambda: fake.word().capitalize())
+    slug = factory.LazyFunction(lambda: fake.slug())
+    parent_id = None
+    description = factory.LazyFunction(lambda: fake.sentence())
+    is_active = True
+    sort_order = factory.Sequence(lambda n: n)
+    version = 1
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class ProductFactory(factory.Factory):
+    class Meta:
+        model = Product
+
+    id = factory.LazyFunction(uuid4)
+    tenant_id = factory.LazyFunction(uuid4)
+    sku = factory.LazyFunction(lambda: fake.bothify(text="SKU-####-??").upper())
+    slug = factory.LazyFunction(lambda: fake.slug())
+    title = factory.LazyFunction(lambda: fake.catch_phrase())
+    brand = factory.LazyFunction(lambda: fake.company())
+    model = factory.LazyFunction(lambda: fake.bothify(text="Model-??##"))
+    description = factory.LazyFunction(lambda: fake.text(max_nb_chars=200))
+    is_active = True
+    version = 1
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    updated_at = factory.LazyFunction(lambda: datetime.now(UTC))
+
+
+class ProductImageFactory(factory.Factory):
+    class Meta:
+        model = ProductImage
+
+    id = factory.LazyFunction(uuid4)
+    product_id = factory.LazyFunction(uuid4)
+    storage_key = factory.LazyFunction(lambda: f"products/{uuid4()}.jpg")
+    url = factory.LazyFunction(lambda: fake.image_url())
+    alt = factory.LazyFunction(lambda: fake.sentence(nb_words=3))
+    sort_order = factory.Sequence(lambda n: n)
+    is_cover = False
+    created_at = factory.LazyFunction(lambda: datetime.now(UTC))
 

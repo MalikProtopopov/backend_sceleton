@@ -80,23 +80,8 @@ def map_service_to_public_response(
     # Map reviews to minimal response
     reviews_response = _map_reviews_for_service(reviews or []) if reviews else []
     
-    # Map content blocks
     blocks_response = [
-        ContentBlockForServiceResponse(
-            id=b.id,
-            locale=b.locale,
-            block_type=b.block_type,
-            sort_order=b.sort_order,
-            title=b.title,
-            content=b.content,
-            media_url=b.media_url,
-            thumbnail_url=b.thumbnail_url,
-            link_url=b.link_url,
-            link_label=b.link_label,
-            device_type=b.device_type,
-            block_metadata=b.block_metadata,
-        )
-        for b in content_blocks
+        ContentBlockForServiceResponse.model_validate(b) for b in content_blocks
     ] if content_blocks else []
     
     return ServicePublicResponse(
@@ -243,21 +228,7 @@ def map_employee_to_public_response(
         raise LocaleDataMissingError("Employee", employee.id, locale)
     
     blocks_response = [
-        ContentBlockForServiceResponse(
-            id=b.id,
-            locale=b.locale,
-            block_type=b.block_type,
-            sort_order=b.sort_order,
-            title=b.title,
-            content=b.content,
-            media_url=b.media_url,
-            thumbnail_url=b.thumbnail_url,
-            link_url=b.link_url,
-            link_label=b.link_label,
-            device_type=b.device_type,
-            block_metadata=b.block_metadata,
-        )
-        for b in content_blocks
+        ContentBlockForServiceResponse.model_validate(b) for b in content_blocks
     ] if content_blocks else []
     
     return EmployeePublicResponse(
