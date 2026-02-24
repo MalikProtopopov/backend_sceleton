@@ -1,8 +1,8 @@
 # =============================================================================
 # Caddy reverse proxy for Mediann multi-tenant platform
 # Docker deployment: Caddy and backend are in the same Docker network.
-# Backend is accessible as "backend:8000" inside the network.
-# Admin panel is accessible as "admin:3000" inside the network.
+# Backend (FastAPI) is accessible as "backend:8000" inside the network.
+# Admin panel (Next.js) is accessible as "admin:3000" inside the network.
 # =============================================================================
 
 {
@@ -16,26 +16,36 @@
 }
 
 # ---------------------------------------------------------------------------
-# Admin panel (admin.mediann.dev) → Next.js container on port 3000
+# FastAPI backend API (api.mediann.dev)
+# ---------------------------------------------------------------------------
+api.mediann.dev {
+	reverse_proxy backend:8000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Platform admin panel (admin.mediann.dev) → Next.js
 # ---------------------------------------------------------------------------
 admin.mediann.dev {
 	reverse_proxy admin:3000 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
-		header_up X-Forwarded-For {remote_host}
 	}
 }
 
 # ---------------------------------------------------------------------------
-# API + custom tenant domains — on-demand TLS
-# Covers: api.mediann.dev, *.mediann.dev subdomains, custom client domains
+# Custom tenant domains (admin.yastvo.com, etc.) — on-demand TLS
+# All custom domains route to the same Next.js admin, which detects
+# the hostname and shows the appropriate tenant's panel.
 # ---------------------------------------------------------------------------
 :443 {
 	tls {
 		on_demand
 	}
 
-	reverse_proxy backend:8000 {
+	reverse_proxy admin:3000 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 	}
