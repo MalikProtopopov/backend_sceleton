@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     default_tenant_slug: str = "main"
     default_tenant_name: str = "Main Site"
 
+    # Domain provisioning (Caddy reverse proxy)
+    caddy_admin_url: str = "http://localhost:2019"
+    platform_cname_target: str = "tenants.mediann.dev"
+    platform_domain_suffix: str = ".mediann.dev"
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"

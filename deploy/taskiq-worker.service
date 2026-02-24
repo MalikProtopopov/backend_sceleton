@@ -1,0 +1,20 @@
+[Unit]
+Description=TaskIQ Worker for Mediann Backend
+After=network.target redis.service postgresql.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/mediann/backend
+Environment=PYTHONPATH=/opt/mediann/backend
+EnvironmentFile=/opt/mediann/backend/.env
+ExecStart=/opt/mediann/backend/.venv/bin/taskiq worker app.tasks.broker:broker
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -514,9 +514,17 @@ class TenantDomainService:
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_domain(self, domain_id: UUID) -> TenantDomain:
+        """Get a single domain by ID (for status checks)."""
+        return await self._get_by_id(domain_id)
+
     @transactional
     async def add_domain(self, tenant_id: UUID, data: TenantDomainCreate) -> TenantDomain:
-        """Attach a new domain to a tenant."""
+        """Attach a new domain to a tenant.
+
+        After creation, enqueues a background task to verify DNS
+        and provision an SSL certificate via Caddy.
+        """
         # Verify tenant exists
         tenant_stmt = select(Tenant).where(Tenant.id == tenant_id, Tenant.deleted_at.is_(None))
         if not (await self.db.execute(tenant_stmt)).scalar_one_or_none():
@@ -539,6 +547,14 @@ class TenantDomainService:
         await self.db.refresh(td)
 
         self._invalidate_cors_cache()
+
+        # Enqueue background SSL provisioning
+        try:
+            from app.tasks.domain_tasks import provision_domain_task
+            await provision_domain_task.kiq(str(td.id))
+        except Exception:
+            pass  # Don't fail domain creation if task queue is unavailable
+
         return td
 
     @transactional

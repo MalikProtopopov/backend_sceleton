@@ -150,6 +150,7 @@ def _setup_routers(app: FastAPI) -> None:
     from app.modules.documents.router import router as documents_router
     from app.modules.export.router import router as export_router
     from app.modules.health.router import router as health_router
+    from app.modules.internal.router import router as internal_router
     from app.modules.leads.router import router as leads_router
     from app.modules.platform_dashboard.router import router as platform_dashboard_router
     from app.modules.seo.router import router as seo_router
@@ -239,6 +240,13 @@ def _setup_routers(app: FastAPI) -> None:
         media_router,
         prefix="/media",
         tags=["Media"],
+    )
+
+    # Internal endpoints (Caddy on_demand_tls arbiter, localhost only)
+    app.include_router(
+        internal_router,
+        prefix="/internal",
+        tags=["Internal"],
     )
 
 

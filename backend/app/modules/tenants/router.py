@@ -19,6 +19,7 @@ from app.core.security import (
 from app.modules.auth.models import AdminUser
 from app.modules.tenants.models import AVAILABLE_FEATURES
 from app.modules.tenants.schemas import (
+    DNSVerifyResponse,
     EmailLogListResponse,
     EmailLogResponse,
     EmailTestRequest,
@@ -32,6 +33,7 @@ from app.modules.tenants.schemas import (
     TenantDomainCreate,
     TenantDomainListResponse,
     TenantDomainResponse,
+    TenantDomainSSLStatusResponse,
     TenantDomainUpdate,
     TenantListResponse,
     TenantPublicResponse,
@@ -503,6 +505,73 @@ async def remove_tenant_domain(
     """Remove a domain binding."""
     service = TenantDomainService(db)
     await service.remove_domain(domain_id)
+
+
+@router.get(
+    "/tenants/{tenant_id}/domains/{domain_id}/ssl-status",
+    response_model=TenantDomainSSLStatusResponse,
+    summary="Get domain SSL status",
+    description=(
+        "Check the current SSL provisioning status for a domain. "
+        "Use for polling after adding a domain or triggering DNS verification. "
+        "Platform owner only."
+    ),
+)
+async def get_domain_ssl_status(
+    tenant_id: UUID,
+    domain_id: UUID,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+) -> TenantDomainSSLStatusResponse:
+    """Return lightweight SSL status for polling."""
+    service = TenantDomainService(db)
+    td = await service.get_domain(domain_id)
+
+    status_messages = {
+        "pending": "Waiting for DNS configuration",
+        "verifying": "DNS verified, obtaining SSL certificate...",
+        "active": "SSL certificate is active",
+        "error": "SSL provisioning failed — check DNS configuration",
+    }
+
+    return TenantDomainSSLStatusResponse(
+        domain_id=td.id,
+        domain=td.domain,
+        ssl_status=td.ssl_status,
+        dns_verified_at=td.dns_verified_at,
+        ssl_provisioned_at=td.ssl_provisioned_at,
+        message=status_messages.get(td.ssl_status),
+    )
+
+
+@router.post(
+    "/tenants/{tenant_id}/domains/{domain_id}/verify",
+    response_model=DNSVerifyResponse,
+    summary="Verify domain DNS configuration",
+    description=(
+        "Check if the domain's DNS CNAME record is correctly configured. "
+        "If DNS is valid, triggers SSL provisioning in the background. "
+        "Platform owner only."
+    ),
+)
+async def verify_domain_dns(
+    tenant_id: UUID,
+    domain_id: UUID,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+) -> DNSVerifyResponse:
+    """Verify DNS and optionally trigger provisioning."""
+    from app.services.domain_provisioning import DomainProvisioningService
+    from app.tasks.domain_tasks import provision_domain_task
+
+    service = DomainProvisioningService(db)
+    result = await service.verify_dns_only(domain_id)
+    await db.commit()
+
+    if result["ok"]:
+        await provision_domain_task.kiq(str(domain_id))
+
+    return DNSVerifyResponse(**result)
 
 
 # ============================================================================

@@ -335,6 +335,8 @@ Authorization: Bearer {token}
       "domain": "admin.yastvo.com",
       "is_primary": true,
       "ssl_status": "active",
+      "dns_verified_at": "2026-02-20T10:05:00Z",
+      "ssl_provisioned_at": "2026-02-20T10:05:30Z",
       "created_at": "2026-02-20T10:00:00Z",
       "updated_at": "2026-02-23T15:30:00Z"
     },
@@ -344,6 +346,8 @@ Authorization: Bearer {token}
       "domain": "admin-yastvo.mediann.dev",
       "is_primary": false,
       "ssl_status": "pending",
+      "dns_verified_at": null,
+      "ssl_provisioned_at": null,
       "created_at": "2026-02-21T12:00:00Z",
       "updated_at": "2026-02-21T12:00:00Z"
     }
@@ -360,9 +364,20 @@ Authorization: Bearer {token}
 | `tenant_id` | UUID | К какому тенанту привязан |
 | `domain` | string | FQDN, например `admin.yastvo.com` |
 | `is_primary` | bool | **Основной домен** — используется как `admin_domain` в ответах API (switcher, redirect) |
-| `ssl_status` | string | `"pending"` / `"active"` / `"error"` |
+| `ssl_status` | string | `"pending"` / `"verifying"` / `"active"` / `"error"` |
+| `dns_verified_at` | datetime / null | Когда DNS CNAME последний раз прошёл проверку |
+| `ssl_provisioned_at` | datetime / null | Когда SSL-сертификат был успешно выпущен |
 | `created_at` | datetime | — |
 | `updated_at` | datetime | — |
+
+#### Статусы SSL (`ssl_status`)
+
+| Статус | Значение | UI |
+|--------|----------|-----|
+| `pending` | Ожидание настройки DNS | Жёлтый badge + инструкция CNAME + кнопка «Проверить DNS» |
+| `verifying` | DNS подтверждён, выпускается сертификат | Спиннер + «Получаем SSL-сертификат...» |
+| `active` | Сертификат выпущен и работает | Зелёный badge + ссылка `https://{domain}` |
+| `error` | Ошибка при выпуске сертификата | Красный badge + текст ошибки + кнопка «Повторить» |
 
 ### 6.3 Добавить домен
 
@@ -407,7 +422,7 @@ Content-Type: application/json
 | Поле | Описание |
 |------|----------|
 | `is_primary` | Сделать основным (сбрасывает primary у других) |
-| `ssl_status` | Обновить статус SSL: `"pending"`, `"active"`, `"error"` |
+| `ssl_status` | Обновить статус SSL: `"pending"`, `"verifying"`, `"active"`, `"error"` |
 
 > **Менять `domain` нельзя** — нужно удалить и создать новый.
 
@@ -420,18 +435,287 @@ Authorization: Bearer {token}
 
 Ответ: 204 No Content.
 
-### 6.6 UI — таблица доменов
+### 6.6 Проверить DNS (Verify)
+
+```
+POST /api/v1/tenants/{tenant_id}/domains/{domain_id}/verify
+Authorization: Bearer {token}
+```
+
+Проверяет CNAME-запись домена. Если DNS настроен правильно — автоматически запускает выпуск SSL-сертификата в фоне.
+
+**Ответ:** `DNSVerifyResponse`
+
+```json
+{
+  "ok": true,
+  "cname_target": "tenants.mediann.dev",
+  "expected_target": "tenants.mediann.dev",
+  "message": "CNAME record configured correctly"
+}
+```
+
+```json
+{
+  "ok": false,
+  "cname_target": null,
+  "expected_target": "tenants.mediann.dev",
+  "message": "No CNAME or A record found for admin.yastvo.com. Add a CNAME record pointing to tenants.mediann.dev"
+}
+```
+
+### 6.7 Проверить статус SSL (Polling)
+
+```
+GET /api/v1/tenants/{tenant_id}/domains/{domain_id}/ssl-status
+Authorization: Bearer {token}
+```
+
+Легковесный эндпоинт для polling статуса SSL. Фронтенд вызывает каждые 10 секунд пока `ssl_status` не станет `active` или `error`.
+
+**Ответ:** `TenantDomainSSLStatusResponse`
+
+```json
+{
+  "domain_id": "aaa-bbb-ccc",
+  "domain": "admin.yastvo.com",
+  "ssl_status": "verifying",
+  "dns_verified_at": "2026-02-24T10:00:00Z",
+  "ssl_provisioned_at": null,
+  "message": "DNS verified, obtaining SSL certificate..."
+}
+```
+
+### 6.8 UI — таблица доменов
 
 | Колонка | Поле | Описание |
 |---------|------|----------|
-| Домен | `domain` | Текст, можно со ссылкой `https://{domain}` |
+| Домен | `domain` | Текст, ссылка `https://{domain}` (только если `ssl_status === "active"`) |
+| Тип | — | Badge: «Платформа» (если `.mediann.dev`) или «Кастомный» |
 | Основной | `is_primary` | Badge «Primary» или переключатель |
-| SSL | `ssl_status` | Badge: зелёный (`active`), жёлтый (`pending`), красный (`error`) |
-| Действия | — | Кнопки: «Сделать основным», «Удалить» |
+| SSL | `ssl_status` | Badge по статусу (см. таблицу статусов выше) |
+| Действия | — | Кнопки: «Проверить DNS» (при `pending`/`error`), «Сделать основным», «Удалить» |
 
-Кнопка «Добавить домен» → модальное окно с полями `domain` + checkbox `is_primary`.
+Кнопка «Добавить домен» → модальное окно:
 
-### 6.7 Как `admin_domain` попадает в ответы API
+#### Модалка добавления домена
+
+1. **Тип домена** (radio):
+   - «Поддомен Mediann» — автозаполняет `.mediann.dev` (поле ввода: только часть до `.mediann.dev`)
+   - «Кастомный домен» — свободный ввод FQDN
+
+2. **Поле ввода домена** (`domain`)
+
+3. **Если выбран «Кастомный домен»** — показать инструкцию:
+   > Добавьте у вашего DNS-провайдера CNAME-запись:
+   > `{введённый_домен}` → `tenants.mediann.dev`
+
+4. **Checkbox `is_primary`** — «Сделать основным»
+
+5. **Кнопка «Добавить»** → `POST /tenants/{id}/domains`
+
+#### Polling после добавления
+
+После добавления кастомного домена (когда `ssl_status === "pending"` или `"verifying"`):
+
+1. Показать блок с инструкцией по CNAME (для `pending`)
+2. Показать кнопку «Проверить DNS» (для `pending` и `error`)
+3. После нажатия «Проверить DNS» → `POST .../verify`
+4. Если `ok: true` → начать polling `GET .../ssl-status` каждые 10 секунд
+5. Если `ok: false` → показать сообщение из `message`
+6. Polling: при `ssl_status === "active"` — остановить, показать зелёный badge
+7. Polling: при `ssl_status === "error"` — остановить, показать красный badge + кнопку «Повторить»
+
+#### UX-детали
+
+- При `pending`: disabled кнопка «Сделать основным» (домен ещё не работает)
+- При `verifying`: disabled все кнопки, спиннер
+- При `error`: показать текст ошибки + кнопка «Повторить» (вызывает `/verify`)
+- Для поддоменов `*.mediann.dev` — SSL статус всегда `active` (wildcard), кнопка «Проверить DNS» не нужна
+
+### 6.9 TypeScript типы
+
+```typescript
+type SSLStatus = "pending" | "verifying" | "active" | "error";
+
+interface TenantDomain {
+  id: string;
+  tenant_id: string;
+  domain: string;
+  is_primary: boolean;
+  ssl_status: SSLStatus;
+  dns_verified_at: string | null;
+  ssl_provisioned_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TenantDomainCreate {
+  domain: string;        // FQDN, 4-255
+  is_primary?: boolean;
+}
+
+interface TenantDomainUpdate {
+  is_primary?: boolean;
+  ssl_status?: SSLStatus;
+}
+
+interface TenantDomainListResponse {
+  items: TenantDomain[];
+  total: number;
+}
+
+interface TenantDomainSSLStatusResponse {
+  domain_id: string;
+  domain: string;
+  ssl_status: SSLStatus;
+  dns_verified_at: string | null;
+  ssl_provisioned_at: string | null;
+  message?: string;
+}
+
+interface DNSVerifyResponse {
+  ok: boolean;
+  cname_target: string | null;
+  expected_target: string;
+  message: string;
+}
+```
+
+### 6.10 Zustand Store для доменов
+
+```typescript
+import { create } from "zustand";
+import { api } from "@/lib/api";
+
+interface DomainStore {
+  domains: TenantDomain[];
+  loading: boolean;
+  pollingIntervals: Map<string, ReturnType<typeof setInterval>>;
+
+  fetchDomains: (tenantId: string) => Promise<void>;
+  addDomain: (tenantId: string, data: TenantDomainCreate) => Promise<TenantDomain>;
+  updateDomain: (tenantId: string, domainId: string, data: TenantDomainUpdate) => Promise<void>;
+  deleteDomain: (tenantId: string, domainId: string) => Promise<void>;
+  verifyDomain: (tenantId: string, domainId: string) => Promise<DNSVerifyResponse>;
+  startPolling: (tenantId: string, domainId: string) => void;
+  stopPolling: (domainId: string) => void;
+  stopAllPolling: () => void;
+}
+
+export const useDomainStore = create<DomainStore>((set, get) => ({
+  domains: [],
+  loading: false,
+  pollingIntervals: new Map(),
+
+  fetchDomains: async (tenantId) => {
+    set({ loading: true });
+    const { data } = await api.get<TenantDomainListResponse>(
+      `/tenants/${tenantId}/domains`
+    );
+    set({ domains: data.items, loading: false });
+
+    // Auto-start polling for domains in transitional states
+    data.items
+      .filter((d) => d.ssl_status === "pending" || d.ssl_status === "verifying")
+      .forEach((d) => get().startPolling(tenantId, d.id));
+  },
+
+  addDomain: async (tenantId, payload) => {
+    const { data } = await api.post<TenantDomain>(
+      `/tenants/${tenantId}/domains`,
+      payload
+    );
+    set((s) => ({ domains: [...s.domains, data] }));
+    if (data.ssl_status !== "active") {
+      get().startPolling(tenantId, data.id);
+    }
+    return data;
+  },
+
+  updateDomain: async (tenantId, domainId, payload) => {
+    const { data } = await api.patch<TenantDomain>(
+      `/tenants/${tenantId}/domains/${domainId}`,
+      payload
+    );
+    set((s) => ({
+      domains: s.domains.map((d) => (d.id === domainId ? data : d)),
+    }));
+  },
+
+  deleteDomain: async (tenantId, domainId) => {
+    await api.delete(`/tenants/${tenantId}/domains/${domainId}`);
+    get().stopPolling(domainId);
+    set((s) => ({
+      domains: s.domains.filter((d) => d.id !== domainId),
+    }));
+  },
+
+  verifyDomain: async (tenantId, domainId) => {
+    const { data } = await api.post<DNSVerifyResponse>(
+      `/tenants/${tenantId}/domains/${domainId}/verify`
+    );
+    if (data.ok) {
+      get().startPolling(tenantId, domainId);
+    }
+    return data;
+  },
+
+  startPolling: (tenantId, domainId) => {
+    const { pollingIntervals } = get();
+    if (pollingIntervals.has(domainId)) return; // already polling
+
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await api.get<TenantDomainSSLStatusResponse>(
+          `/tenants/${tenantId}/domains/${domainId}/ssl-status`
+        );
+        set((s) => ({
+          domains: s.domains.map((d) =>
+            d.id === domainId
+              ? { ...d, ssl_status: data.ssl_status,
+                  dns_verified_at: data.dns_verified_at,
+                  ssl_provisioned_at: data.ssl_provisioned_at }
+              : d
+          ),
+        }));
+        if (data.ssl_status === "active" || data.ssl_status === "error") {
+          get().stopPolling(domainId);
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    }, 10_000);
+
+    set((s) => {
+      const next = new Map(s.pollingIntervals);
+      next.set(domainId, interval);
+      return { pollingIntervals: next };
+    });
+  },
+
+  stopPolling: (domainId) => {
+    const { pollingIntervals } = get();
+    const interval = pollingIntervals.get(domainId);
+    if (interval) {
+      clearInterval(interval);
+      set((s) => {
+        const next = new Map(s.pollingIntervals);
+        next.delete(domainId);
+        return { pollingIntervals: next };
+      });
+    }
+  },
+
+  stopAllPolling: () => {
+    const { pollingIntervals } = get();
+    pollingIntervals.forEach((interval) => clearInterval(interval));
+    set({ pollingIntervals: new Map() });
+  },
+}));
+```
+
+### 6.11 Как `admin_domain` попадает в ответы API
 
 `admin_domain` **нигде не хранится отдельно** — бэкенд вычисляет его динамически:
 

@@ -26,11 +26,18 @@
 
 ```
 admin.client1.com  ──┐
-admin.client2.com  ──┼──► Nginx (wildcard SSL) ──► Единый SPA-билд ──► API (api.mediann.dev)
+admin.client2.com  ──┼──► Caddy (auto SSL) ──► Единый SPA-билд ──► API (api.mediann.dev)
 admin-acme.mediann.dev─┘
 ```
 
-1. Все админ-домены ведут на один и тот же SPA-деплой (Nginx `root` на один каталог).
+**Двухуровневая система доменов:**
+
+| Уровень | Пример | SSL | Что нужно |
+|---------|--------|-----|-----------|
+| Поддомены платформы | `yastvo.mediann.dev` | Wildcard cert `*.mediann.dev` | Ничего — автоматически |
+| Кастомные домены | `admin.yastvo.com` | On-demand TLS (Let's Encrypt) | Клиент добавляет CNAME → `tenants.mediann.dev` |
+
+1. Все админ-домены ведут на один и тот же SPA-деплой (Caddy reverse proxy).
 2. SPA при загрузке читает `window.location.hostname` и резолвит его в `tenant_id` через `GET /public/tenants/by-domain/{hostname}`.
 3. **Логин** (`POST /auth/login`) — заголовок `X-Tenant-ID` **опционален**:
    - Если домен резолвится — отправляется `X-Tenant-ID`, бэкенд входит сразу.
@@ -870,10 +877,12 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 
 | Метод | URL | Описание |
 |-------|-----|----------|
-| GET | `/tenants/{id}/domains` | Список доменов тенанта |
-| POST | `/tenants/{id}/domains` | Добавить домен |
+| GET | `/tenants/{id}/domains` | Список доменов тенанта (с `ssl_status`, `dns_verified_at`, `ssl_provisioned_at`) |
+| POST | `/tenants/{id}/domains` | Добавить домен (автоматически запускает SSL provisioning) |
 | PATCH | `/tenants/{id}/domains/{domain_id}` | Обновить (is_primary, ssl_status) |
 | DELETE | `/tenants/{id}/domains/{domain_id}` | Удалить домен |
+| GET | `/tenants/{id}/domains/{domain_id}/ssl-status` | Polling статуса SSL (для фронтенд-поллинга) |
+| POST | `/tenants/{id}/domains/{domain_id}/verify` | Проверить DNS + запустить SSL provisioning |
 
 ### Структуры данных
 
@@ -976,14 +985,42 @@ interface SwitchTenantRequest {
 #### TenantDomainResponse
 
 ```typescript
+type SSLStatus = "pending" | "verifying" | "active" | "error";
+
 interface TenantDomainResponse {
   id: string;
   tenant_id: string;
-  domain: string;         // "admin.client1.com"
+  domain: string;                    // "admin.client1.com"
   is_primary: boolean;
-  ssl_status: "pending" | "active" | "error";
-  created_at: string;     // ISO 8601
+  ssl_status: SSLStatus;
+  dns_verified_at: string | null;    // ISO 8601
+  ssl_provisioned_at: string | null; // ISO 8601
+  created_at: string;                // ISO 8601
   updated_at: string;
+}
+```
+
+#### TenantDomainSSLStatusResponse
+
+```typescript
+interface TenantDomainSSLStatusResponse {
+  domain_id: string;
+  domain: string;
+  ssl_status: SSLStatus;
+  dns_verified_at: string | null;
+  ssl_provisioned_at: string | null;
+  message?: string;
+}
+```
+
+#### DNSVerifyResponse
+
+```typescript
+interface DNSVerifyResponse {
+  ok: boolean;
+  cname_target: string | null;
+  expected_target: string;    // "tenants.mediann.dev"
+  message: string;
 }
 ```
 
@@ -1038,6 +1075,17 @@ interface TenantDomainResponse {
 - [ ] Экран ошибки: домен не найден (404)
 - [ ] Экран ошибки: организация приостановлена (403)
 - [ ] Экран ошибки: нет доступа к организации (401 от switch-tenant)
+
+### Управление доменами
+
+- [ ] Таблица доменов с колонками: Домен, Тип, SSL статус, Основной, Действия
+- [ ] Модалка добавления домена: выбор типа (поддомен/кастомный), ввод домена, checkbox is_primary
+- [ ] Для кастомных доменов — показать инструкцию CNAME в модалке
+- [ ] Кнопка «Проверить DNS» для доменов с `ssl_status === "pending"` или `"error"`
+- [ ] Polling `GET .../ssl-status` каждые 10 сек для доменов с `ssl_status === "pending"` или `"verifying"`
+- [ ] Остановка polling при `ssl_status === "active"` или `"error"`
+- [ ] Disabled состояния кнопок во время `verifying`
+- [ ] Зелёный badge + ссылка для `active`, красный badge + retry для `error`
 
 ### Разработка
 

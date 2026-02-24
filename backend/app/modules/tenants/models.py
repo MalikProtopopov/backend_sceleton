@@ -114,7 +114,17 @@ class TenantDomain(Base, UUIDMixin, TimestampMixin):
         String(20),
         default="pending",
         nullable=False,
-        comment="SSL certificate status: pending, active, error",
+        comment="SSL certificate status: pending, verifying, active, error",
+    )
+    dns_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When DNS CNAME was last verified",
+    )
+    ssl_provisioned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When SSL certificate was successfully provisioned",
     )
 
     # Relationship
@@ -122,7 +132,7 @@ class TenantDomain(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "ssl_status IN ('pending', 'active', 'error')",
+            "ssl_status IN ('pending', 'verifying', 'active', 'error')",
             name="ck_tenant_domains_ssl_status",
         ),
         CheckConstraint(

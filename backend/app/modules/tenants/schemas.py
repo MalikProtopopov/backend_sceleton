@@ -37,7 +37,7 @@ class TenantDomainUpdate(BaseModel):
     """Schema for updating a tenant domain."""
 
     is_primary: bool | None = None
-    ssl_status: Literal["pending", "active", "error"] | None = None
+    ssl_status: Literal["pending", "verifying", "active", "error"] | None = None
 
 
 class TenantDomainResponse(BaseModel):
@@ -50,6 +50,8 @@ class TenantDomainResponse(BaseModel):
     domain: str
     is_primary: bool
     ssl_status: str
+    dns_verified_at: datetime | None = None
+    ssl_provisioned_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -59,6 +61,26 @@ class TenantDomainListResponse(BaseModel):
 
     items: list[TenantDomainResponse]
     total: int
+
+
+class TenantDomainSSLStatusResponse(BaseModel):
+    """Lightweight response for SSL status polling."""
+
+    domain_id: UUID
+    domain: str
+    ssl_status: str
+    dns_verified_at: datetime | None = None
+    ssl_provisioned_at: datetime | None = None
+    message: str | None = None
+
+
+class DNSVerifyResponse(BaseModel):
+    """Response from DNS verification check."""
+
+    ok: bool
+    cname_target: str | None = None
+    expected_target: str
+    message: str
 
 
 class TenantByDomainResponse(BaseModel):
