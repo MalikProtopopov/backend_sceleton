@@ -101,16 +101,41 @@ GROUP BY r.id, r.name;
 docker exec cms_postgres_prod psql -U cms_user -d cms_db -c "
 SELECT 
     t.name as tenant,
-    ff.name as feature,
-    ff.is_enabled
+    ff.feature_name,
+    ff.enabled
 FROM feature_flags ff
 JOIN tenants t ON t.id = ff.tenant_id
 WHERE t.id = '6dc384ef-c364-49df-aaa7-22941c7f3422'
-  AND ff.name = 'catalog_module';
+  AND ff.feature_name = 'catalog_module';
 "
 ```
 
-Должно быть `is_enabled = t`. Если флаг выключен — все catalog API вернут 403.
+Должно быть `enabled = t`. Если флаг выключен — все catalog API вернут 403.
+
+**Если флаг выключен или записи нет:**
+
+```bash
+# Если запись есть, но enabled = false:
+docker exec cms_postgres_prod psql -U cms_user -d cms_db -c "
+UPDATE feature_flags 
+SET enabled = true, updated_at = now()
+WHERE tenant_id = '6dc384ef-c364-49df-aaa7-22941c7f3422' 
+  AND feature_name = 'catalog_module';
+"
+
+# Если записи нет вообще — создай:
+docker exec cms_postgres_prod psql -U cms_user -d cms_db -c "
+INSERT INTO feature_flags (id, tenant_id, feature_name, enabled, created_at, updated_at)
+VALUES (
+  gen_random_uuid(),
+  '6dc384ef-c364-49df-aaa7-22941c7f3422',
+  'catalog_module',
+  true,
+  now(),
+  now()
+);
+"
+```
 
 ---
 
