@@ -168,6 +168,50 @@ class ProductCharacteristicResponse(BaseModel):
     updated_at: datetime
 
 
+class UOMBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    code: str
+    symbol: str | None = None
+
+
+class ParameterValueBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    label: str
+    slug: str
+
+
+class ParameterBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    name: str
+    slug: str
+    value_type: str
+    is_filterable: bool
+    uom: UOMBrief | None = None
+
+
+class ProductCharacteristicDetailResponse(BaseModel):
+    """Enriched characteristic with inline parameter/value names for admin UI."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    product_id: UUID
+    parameter_id: UUID
+    parameter_value_id: UUID | None = None
+    value_text: str | None = None
+    value_number: Decimal | None = None
+    value_bool: bool | None = None
+    uom_id: UUID | None = None
+    source_type: str
+    is_locked: bool
+    created_at: datetime
+    updated_at: datetime
+    parameter: ParameterBrief
+    parameter_value: ParameterValueBrief | None = None
+
+
 class ProductCharacteristicBulkResponse(BaseModel):
     created: int
     updated: int

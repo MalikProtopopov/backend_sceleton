@@ -21,6 +21,7 @@ from app.modules.parameters.schemas import (
     ProductCharacteristicBulkCreate,
     ProductCharacteristicBulkResponse,
     ProductCharacteristicCreate,
+    ProductCharacteristicDetailResponse,
     ProductCharacteristicResponse,
 )
 from app.modules.parameters.service import (
@@ -221,18 +222,18 @@ async def delete_parameter_value(
 
 @router.get(
     "/admin/products/{product_id}/characteristics",
-    response_model=list[ProductCharacteristicResponse],
-    summary="List normalized characteristics for a product",
+    response_model=list[ProductCharacteristicDetailResponse],
+    summary="List normalized characteristics for a product (with parameter info)",
     dependencies=[require_catalog, Depends(PermissionChecker("catalog:read"))],
 )
 async def list_product_characteristics(
     product_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
-) -> list[ProductCharacteristicResponse]:
+) -> list[ProductCharacteristicDetailResponse]:
     service = ProductCharacteristicService(db)
     items = await service.list_for_product(product_id, tenant_id)
-    return [ProductCharacteristicResponse.model_validate(c) for c in items]
+    return [ProductCharacteristicDetailResponse.model_validate(c) for c in items]
 
 
 @router.post(

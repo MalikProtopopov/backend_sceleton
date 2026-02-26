@@ -53,7 +53,7 @@
 GET /api/v1/admin/products/{product_id}/characteristics
 ```
 
-**Ответ:** массив характеристик.
+**Ответ:** массив характеристик с встроенной информацией о параметре и значении (имена, slug, тип, UOM). Фронту не нужно отдельно запрашивать справочник параметров для отображения — всё приходит в одном запросе.
 
 ```json
 [
@@ -69,7 +69,20 @@ GET /api/v1/admin/products/{product_id}/characteristics
     "source_type": "manual",
     "is_locked": false,
     "created_at": "2026-02-26T12:00:00Z",
-    "updated_at": "2026-02-26T12:00:00Z"
+    "updated_at": "2026-02-26T12:00:00Z",
+    "parameter": {
+      "id": "color-param-uuid",
+      "name": "Цвет",
+      "slug": "tsvet",
+      "value_type": "enum",
+      "is_filterable": true,
+      "uom": null
+    },
+    "parameter_value": {
+      "id": "yellow-value-uuid",
+      "label": "Жёлтый",
+      "slug": "zhjoltyj"
+    }
   },
   {
     "id": "uuid-2",
@@ -83,7 +96,20 @@ GET /api/v1/admin/products/{product_id}/characteristics
     "source_type": "manual",
     "is_locked": false,
     "created_at": "2026-02-26T12:00:00Z",
-    "updated_at": "2026-02-26T12:00:00Z"
+    "updated_at": "2026-02-26T12:00:00Z",
+    "parameter": {
+      "id": "color-param-uuid",
+      "name": "Цвет",
+      "slug": "tsvet",
+      "value_type": "enum",
+      "is_filterable": true,
+      "uom": null
+    },
+    "parameter_value": {
+      "id": "red-value-uuid",
+      "label": "Красный",
+      "slug": "krasnyj"
+    }
   },
   {
     "id": "uuid-3",
@@ -97,14 +123,29 @@ GET /api/v1/admin/products/{product_id}/characteristics
     "source_type": "manual",
     "is_locked": false,
     "created_at": "2026-02-26T12:00:00Z",
-    "updated_at": "2026-02-26T12:00:00Z"
+    "updated_at": "2026-02-26T12:00:00Z",
+    "parameter": {
+      "id": "weight-param-uuid",
+      "name": "Вес",
+      "slug": "ves",
+      "value_type": "number",
+      "is_filterable": true,
+      "uom": { "id": "kg-uom-uuid", "code": "kg", "symbol": "кг" }
+    },
+    "parameter_value": null
   }
 ]
 ```
 
+**Ключевые поля в ответе:**
+- `parameter.name` — человекочитаемое название параметра
+- `parameter.value_type` — тип (`enum` / `number` / `string` / `bool` / `range`) — определяет виджет ввода
+- `parameter.uom` — единица измерения (code + symbol)
+- `parameter_value.label` — человекочитаемая метка выбранного значения (для enum)
+
 Для **enum**-параметров по одному `parameter_id` может быть несколько элементов с разными `parameter_value_id` (например, два цвета). Для **number/string/bool/range** — один элемент на `parameter_id` с заполненным `value_number` / `value_text` / `value_bool`.
 
-Чтобы показать в UI «какие значения выбраны», нужен ещё справочник параметров и значений: `GET /api/v1/admin/parameters` (и при необходимости `GET /api/v1/admin/parameters/{id}` с полем `values`).
+Чтобы добавить **новый параметр** (показать доступные для выбора), нужен справочник: `GET /api/v1/admin/parameters?page=1&page_size=100` — список всех параметров с их `values[]` (для enum-типов).
 
 ---
 
@@ -248,8 +289,30 @@ DELETE /api/v1/admin/products/{product_id}/characteristics/{parameter_id}
 ## 8. Типы и примеры (TypeScript)
 
 ```typescript
-// Одна характеристика в ответе
-interface ProductCharacteristicResponse {
+// Встроенная информация о параметре
+interface UOMBrief {
+  id: string;
+  code: string;
+  symbol: string | null;
+}
+
+interface ParameterBrief {
+  id: string;
+  name: string;
+  slug: string;
+  value_type: 'enum' | 'number' | 'string' | 'bool' | 'range';
+  is_filterable: boolean;
+  uom: UOMBrief | null;
+}
+
+interface ParameterValueBrief {
+  id: string;
+  label: string;
+  slug: string;
+}
+
+// Одна характеристика в ответе GET (обогащённая)
+interface ProductCharacteristicDetailResponse {
   id: string;
   product_id: string;
   parameter_id: string;
@@ -262,6 +325,8 @@ interface ProductCharacteristicResponse {
   is_locked: boolean;
   created_at: string;
   updated_at: string;
+  parameter: ParameterBrief;                // всегда есть — имя, тип, UOM
+  parameter_value: ParameterValueBrief | null;  // для enum — выбранное значение
 }
 
 // POST — добавить/обновить одно значение
