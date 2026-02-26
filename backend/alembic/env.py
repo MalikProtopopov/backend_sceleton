@@ -28,11 +28,11 @@ from app.modules.leads.models import InquiryForm, Inquiry  # noqa: F401
 from app.modules.seo.models import SEORoute, Redirect  # noqa: F401
 from app.modules.assets.models import FileAsset  # noqa: F401
 from app.modules.catalog.models import (  # noqa: F401
-    UOM, Category, Product, ProductImage, ProductChar,
+    UOM, Category, Product, ProductImage,
     ProductAlias, ProductAnalog, ProductCategory, ProductPrice,
 )
 from app.modules.parameters.models import (  # noqa: F401
-    Parameter, ParameterValue, ProductCharacteristic,
+    Parameter, ParameterValue, ParameterCategory, ProductCharacteristic,
 )
 
 # Alembic Config object

@@ -36,6 +36,7 @@ class Parameter(Base, UUIDMixin, TimestampMixin, TenantMixin):
     __tablename__ = "parameters"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     value_type: Mapped[str] = mapped_column(
         String(20), nullable=False,
     )
@@ -66,8 +67,15 @@ class Parameter(Base, UUIDMixin, TimestampMixin, TenantMixin):
         cascade="all, delete-orphan",
         order_by="ParameterValue.sort_order",
     )
+    category_links: Mapped[list["ParameterCategory"]] = relationship(
+        "ParameterCategory",
+        back_populates="parameter",
+        lazy="noload",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_parameters_tenant_slug"),
         Index("ix_parameters_tenant", "tenant_id"),
         Index("ix_parameters_active", "tenant_id", "is_active"),
         CheckConstraint(
@@ -81,7 +89,7 @@ class Parameter(Base, UUIDMixin, TimestampMixin, TenantMixin):
     )
 
     def __repr__(self) -> str:
-        return f"<Parameter {self.name} ({self.value_type})>"
+        return f"<Parameter {self.slug} ({self.value_type})>"
 
 
 # ============================================================================
@@ -101,6 +109,7 @@ class ParameterValue(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     label: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -109,11 +118,46 @@ class ParameterValue(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("parameter_id", "label", name="uq_parameter_values_label"),
+        UniqueConstraint("parameter_id", "slug", name="uq_parameter_values_slug"),
         Index("ix_parameter_values_parameter", "parameter_id"),
     )
 
     def __repr__(self) -> str:
-        return f"<ParameterValue {self.label}>"
+        return f"<ParameterValue {self.slug}>"
+
+
+# ============================================================================
+# Parameter-Category (many-to-many)
+# ============================================================================
+
+
+class ParameterCategory(Base, UUIDMixin):
+    """Link between parameter and category for scoping filters."""
+
+    __tablename__ = "parameter_categories"
+
+    parameter_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("parameters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("categories.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    parameter: Mapped["Parameter"] = relationship("Parameter", back_populates="category_links")
+    category = relationship("Category", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("parameter_id", "category_id", name="uq_parameter_categories"),
+        Index("ix_parameter_categories_parameter", "parameter_id"),
+        Index("ix_parameter_categories_category", "category_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ParameterCategory param={self.parameter_id} cat={self.category_id}>"
 
 
 # ============================================================================
@@ -122,7 +166,11 @@ class ParameterValue(Base, UUIDMixin, TimestampMixin):
 
 
 class ProductCharacteristic(Base, UUIDMixin, TimestampMixin):
-    """Typed product attribute value bound to a parameter definition."""
+    """Typed product attribute value bound to a parameter definition.
+
+    Supports multiple values for enum-type parameters (e.g. a product can be
+    both red and blue) via separate rows, enforced by partial unique indexes.
+    """
 
     __tablename__ = "product_characteristics"
 
@@ -163,12 +211,24 @@ class ProductCharacteristic(Base, UUIDMixin, TimestampMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint(
-            "product_id", "parameter_id",
-            name="uq_product_characteristics_product_param",
-        ),
         Index("ix_product_characteristics_product", "product_id"),
         Index("ix_product_characteristics_parameter", "parameter_id"),
+        Index(
+            "ix_product_characteristics_filter",
+            "parameter_id", "parameter_value_id",
+        ),
+        Index(
+            "uq_prod_chars_enum",
+            "product_id", "parameter_id", "parameter_value_id",
+            unique=True,
+            postgresql_where="parameter_value_id IS NOT NULL",
+        ),
+        Index(
+            "uq_prod_chars_scalar",
+            "product_id", "parameter_id",
+            unique=True,
+            postgresql_where="parameter_value_id IS NULL",
+        ),
         CheckConstraint(
             "source_type IN ('manual', 'import', 'system')",
             name="ck_product_characteristics_source",

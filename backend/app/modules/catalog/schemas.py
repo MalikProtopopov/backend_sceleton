@@ -138,15 +138,6 @@ class ProductImageResponse(BaseModel):
     created_at: datetime
 
 
-class ProductCharResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    name: str
-    value_text: str
-    uom_id: UUID | None = None
-
-
 class ProductAliasResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -205,7 +196,6 @@ class ProductResponse(BaseModel):
 class ProductDetailResponse(ProductResponse):
     """Extended response with optionally loaded relations."""
 
-    chars: list[ProductCharResponse] = Field(default_factory=list)
     aliases: list[ProductAliasResponse] = Field(default_factory=list)
     categories: list[ProductCategoryLinkResponse] = Field(default_factory=list)
     prices: list[ProductPriceResponse] = Field(default_factory=list)
@@ -216,36 +206,6 @@ class ProductListResponse(BaseModel):
     total: int
     page: int
     page_size: int
-
-
-# ============================================================================
-# Product Char (EAV) bulk schemas
-# ============================================================================
-
-
-class ProductCharCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    value_text: str = Field(..., min_length=1)
-    uom_id: UUID | None = None
-
-
-class ProductCharUpdate(BaseModel):
-    id: UUID
-    name: str | None = Field(default=None, max_length=255)
-    value_text: str | None = None
-    uom_id: UUID | None = None
-
-
-class ProductCharBulkUpdate(BaseModel):
-    created: list[ProductCharCreate] | None = None
-    updated: list[ProductCharUpdate] | None = None
-    deleted: list[UUID] | None = None
-
-
-class ProductCharBulkResponse(BaseModel):
-    created: int
-    updated: int
-    deleted: int
 
 
 # ============================================================================
@@ -349,9 +309,31 @@ class ProductPricePublicResponse(BaseModel):
     currency: str
 
 
-class ProductCharPublicResponse(BaseModel):
+class UOMPublicResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    code: str
+    symbol: str | None = None
+
+
+class CharacteristicValuePublic(BaseModel):
+    slug: str
+    label: str
+
+
+class ProductCharacteristicPublicResponse(BaseModel):
+    parameter_slug: str
+    parameter_name: str
+    type: str
+    values: list[CharacteristicValuePublic] = Field(default_factory=list)
+    value_text: str | None = None
+    value_number: Decimal | None = None
+    value_bool: bool | None = None
+    uom: UOMPublicResponse | None = None
+
+
+class ProductCharPublicResponse(BaseModel):
+    """Backward-compatible flat characteristic for product card."""
     name: str
     value_text: str
 
@@ -380,6 +362,7 @@ class ProductPublicDetailResponse(BaseModel):
     model: str | None = None
     description: str | None = None
     images: list[ProductImagePublicResponse] = Field(default_factory=list)
+    characteristics: list[ProductCharacteristicPublicResponse] = Field(default_factory=list)
     chars: list[ProductCharPublicResponse] = Field(default_factory=list)
     categories: list[CategoryPublicResponse] = Field(default_factory=list)
     prices: list[ProductPricePublicResponse] = Field(default_factory=list)
@@ -396,3 +379,58 @@ class ProductPublicListResponse(BaseModel):
 class CategoryPublicWithProductsResponse(BaseModel):
     category: CategoryPublicResponse
     products: ProductPublicListResponse
+
+
+# ============================================================================
+# Filter (public, faceted navigation) schemas
+# ============================================================================
+
+
+class FilterValueResponse(BaseModel):
+    slug: str
+    label: str
+    count: int
+
+
+class FilterParameterResponse(BaseModel):
+    slug: str
+    name: str
+    type: str
+    values: list[FilterValueResponse] = Field(default_factory=list)
+    uom: UOMPublicResponse | None = None
+    min: Decimal | None = None
+    max: Decimal | None = None
+
+
+class PriceRangeResponse(BaseModel):
+    min: Decimal | None = None
+    max: Decimal | None = None
+    currency: str = "RUB"
+
+
+class FiltersResponse(BaseModel):
+    filters: list[FilterParameterResponse]
+    price_range: PriceRangeResponse
+    total_products: int
+
+
+# ============================================================================
+# SEO filter pages schemas
+# ============================================================================
+
+
+class SeoFilterItem(BaseModel):
+    parameter_slug: str
+    value_slug: str
+
+
+class SeoFilterPage(BaseModel):
+    category_slug: str | None = None
+    filters: list[SeoFilterItem]
+    product_count: int
+    url_path: str
+
+
+class SeoFilterPagesResponse(BaseModel):
+    pages: list[SeoFilterPage]
+    total: int

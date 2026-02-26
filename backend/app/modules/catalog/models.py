@@ -150,12 +150,6 @@ class Product(
         cascade="all, delete-orphan",
         order_by="ProductImage.sort_order",
     )
-    chars: Mapped[list["ProductChar"]] = relationship(
-        "ProductChar",
-        back_populates="product",
-        lazy="noload",
-        cascade="all, delete-orphan",
-    )
     aliases: Mapped[list["ProductAlias"]] = relationship(
         "ProductAlias",
         back_populates="product",
@@ -230,42 +224,6 @@ class ProductImage(Base, UUIDMixin):
 
     def __repr__(self) -> str:
         return f"<ProductImage {self.id} order={self.sort_order}>"
-
-
-# ============================================================================
-# Product Characteristics (EAV)
-# ============================================================================
-
-
-class ProductChar(Base, UUIDMixin):
-    """Denormalized key-value characteristic for a product."""
-
-    __tablename__ = "product_chars"
-
-    product_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("products.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    value_text: Mapped[str] = mapped_column(Text, nullable=False)
-    uom_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("uoms.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
-    product: Mapped["Product"] = relationship("Product", back_populates="chars")
-    uom: Mapped["UOM | None"] = relationship("UOM", lazy="joined")
-
-    __table_args__ = (
-        Index("ix_product_chars_product", "product_id"),
-        Index("ix_product_chars_name", "name"),
-    )
-
-    def __repr__(self) -> str:
-        return f"<ProductChar {self.name}={self.value_text}>"
 
 
 # ============================================================================

@@ -54,7 +54,6 @@ class TestProductService:
             version=1,
         )
         product.images = []
-        product.chars = []
         product.aliases = []
         product.categories = []
         product.prices = []

@@ -2,7 +2,7 @@
 
 > **Назначение**: Полное руководство для фронтенд-разработчика по реализации каталога товаров на клиентском сайте.  
 > **Авторизация**: Не требуется. Все запросы — публичные.  
-> **Версия бэкенда**: 2026-02-24 (ветка `feat/product-catalog`)  
+> **Версия бэкенда**: 2026-02-26 (ветка `feat/product-catalog`)  
 > **Feature flag**: `catalog_module` — если выключен, все эндпоинты вернут `404`.
 
 ---
@@ -13,13 +13,16 @@
 2. [Резолв тенанта](#2-резолв-тенанта)
 3. [Формат ошибок (RFC 7807)](#3-формат-ошибок)
 4. [API: Категории](#4-api-категории)
-5. [API: Список продуктов](#5-api-список-продуктов)
-6. [API: Карточка продукта](#6-api-карточка-продукта)
-7. [API: Заявка на продукт](#7-api-заявка-на-продукт)
-8. [Rate Limiting](#8-rate-limiting)
-9. [TypeScript-типы (copy-paste ready)](#9-typescript-типы)
-10. [Примеры интеграции (React/Next.js)](#10-примеры-интеграции)
-11. [Типичные сценарии и страницы](#11-типичные-сценарии)
+5. [API: Фильтры каталога (фасетная навигация)](#5-api-фильтры-каталога)
+6. [API: Список продуктов (с фильтрацией и сортировкой)](#6-api-список-продуктов)
+7. [API: Карточка продукта](#7-api-карточка-продукта)
+8. [ЧПУ-спецификация (SEO-friendly URLs)](#8-чпу-спецификация)
+9. [SEO: Генерация страниц фильтров](#9-seo-генерация-страниц)
+10. [API: Заявка на продукт](#10-api-заявка-на-продукт)
+11. [Rate Limiting](#11-rate-limiting)
+12. [TypeScript-типы (copy-paste ready)](#12-typescript-типы)
+13. [Примеры интеграции (React/Next.js)](#13-примеры-интеграции)
+14. [Типичные сценарии и страницы](#14-типичные-сценарии)
 
 ---
 
@@ -428,7 +431,99 @@ GET /api/v1/public/categories/{slug}?tenant_id={uuid}&page=1&page_size=20
 
 ---
 
-## 5. API: Список продуктов
+## 5. API: Фильтры каталога (фасетная навигация)
+
+```
+GET /api/v1/public/filters?tenant_id={uuid}
+```
+
+Возвращает доступные фильтры с динамическими счётчиками. При выборе одного фильтра счётчики в остальных фасетах автоматически пересчитываются (показывают только товары, совместимые с выбором).
+
+**Параметры:**
+| Параметр | Тип | Обяз. | Описание |
+|----------|-----|-------|----------|
+| `tenant_id` | UUID | Да | ID тенанта |
+| `category` | string | Нет | Slug категории или несколько через запятую: `electronics,clothing` |
+| `price_min` | decimal | Нет | Минимальная цена |
+| `price_max` | decimal | Нет | Максимальная цена |
+| `{parameter_slug}` | string | Нет | Фильтр по параметру: `color=red,blue` |
+
+> **Динамические параметры**: Любой query-параметр, не входящий в `tenant_id`, `category`, `price_min`, `price_max`, `page`, `page_size` — считается фильтром по slug параметра. Значения через запятую.
+
+**Ответ 200:**
+```json
+{
+  "filters": [
+    {
+      "slug": "color",
+      "name": "Цвет",
+      "type": "enum",
+      "values": [
+        { "slug": "red", "label": "Красный", "count": 15 },
+        { "slug": "blue", "label": "Синий", "count": 8 },
+        { "slug": "green", "label": "Зелёный", "count": 3 }
+      ],
+      "uom": null,
+      "min": null,
+      "max": null
+    },
+    {
+      "slug": "weight",
+      "name": "Вес",
+      "type": "number",
+      "values": [],
+      "uom": { "code": "kg", "symbol": "кг" },
+      "min": 0.5,
+      "max": 25.0
+    }
+  ],
+  "price_range": { "min": 100.00, "max": 50000.00, "currency": "RUB" },
+  "total_products": 48
+}
+```
+
+### Алгоритм пересчёта фасетных счётчиков
+
+При выбранном фильтре `color=red`:
+- `count` каждого значения в фильтре **"Материал"** — количество товаров с `color=red` И данным материалом
+- `count` каждого значения в фильтре **"Цвет"** — количество товаров с данным цветом (без учёта цветового фильтра, чтобы показать альтернативы)
+- Фильтры без подходящих товаров автоматически скрываются
+
+### UX-паттерны
+
+```typescript
+// 1. При изменении фильтра — параллельные запросы:
+const onFilterChange = async (filters: SelectedFilters) => {
+  const [filtersData, productsData] = await Promise.all([
+    api.get<FiltersResponse>('/public/filters', buildFilterParams(filters)),
+    api.get<ProductListResponse>('/public/products', { ...buildFilterParams(filters), page: '1' }),
+  ]);
+  // Обновить и список фильтров, и товары
+};
+
+// 2. Построение query-параметров из selected filters:
+const buildFilterParams = (filters: SelectedFilters): Record<string, string> => {
+  const params: Record<string, string> = {};
+  if (filters.categories.length) params.category = filters.categories.join(',');
+  if (filters.priceMin) params.price_min = filters.priceMin.toString();
+  if (filters.priceMax) params.price_max = filters.priceMax.toString();
+  for (const [slug, values] of Object.entries(filters.params)) {
+    if (values.length) params[slug] = values.join(',');
+  }
+  return params;
+};
+```
+
+**Коды ответа:**
+| Код | Описание |
+|-----|----------|
+| 200 | Фильтры с фасетными счётчиками |
+| 400 | `tenant_id` не передан |
+| 404 | Тенант не найден или каталог выключен |
+
+---
+
+## 6. API: Список продуктов (с фильтрацией и сортировкой)
 
 ```
 GET /api/v1/public/products?tenant_id={uuid}
@@ -440,9 +535,15 @@ GET /api/v1/public/products?tenant_id={uuid}
 | `tenant_id` | UUID | Да | ID тенанта |
 | `page` | int | Нет | Страница (default 1) |
 | `page_size` | int | Нет | Элементов на странице (default 20, max 100) |
-| `search` | string | Нет | Поиск по title, sku, description (max 200 символов) |
-| `brand` | string | Нет | Точный фильтр по бренду (max 255) |
-| `category` | UUID | Нет | Фильтр по ID категории |
+| `search` | string | Нет | Поиск по title, sku, brand (max 200 символов) |
+| `brand` | string | Нет | Фильтр по бренду (подстрока, max 255) |
+| `category` | string | Нет | Slug категории (или несколько через запятую: `electronics,clothing`) |
+| `price_min` | decimal | Нет | Минимальная цена |
+| `price_max` | decimal | Нет | Максимальная цена |
+| `sort` | string | Нет | Сортировка: `price_asc`, `price_desc`, `newest`, `title_asc`, `title_desc` (default `newest`) |
+| `{parameter_slug}` | string | Нет | Фильтр по параметру: `color=red,blue` |
+
+> **Фильтрация по характеристикам**: Используй slug параметра как ключ query-параметра, slug значений через запятую. Пример: `?color=red,blue&material=metal` — товары, которые красные ИЛИ синие, И при этом из металла.
 
 **Ответ 200:**
 ```json
@@ -455,18 +556,8 @@ GET /api/v1/public/products?tenant_id={uuid}
       "title": "Widget Pro 2000",
       "brand": "WidgetCorp",
       "model": "Pro-2000",
-      "description": "Профессиональный виджет для промышленного применения",
+      "description": "Профессиональный виджет",
       "cover_url": "https://cdn.example.com/products/wp2000/cover.jpg"
-    },
-    {
-      "id": "e5f6g7h8-...",
-      "slug": "basic-widget-100",
-      "sku": "BW-100",
-      "title": "Basic Widget 100",
-      "brand": "WidgetCorp",
-      "model": "Basic-100",
-      "description": "Базовая модель виджета",
-      "cover_url": null
     }
   ],
   "total": 48,
@@ -477,17 +568,27 @@ GET /api/v1/public/products?tenant_id={uuid}
 
 > **Важно**: В списке НЕ отдаются изображения, характеристики, цены. Только `cover_url` — URL обложки (первое изображение с `is_cover=true`, или первое изображение по порядку, или `null`).
 
+### Логика фильтрации
+
+- Фильтры по **разным параметрам** — AND (пересечение): `color=red&material=metal` → товары красные И металлические
+- Фильтры **внутри одного параметра** — OR (объединение): `color=red,blue` → товары красные ИЛИ синие
+- Фильтры по **нескольким категориям** — OR: `category=electronics,clothing` → товары в любой из категорий
+
+### Сортировка по цене
+
+Сортировка `price_asc` / `price_desc` использует текущую `regular` цену (действующую по дате). Товары без цены отображаются в конце.
+
 **Коды ответа:**
 | Код | Описание |
 |-----|----------|
 | 200 | Пагинированный список продуктов |
-| 400 | `tenant_id` не передан, или невалидные параметры пагинации |
+| 400 | `tenant_id` не передан, или невалидные параметры |
 | 404 | Тенант не найден или каталог выключен |
-| 422 | `page_size` > 100 или `search` > 200 символов |
+| 422 | `page_size` > 100, `search` > 200, или невалидный `sort` |
 
 ---
 
-## 6. API: Карточка продукта
+## 7. API: Карточка продукта
 
 ```
 GET /api/v1/public/products/{slug}?tenant_id={uuid}&locale=ru
@@ -532,9 +633,44 @@ GET /api/v1/public/products/{slug}?tenant_id={uuid}&locale=ru
     }
   ],
 
+  "characteristics": [
+    {
+      "parameter_slug": "voltage",
+      "parameter_name": "Напряжение",
+      "type": "number",
+      "values": [],
+      "value_text": "220",
+      "value_number": 220,
+      "value_bool": null,
+      "uom": { "code": "V", "symbol": "В" }
+    },
+    {
+      "parameter_slug": "color",
+      "parameter_name": "Цвет",
+      "type": "enum",
+      "values": [
+        { "slug": "red", "label": "Красный" }
+      ],
+      "value_text": null,
+      "value_number": null,
+      "value_bool": null,
+      "uom": null
+    },
+    {
+      "parameter_slug": "weight",
+      "parameter_name": "Вес",
+      "type": "number",
+      "values": [],
+      "value_text": null,
+      "value_number": 2.5,
+      "value_bool": null,
+      "uom": { "code": "kg", "symbol": "кг" }
+    }
+  ],
+
   "chars": [
     { "name": "Напряжение", "value_text": "220 В" },
-    { "name": "Мощность", "value_text": "1500 Вт" },
+    { "name": "Цвет", "value_text": "Красный" },
     { "name": "Вес", "value_text": "2.5 кг" }
   ],
 
@@ -640,7 +776,8 @@ GET /api/v1/public/products/{slug}?tenant_id={uuid}&locale=ru
 | `model` | string \| null | ❌ | Модель |
 | `description` | string \| null | ❌ | Краткое описание (plain text / HTML) |
 | `images` | array | ✅ | Изображения (может быть `[]`) |
-| `chars` | array | ✅ | Характеристики (может быть `[]`) |
+| `characteristics` | array | ✅ | Нормализованные характеристики (slug, type, values/number/text) |
+| `chars` | array | ✅ | Упрощённые характеристики `{name, value_text}` — backward compat |
 | `categories` | array | ✅ | Привязанные категории (может быть `[]`) |
 | `prices` | array | ✅ | Цены (может быть `[]`) |
 | `content_blocks` | array | ✅ | Контент-блоки (может быть `[]`) |
@@ -700,7 +837,168 @@ const formatPrice = (amount: string, currency: string) => {
 
 ---
 
-## 7. API: Заявка на продукт
+## 8. ЧПУ-спецификация (SEO-friendly URLs)
+
+### Формат URL фильтрованных страниц
+
+```
+/catalog/{category-slug}/{parameter-slug}--{value-slug}/{parameter-slug}--{value-slug}
+```
+
+**Примеры:**
+```
+/catalog/electronics                       → все товары категории "electronics"
+/catalog/electronics/color--red            → электроника красного цвета
+/catalog/electronics/color--red/brand--apple  → красная электроника Apple
+/catalog/color--red                        → все товары красного цвета (без категории)
+```
+
+### Маппинг URL → Query параметры
+
+```typescript
+// URL: /catalog/electronics/color--red/material--metal
+// → API: GET /public/products?category=electronics&color=red&material=metal
+
+const parseFilterUrl = (segments: string[]): Record<string, string> => {
+  const params: Record<string, string> = {};
+  const filterSegments: string[] = [];
+  let categorySlug: string | null = null;
+
+  for (const seg of segments) {
+    if (seg.includes('--')) {
+      filterSegments.push(seg);
+    } else if (!categorySlug) {
+      categorySlug = seg;
+    }
+  }
+
+  if (categorySlug) params.category = categorySlug;
+
+  for (const filterSeg of filterSegments) {
+    const [paramSlug, valueSlug] = filterSeg.split('--', 2);
+    if (paramSlug && valueSlug) {
+      if (params[paramSlug]) {
+        params[paramSlug] += `,${valueSlug}`;
+      } else {
+        params[paramSlug] = valueSlug;
+      }
+    }
+  }
+
+  return params;
+};
+
+// Обратное преобразование: query → ЧПУ-путь
+const buildFilterUrl = (category?: string, filters?: Record<string, string[]>): string => {
+  const parts = ['/catalog'];
+  if (category) parts.push(category);
+
+  if (filters) {
+    const sortedKeys = Object.keys(filters).sort();
+    for (const key of sortedKeys) {
+      for (const val of filters[key].sort()) {
+        parts.push(`${key}--${val}`);
+      }
+    }
+  }
+
+  return parts.join('/');
+};
+```
+
+### Next.js App Router интеграция
+
+```typescript
+// app/catalog/[...segments]/page.tsx
+export default async function CatalogPage({
+  params,
+}: {
+  params: { segments: string[] };
+}) {
+  const filterParams = parseFilterUrl(params.segments);
+  const [filters, products] = await Promise.all([
+    fetchFilters(filterParams),
+    fetchProducts(filterParams),
+  ]);
+
+  return <CatalogView filters={filters} products={products} />;
+}
+```
+
+---
+
+## 9. SEO: Генерация страниц фильтров
+
+```
+GET /api/v1/public/seo/filter-pages?tenant_id={uuid}
+```
+
+Генерирует список комбинаций фильтров для sitemap. Включает одиночные и парные комбинации параметров.
+
+**Параметры:**
+| Параметр | Тип | Обяз. | Описание |
+|----------|-----|-------|----------|
+| `tenant_id` | UUID | Да | ID тенанта |
+| `category` | string | Нет | Slug категории (ограничить генерацию одной категорией) |
+| `min_products` | int | Нет | Минимум товаров для включения страницы (default 1) |
+| `page` | int | Нет | Страница (default 1) |
+| `page_size` | int | Нет | Элементов на странице (default 100, max 100) |
+
+**Ответ 200:**
+```json
+{
+  "pages": [
+    {
+      "category_slug": "electronics",
+      "filters": [
+        { "parameter_slug": "color", "value_slug": "red" }
+      ],
+      "product_count": 15,
+      "url_path": "/catalog/electronics/color--red"
+    },
+    {
+      "category_slug": "electronics",
+      "filters": [
+        { "parameter_slug": "color", "value_slug": "red" },
+        { "parameter_slug": "brand", "value_slug": "apple" }
+      ],
+      "product_count": 8,
+      "url_path": "/catalog/electronics/color--red/brand--apple"
+    }
+  ],
+  "total": 156
+}
+```
+
+### Использование для sitemap
+
+```typescript
+// scripts/generate-sitemap.ts
+const generateFilterSitemap = async (tenantId: string): Promise<string[]> => {
+  const urls: string[] = [];
+  let page = 1;
+
+  while (true) {
+    const res = await fetch(
+      `${API_URL}/public/seo/filter-pages?tenant_id=${tenantId}&page=${page}&page_size=100&min_products=3`
+    );
+    const data = await res.json();
+
+    for (const p of data.pages) {
+      urls.push(`https://example.com${p.url_path}`);
+    }
+
+    if (urls.length >= data.total) break;
+    page++;
+  }
+
+  return urls;
+};
+```
+
+---
+
+## 10. API: Заявка на продукт
 
 ```
 POST /api/v1/public/inquiries?tenant_id={uuid}
@@ -852,7 +1150,7 @@ const submitInquiryMultipart = async (data: InquiryForm, files?: File[]) => {
 
 ---
 
-## 8. Rate Limiting
+## 11. Rate Limiting
 
 Публичные API имеют rate limiting по IP:
 
@@ -891,7 +1189,7 @@ const submitWithRetry = async (data: InquiryForm) => {
 
 ---
 
-## 9. TypeScript-типы
+## 12. TypeScript-типы
 
 ```typescript
 // =============================================
@@ -955,6 +1253,86 @@ interface ProductChar {
   value_text: string;
 }
 
+interface UOMPublic {
+  code: string;
+  symbol: string | null;
+}
+
+interface CharacteristicValue {
+  slug: string;
+  label: string;
+}
+
+interface ProductCharacteristic {
+  parameter_slug: string;
+  parameter_name: string;
+  type: 'enum' | 'number' | 'string' | 'bool' | 'range';
+  values: CharacteristicValue[];
+  value_text: string | null;
+  value_number: number | null;
+  value_bool: boolean | null;
+  uom: UOMPublic | null;
+}
+
+// ---------- Фильтры (фасетная навигация) ----------
+
+interface FilterValue {
+  slug: string;
+  label: string;
+  count: number;
+}
+
+interface FilterParameter {
+  slug: string;
+  name: string;
+  type: 'enum' | 'number' | 'range';
+  values: FilterValue[];
+  uom: UOMPublic | null;
+  min: number | null;
+  max: number | null;
+}
+
+interface PriceRange {
+  min: number | null;
+  max: number | null;
+  currency: string;
+}
+
+interface FiltersResponse {
+  filters: FilterParameter[];
+  price_range: PriceRange;
+  total_products: number;
+}
+
+// ---------- SEO ----------
+
+interface SeoFilterItem {
+  parameter_slug: string;
+  value_slug: string;
+}
+
+interface SeoFilterPage {
+  category_slug: string | null;
+  filters: SeoFilterItem[];
+  product_count: number;
+  url_path: string;
+}
+
+interface SeoFilterPagesResponse {
+  pages: SeoFilterPage[];
+  total: number;
+}
+
+// ---------- Выбранные фильтры (client state) ----------
+
+interface SelectedFilters {
+  categories: string[];
+  priceMin?: number;
+  priceMax?: number;
+  params: Record<string, string[]>;
+  sort: 'price_asc' | 'price_desc' | 'newest' | 'title_asc' | 'title_desc';
+}
+
 interface ProductPrice {
   price_type: 'regular' | 'sale' | 'wholesale' | 'cost';
   amount: string;    // decimal в строке: "15000.00"
@@ -985,7 +1363,8 @@ interface ProductDetail {
   model: string | null;
   description: string | null;
   images: ProductImage[];
-  chars: ProductChar[];
+  characteristics: ProductCharacteristic[];
+  chars: ProductChar[];  // backward compat (flat name+value_text)
   categories: CategoryPublic[];
   prices: ProductPrice[];
   content_blocks: ContentBlock[];
@@ -1094,7 +1473,7 @@ interface ValidationErrorBody {
 
 ---
 
-## 10. Примеры интеграции
+## 13. Примеры интеграции
 
 ### React hook для каталога
 
@@ -1108,14 +1487,8 @@ const useCatalog = (tenantId: string) => {
     return api.get<CategoryTreeResponse>('/public/categories');
   }, [tenantId]);
 
-  const getProducts = useCallback(async (params?: {
-    page?: number;
-    page_size?: number;
-    search?: string;
-    brand?: string;
-    category?: string;
-  }) => {
-    return api.get<ProductListResponse>('/public/products', params as any);
+  const getProducts = useCallback(async (params?: Record<string, string>) => {
+    return api.get<ProductListResponse>('/public/products', params);
   }, [tenantId]);
 
   const getProduct = useCallback(async (slug: string, locale?: string) => {
@@ -1124,21 +1497,91 @@ const useCatalog = (tenantId: string) => {
     return api.get<ProductDetail>(`/public/products/${slug}`, params);
   }, [tenantId]);
 
-  const getCategoryWithProducts = useCallback(async (
-    slug: string,
-    params?: { page?: number; page_size?: number }
-  ) => {
-    return api.get<CategoryWithProductsResponse>(
-      `/public/categories/${slug}`,
-      params as any,
-    );
+  const getFilters = useCallback(async (params?: Record<string, string>) => {
+    return api.get<FiltersResponse>('/public/filters', params);
   }, [tenantId]);
 
   const submitInquiry = useCallback(async (data: InquiryCreateRequest) => {
     return api.post<InquiryResponse>('/public/inquiries', data);
   }, [tenantId]);
 
-  return { getCategories, getProducts, getProduct, getCategoryWithProducts, submitInquiry };
+  return { getCategories, getProducts, getProduct, getFilters, submitInquiry };
+};
+```
+
+### React hook для фасетных фильтров
+
+```typescript
+const useCatalogFilters = (tenantId: string, initialCategory?: string) => {
+  const api = new ApiClient(tenantId);
+  const [selected, setSelected] = useState<SelectedFilters>({
+    categories: initialCategory ? [initialCategory] : [],
+    params: {},
+    sort: 'newest',
+  });
+  const [filters, setFilters] = useState<FiltersResponse | null>(null);
+  const [products, setProducts] = useState<ProductListResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+
+  const buildParams = useCallback((): Record<string, string> => {
+    const p: Record<string, string> = {};
+    if (selected.categories.length) p.category = selected.categories.join(',');
+    if (selected.priceMin) p.price_min = selected.priceMin.toString();
+    if (selected.priceMax) p.price_max = selected.priceMax.toString();
+    if (selected.sort !== 'newest') p.sort = selected.sort;
+    p.page = page.toString();
+    for (const [slug, vals] of Object.entries(selected.params)) {
+      if (vals.length) p[slug] = vals.join(',');
+    }
+    return p;
+  }, [selected, page]);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const params = buildParams();
+      const [f, p] = await Promise.all([
+        api.get<FiltersResponse>('/public/filters', params),
+        api.get<ProductListResponse>('/public/products', params),
+      ]);
+      setFilters(f);
+      setProducts(p);
+      setLoading(false);
+    };
+    load();
+  }, [buildParams]);
+
+  const toggleParam = (paramSlug: string, valueSlug: string) => {
+    setPage(1);
+    setSelected(prev => {
+      const current = prev.params[paramSlug] ?? [];
+      const next = current.includes(valueSlug)
+        ? current.filter(v => v !== valueSlug)
+        : [...current, valueSlug];
+      return { ...prev, params: { ...prev.params, [paramSlug]: next } };
+    });
+  };
+
+  const setSort = (sort: SelectedFilters['sort']) => {
+    setPage(1);
+    setSelected(prev => ({ ...prev, sort }));
+  };
+
+  const setPriceRange = (min?: number, max?: number) => {
+    setPage(1);
+    setSelected(prev => ({ ...prev, priceMin: min, priceMax: max }));
+  };
+
+  const clearAll = () => {
+    setPage(1);
+    setSelected(prev => ({ ...prev, params: {}, priceMin: undefined, priceMax: undefined }));
+  };
+
+  return {
+    filters, products, loading, selected, page,
+    toggleParam, setSort, setPriceRange, setPage, clearAll,
+  };
 };
 ```
 
@@ -1243,39 +1686,49 @@ const ProductInquiryForm = ({ product }: { product: ProductDetail }) => {
 
 ---
 
-## 11. Типичные сценарии
+## 14. Типичные сценарии
 
 ### Страница каталога — полный flow
 
 ```
 1. При загрузке:
    GET /public/categories        → дерево категорий для сайдбара/меню
+   GET /public/filters           → список фильтров с счётчиками
    GET /public/products          → первая страница товаров
 
-2. Пользователь выбрал категорию "Электрооборудование":
-   GET /public/categories/electrical  → категория + товары в ней (с пагинацией)
-   ИЛИ
-   GET /public/products?category={category_id}  → товары по ID категории
+2. Пользователь выбрал категорию "electronics":
+   GET /public/filters?category=electronics    → фильтры для этой категории
+   GET /public/products?category=electronics   → товары с пагинацией
+   URL: /catalog/electronics
 
-3. Пользователь ищет "кабель":
+3. Пользователь выбрал фильтр "цвет: красный":
+   GET /public/filters?category=electronics&color=red    → пересчёт счётчиков
+   GET /public/products?category=electronics&color=red   → отфильтрованные товары
+   URL: /catalog/electronics/color--red
+
+4. Пользователь добавил фильтр "материал: металл":
+   GET /public/filters?category=electronics&color=red&material=metal
+   GET /public/products?category=electronics&color=red&material=metal&sort=price_asc
+   URL: /catalog/electronics/color--red/material--metal
+
+5. Пользователь ищет "кабель":
    GET /public/products?search=кабель
 
-4. Пользователь фильтрует по бренду:
-   GET /public/products?brand=WidgetCorp
-
-5. Пользователь открыл карточку товара:
+6. Пользователь открыл карточку товара:
    GET /public/products/widget-pro-2000?locale=ru
 
-6. Пользователь отправил заявку:
+7. Пользователь отправил заявку:
    POST /public/inquiries  { product_id: "...", ... }
 ```
 
 ### Структура страниц
 
 ```
-/catalog                          → GET /public/categories + GET /public/products
-/catalog/{category-slug}          → GET /public/categories/{slug}
-/catalog/products/{product-slug}  → GET /public/products/{slug}?locale=ru
+/catalog                                     → GET /public/filters + GET /public/products
+/catalog/{category-slug}                     → Товары в категории
+/catalog/{category-slug}/{param}--{value}    → Фильтрованная страница (ЧПУ)
+/catalog/{param}--{value}                    → Фильтр без категории
+/catalog/products/{product-slug}             → GET /public/products/{slug}?locale=ru
 ```
 
 ### SEO-рекомендации
@@ -1284,7 +1737,9 @@ const ProductInquiryForm = ({ product }: { product: ProductDetail }) => {
 - Поля `title`, `description`, `brand` — для meta-тегов
 - `images[0]` с `is_cover=true` — для `og:image`
 - Контент-блоки типа `text` — индексируемый контент для поисковиков
-- `chars` — можно использовать для structured data (JSON-LD Product schema)
+- `characteristics` — для structured data (JSON-LD Product schema)
+- `GET /public/seo/filter-pages` — для генерации sitemap фильтрованных страниц
+- Формат ЧПУ `/{category}/{param}--{value}` — SEO-friendly URL для фасетных страниц
 
 ```typescript
 // JSON-LD пример для карточки товара
@@ -1296,6 +1751,14 @@ const productJsonLd = {
   sku: product.sku,
   brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
   image: product.images.map(img => img.url),
+  additionalProperty: product.characteristics.map(c => ({
+    '@type': 'PropertyValue',
+    name: c.parameter_name,
+    value: c.type === 'enum'
+      ? c.values.map(v => v.label).join(', ')
+      : c.value_number ?? c.value_text ?? String(c.value_bool),
+    unitCode: c.uom?.code,
+  })),
   offers: product.prices
     .filter(p => p.price_type !== 'cost')
     .map(p => ({

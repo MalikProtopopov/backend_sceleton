@@ -1,8 +1,9 @@
 # Административная панель — Каталог продуктов
 
 > **Назначение**: Руководство для фронтенд-разработчика по реализации раздела «Каталог» в административной панели.  
-> **Версия бэкенда**: актуальна на 2026-02-24 (ветка `feat/product-catalog`)  
-> **Полная API-документация**: [`docs/api/endpoints/19-catalog.md`](../api/endpoints/19-catalog.md)
+> **Версия бэкенда**: 2026-02-26 (ветка `feat/product-catalog`)  
+> **Полная API-документация**: [`docs/api/endpoints/19-catalog.md`](../api/endpoints/19-catalog.md)  
+> **Публичный фронт**: [`CLIENT_CATALOG_FRONTEND.md`](./CLIENT_CATALOG_FRONTEND.md)
 
 ---
 
@@ -14,17 +15,18 @@
 4. [Навигация и структура раздела](#4-навигация-и-структура)
 5. [Раздел: Единицы измерения (UOM)](#5-uom)
 6. [Раздел: Категории](#6-категории)
-7. [Раздел: Список продуктов](#7-список-продуктов)
-8. [Страница продукта: основные данные](#8-страница-продукта--основные-данные)
-9. [Вкладка: Характеристики (EAV)](#9-вкладка-характеристики)
-10. [Вкладка: Изображения](#10-вкладка-изображения)
-11. [Вкладка: Цены](#11-вкладка-цены)
-12. [Вкладка: Контент-блоки (НОВОЕ)](#12-вкладка-контент-блоки)
-13. [Вкладка: Привязка к категориям](#13-вкладка-привязка-к-категориям)
-14. [Вкладка: Алиасы и Аналоги](#14-вкладка-алиасы-и-аналоги)
-15. [Заявки на продукт (Leads)](#15-заявки-на-продукт)
-16. [TypeScript-типы](#16-typescript-типы)
-17. [Типовые ошибки и их обработка](#17-обработка-ошибок)
+7. [Раздел: Параметры (словарь характеристик)](#7-параметры)
+8. [Раздел: Список продуктов](#8-список-продуктов)
+9. [Страница продукта: основные данные](#9-страница-продукта--основные-данные)
+10. [Вкладка: Характеристики (нормализованные)](#10-вкладка-характеристики)
+11. [Вкладка: Изображения](#11-вкладка-изображения)
+12. [Вкладка: Цены](#12-вкладка-цены)
+13. [Вкладка: Контент-блоки](#13-вкладка-контент-блоки)
+14. [Вкладка: Привязка к категориям](#14-вкладка-привязка-к-категориям)
+15. [Вкладка: Алиасы и Аналоги](#15-вкладка-алиасы-и-аналоги)
+16. [Заявки на продукт (Leads)](#16-заявки-на-продукт)
+17. [TypeScript-типы](#17-typescript-типы)
+18. [Типовые ошибки и их обработка](#18-обработка-ошибок)
 
 ---
 
@@ -98,15 +100,24 @@ const can = (permission: CatalogPermission) =>
 
 ```
 /admin/catalog/
-  /admin/catalog/uom              → Единицы измерения
-  /admin/catalog/categories       → Дерево категорий
-  /admin/catalog/products         → Список продуктов
-  /admin/catalog/products/new     → Создание продукта
-  /admin/catalog/products/:id     → Карточка продукта
+  /admin/catalog/uom                → Единицы измерения
+  /admin/catalog/categories         → Дерево категорий
+  /admin/catalog/parameters         → Словарь параметров (характеристик)
+  /admin/catalog/parameters/new     → Создание параметра
+  /admin/catalog/parameters/:id     → Карточка параметра (значения, категории)
+  /admin/catalog/products           → Список продуктов
+  /admin/catalog/products/new       → Создание продукта
+  /admin/catalog/products/:id       → Карточка продукта
     → вкладки: Основное | Характеристики | Изображения | Цены | Контент | Категории | Алиасы
 ```
 
 Боковая навигация показывает «Каталог» только если `catalog_module` включён.
+
+**Порядок в сайдбаре:**
+1. Единицы измерения (справочник — нужен для параметров)
+2. Категории (справочник — нужен для параметров и продуктов)
+3. Параметры (словарь — нужен для характеристик продуктов)
+4. Продукты (основной раздел)
 
 ---
 
@@ -212,7 +223,217 @@ const data = {
 
 ---
 
-## 7. Список продуктов
+## 7. Параметры (словарь характеристик)
+
+**Страница:** `/admin/catalog/parameters`
+
+> **Что это:** Центральный словарь всех характеристик товаров (цвет, вес, напряжение и т.д.). Параметры создаются один раз и переиспользуются для любого количества продуктов. Параметры с `is_filterable = true` отображаются в публичных фильтрах каталога.
+
+### 7.1 Список параметров
+
+```typescript
+// GET /api/v1/admin/parameters?page=1&page_size=20
+// Дополнительные фильтры:
+//   search    — поиск по имени (max 200)
+//   valueType — фильтр по типу: "string" | "number" | "enum" | "bool" | "range"
+//   scope     — фильтр по scope: "global" | "category"
+
+const fetchParameters = async (params: ParameterListParams) => {
+  const qs = buildQueryString(params);
+  const res = await fetch(`/api/v1/admin/parameters?${qs}`, { headers });
+  return res.json(); // { items: Parameter[], total, page, page_size }
+};
+```
+
+**Колонки таблицы:**
+| Колонка | Поле | Примечание |
+|---------|------|------------|
+| Название | `name` | ссылка на карточку |
+| Slug | `slug` | авто-генерируемый URL-slug |
+| Тип | `value_type` | тег: `enum`, `number`, `string`, `bool`, `range` |
+| Фильтруемый | `is_filterable` | toggle-переключатель |
+| Scope | `scope` | `global` / `category` |
+| Кол-во значений | `values.length` | только для `enum`-типа |
+| Категории | `category_ids.length` | привязанные категории |
+| Статус | `is_active` | зелёный/серый тег |
+| Действия | — | Edit / Deactivate |
+
+### 7.2 Создание параметра
+
+```typescript
+// POST /api/v1/admin/parameters
+interface ParameterCreate {
+  name: string;              // обязательно, 1–255
+  slug?: string;             // опционально, авто-генерируется из name если не указан
+  value_type: 'string' | 'number' | 'enum' | 'bool' | 'range';  // обязательно
+  uom_id?: string;           // UUID единицы измерения (для number/range)
+  scope?: 'global' | 'category';  // default "global"
+  description?: string;
+  constraints?: object;      // JSON — ограничения: { min: 0, max: 100 } и т.д.
+  is_filterable?: boolean;   // default false — показывать ли в публичных фильтрах
+  is_required?: boolean;     // default false
+  sort_order?: number;       // default 0
+  category_ids?: string[];   // UUID категорий для привязки
+  values?: ParameterValueCreate[];  // начальные значения (только для enum)
+}
+
+interface ParameterValueCreate {
+  label: string;   // обязательно, 1–255
+  slug?: string;   // авто-генерируется из label
+  code?: string;   // необязательный внешний код (max 100)
+  sort_order?: number;
+}
+
+// Пример: создать параметр "Цвет" типа enum
+const newParam = await createParameter({
+  name: 'Цвет',
+  value_type: 'enum',
+  is_filterable: true,
+  category_ids: [electronicsId, clothingId],
+  values: [
+    { label: 'Красный' },
+    { label: 'Синий' },
+    { label: 'Зелёный' },
+  ],
+});
+// slug будет автоматически "tsvet" (транслит), values получат slug "krasnyj", "sinij" и т.д.
+
+// Пример: создать параметр "Вес" типа number
+const weightParam = await createParameter({
+  name: 'Вес',
+  value_type: 'number',
+  uom_id: kgUomId,
+  is_filterable: true,
+});
+// Response 201: Parameter (полный объект с id, slug, values, category_ids)
+```
+
+### 7.3 Карточка параметра
+
+**URL:** `/admin/catalog/parameters/:id`
+
+```typescript
+// GET /api/v1/admin/parameters/{parameter_id}
+const param = await fetchJson(`/api/v1/admin/parameters/${id}`);
+// Response: Parameter (включая values[] и category_ids[])
+```
+
+**Структура карточки — три секции:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ОСНОВНЫЕ ДАННЫЕ                                          │
+│  Название:    [Цвет                ]                      │
+│  Slug:        [tsvet               ] (авто / ручное)      │
+│  Тип:         enum ▼  (неизменяемый после создания)       │
+│  Scope:       global ▼                                    │
+│  Ед. изм.:    [— не выбрано —] ▼                         │
+│  Описание:    [                    ]                      │
+│  ☑ Фильтруемый   ☐ Обязательный   Порядок: [0]          │
+│                                             [Сохранить]   │
+├──────────────────────────────────────────────────────────┤
+│  ЗНАЧЕНИЯ (только для enum)               [+ Добавить]   │
+│  ─────────────────────────────────────────────────────   │
+│  Метка          Slug          Код     Порядок  Статус     │
+│  Красный        krasnyj       RED     0        ✅  [✎][✕] │
+│  Синий          sinij         BLUE    1        ✅  [✎][✕] │
+│  Зелёный        zelenyj       GRN     2        ✅  [✎][✕] │
+├──────────────────────────────────────────────────────────┤
+│  ПРИВЯЗКА К КАТЕГОРИЯМ                                    │
+│  Если scope = "category", параметр показывается           │
+│  в фильтрах только для привязанных категорий.             │
+│  ☑ Электрооборудование                                   │
+│  ☑ Одежда                                                │
+│  ☐ Инструменты                                           │
+│                                        [Сохранить связи]  │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 7.4 Обновление параметра
+
+```typescript
+// PATCH /api/v1/admin/parameters/{parameter_id}
+interface ParameterUpdate {
+  name?: string;
+  slug?: string;
+  description?: string;
+  uom_id?: string | null;
+  scope?: 'global' | 'category';
+  constraints?: object;
+  is_filterable?: boolean;
+  is_required?: boolean;
+  sort_order?: number;
+  is_active?: boolean;
+}
+// Response: Parameter
+```
+
+> **Важно:** Поле `value_type` нельзя менять после создания (логическое ограничение — не меняй тип на фронте, если параметр уже используется продуктами).
+
+### 7.5 Управление значениями (для enum)
+
+```typescript
+// Добавить значение
+// POST /api/v1/admin/parameters/{parameter_id}/values
+const newValue = await fetch(`/api/v1/admin/parameters/${paramId}/values`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({ label: 'Жёлтый', code: 'YLW' }),
+});
+// Response 201: ParameterValue (id, slug автогенерирован)
+
+// Обновить значение
+// PATCH /api/v1/admin/parameters/{parameter_id}/values/{value_id}
+await fetch(`/api/v1/admin/parameters/${paramId}/values/${valueId}`, {
+  method: 'PATCH',
+  headers,
+  body: JSON.stringify({ label: 'Тёмно-красный', slug: 'dark-red' }),
+});
+
+// Удалить значение
+// DELETE /api/v1/admin/parameters/{parameter_id}/values/{value_id}
+// Response: 204
+// ВНИМАНИЕ: Удаление значения удалит все связанные характеристики продуктов!
+```
+
+### 7.6 Привязка параметра к категориям
+
+```typescript
+// PUT /api/v1/admin/parameters/{parameter_id}/categories
+// Полная замена списка категорий (replace all)
+await fetch(`/api/v1/admin/parameters/${paramId}/categories`, {
+  method: 'PUT',
+  headers,
+  body: JSON.stringify({
+    category_ids: [cat1Id, cat2Id, cat3Id],
+  }),
+});
+// Response: { count: 3 }
+```
+
+> Привязка к категориям определяет, для каких категорий параметр отображается в фильтрах на публичном сайте. Если `scope = "global"` — параметр всегда виден. Если `scope = "category"` — только для привязанных категорий.
+
+### 7.7 Деактивация параметра
+
+```typescript
+// DELETE /api/v1/admin/parameters/{parameter_id}
+// Soft archive: is_active = false, параметр скрывается из фильтров
+// Response: 204
+```
+
+### 7.8 Типы параметров — что выбрать
+
+| value_type | Описание | Пример | Виджет на фронте | Виджет в фильтре |
+|------------|----------|--------|------------------|-------------------|
+| `enum` | Предопределённый список значений | Цвет, Материал, Бренд | Select / Multi-select | Чекбоксы |
+| `number` | Числовое значение | Вес, Мощность, Длина | Input number | Range slider |
+| `string` | Произвольный текст | Артикул поставщика, Описание | Input text | — (обычно не фильтруется) |
+| `bool` | Да / Нет | Есть WiFi, Влагозащита | Toggle / Checkbox | Checkbox |
+| `range` | Диапазон min–max | Рабочая температура | 2× Input number | Range slider |
+
+---
+
+## 8. Список продуктов
 
 **Страница:** `/admin/catalog/products`
 
@@ -223,18 +444,14 @@ const data = {
 interface ProductListParams {
   page?: number;
   pageSize?: number;
-  search?: string;       // поиск по title, sku, description
-  brand?: string;
-  category_id?: string;  // UUID
+  search?: string;       // поиск по title, sku, brand, model (max 200)
+  brand?: string;        // фильтр по бренду (max 255)
+  category_id?: string;  // UUID категории
   isActive?: boolean;
 }
 
 const fetchProducts = async (params: ProductListParams) => {
-  const qs = new URLSearchParams(
-    Object.entries(params)
-      .filter(([, v]) => v !== undefined && v !== '')
-      .map(([k, v]) => [k, String(v)])
-  ).toString();
+  const qs = buildQueryString(params);
   const res = await fetch(`/api/v1/admin/products?${qs}`, { headers });
   return res.json(); // { items: Product[], total, page, page_size }
 };
@@ -256,14 +473,15 @@ const fetchProducts = async (params: ProductListParams) => {
 ```typescript
 // POST /api/v1/admin/products
 interface ProductCreate {
-  sku: string;           // уникальный в тенанте, 1–100
-  slug: string;          // URL-friendly, уникальный в тенанте, 1–255
-  title: string;         // 1–255
-  brand?: string;        // max 255
-  model?: string;        // max 255
-  description?: string;  // HTML или plain text
-  uom_id?: string;       // UUID из справочника UOM
-  is_active?: boolean;   // default true
+  sku: string;             // уникальный в тенанте, 1–100
+  slug: string;            // URL-friendly, уникальный в тенанте, 1–255
+  title: string;           // 1–500
+  brand?: string;          // max 255
+  model?: string;          // max 255
+  description?: string;    // HTML или plain text
+  uom_id?: string;         // UUID из справочника UOM
+  is_active?: boolean;     // default true
+  category_ids?: string[]; // UUID категорий для привязки при создании
 }
 // Response 201: Product
 ```
@@ -277,16 +495,17 @@ interface ProductCreate {
 
 ---
 
-## 8. Страница продукта — основные данные
+## 9. Страница продукта — основные данные
 
 **URL:** `/admin/catalog/products/:id`
 
 Страница с вкладками. Сначала загружается сам продукт:
 
 ```typescript
-// GET /api/v1/admin/products/{product_id}?include=chars,prices,images
-// include — опциональный, подгружает отношения
-const product = await fetchJson(`/api/v1/admin/products/${id}`);
+// GET /api/v1/admin/products/{product_id}?include=aliases,categories,prices
+// include — опциональный, подгружает отношения через запятую
+// Допустимые include: aliases, categories, prices
+const product = await fetchJson(`/api/v1/admin/products/${id}?include=aliases,categories,prices`);
 ```
 
 ### Форма редактирования
@@ -314,67 +533,167 @@ interface ProductUpdate {
 
 ---
 
-## 9. Вкладка: Характеристики
+## 10. Вкладка: Характеристики (нормализованные)
 
-### Загрузка
+> **ОБНОВЛЕНО 2026-02-26.** Старая EAV-система (свободные `name`/`value_text`) заменена на нормализованную — характеристики привязываются к словарю параметров. Это обеспечивает переиспользуемость, единообразие и фасетную фильтрацию.
+
+### 10.1 Загрузка характеристик продукта
 
 ```typescript
-// GET /api/v1/admin/products/{product_id}/chars
-// Response: ProductChar[]
-const chars = await fetchJson(`/api/v1/admin/products/${id}/chars`);
-```
+// GET /api/v1/admin/products/{product_id}/characteristics
+// Response: ProductCharacteristic[]
 
-**Объект характеристики:**
-```typescript
-interface ProductChar {
+interface ProductCharacteristic {
   id: string;
-  name: string;        // "Напряжение"
-  value_text: string;  // "220 В"
-  uom_id: string | null;
+  product_id: string;
+  parameter_id: string;
+  parameter_value_id: string | null;   // UUID значения (для enum)
+  value_text: string | null;           // для string-типа
+  value_number: number | null;         // для number/range
+  value_bool: boolean | null;          // для bool
+  uom_id: string | null;              // единица измерения (переопределение)
+  source_type: 'manual' | 'import' | 'system';
+  is_locked: boolean;                  // заблокированная характеристика (системная)
+  created_at: string;
+  updated_at: string;
 }
+
+const chars = await fetchJson(`/api/v1/admin/products/${id}/characteristics`);
 ```
 
-### Bulk-обновление (рекомендуется)
-
-Все изменения (добавление, редактирование, удаление) отправляются **одним запросом**:
+### 10.2 Привязка характеристики
 
 ```typescript
-// PUT /api/v1/admin/products/{product_id}/chars
-interface ProductCharBulkUpdate {
-  created?: { name: string; value_text: string; uom_id?: string }[];
-  updated?: { id: string; name?: string; value_text?: string; uom_id?: string }[];
-  deleted?: string[];  // массив ID для удаления
+// POST /api/v1/admin/products/{product_id}/characteristics
+// Upsert: если характеристика с таким parameter_id уже есть — обновляется
+
+interface ProductCharacteristicCreate {
+  parameter_id: string;                // UUID параметра из словаря (обязательно)
+  parameter_value_id?: string;         // UUID значения (для enum)
+  value_text?: string;                 // для string
+  value_number?: number;               // для number/range
+  value_bool?: boolean;                // для bool
+  uom_id?: string;                     // переопределить UOM (опционально)
+  source_type?: 'manual' | 'import' | 'system';  // default "manual"
 }
 
-// Пример: добавить одну и удалить другую
-await fetch(`/api/v1/admin/products/${id}/chars`, {
+// Пример: привязать цвет "Красный" к продукту
+await fetch(`/api/v1/admin/products/${id}/characteristics`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    parameter_id: colorParamId,
+    parameter_value_id: redValueId,
+  }),
+});
+// Response 201: ProductCharacteristic
+
+// Пример: установить вес = 2.5 кг
+await fetch(`/api/v1/admin/products/${id}/characteristics`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    parameter_id: weightParamId,
+    value_number: 2.5,
+  }),
+});
+```
+
+### 10.3 Bulk-обновление (рекомендуется)
+
+Все характеристики продукта обновляются одним запросом. Для enum-параметров поддерживается множественный выбор через `parameter_value_ids`.
+
+```typescript
+// PUT /api/v1/admin/products/{product_id}/characteristics/bulk
+
+interface ProductCharacteristicBulkItem {
+  parameter_id: string;
+  parameter_value_ids?: string[];   // для enum: список UUID значений (мульти-выбор)
+  value_text?: string;              // для string
+  value_number?: number;            // для number/range
+  value_bool?: boolean;             // для bool
+  uom_id?: string;
+}
+
+interface ProductCharacteristicBulkCreate {
+  characteristics: ProductCharacteristicBulkItem[];
+}
+
+// Пример: задать цвета (красный + синий) и вес для продукта
+await fetch(`/api/v1/admin/products/${id}/characteristics/bulk`, {
   method: 'PUT',
   headers,
   body: JSON.stringify({
-    created: [{ name: 'Вес', value_text: '2.5 кг' }],
-    deleted: ['old-char-uuid'],
+    characteristics: [
+      {
+        parameter_id: colorParamId,
+        parameter_value_ids: [redValueId, blueValueId],  // мульти-выбор
+      },
+      {
+        parameter_id: weightParamId,
+        value_number: 2.5,
+      },
+      {
+        parameter_id: wifiParamId,
+        value_bool: true,
+      },
+    ],
   }),
 });
-// Response: { created: 1, updated: 0, deleted: 1 }
+// Response: { created: 3, updated: 1, deleted: 0 }
 ```
 
-**UI-паттерн:**
-```
-[+ Добавить характеристику]
+> **Логика bulk:** Для каждого `parameter_id` в списке — старые значения заменяются новыми. Параметры, которых нет в массиве, остаются без изменений. Для удаления всех значений параметра — используйте DELETE endpoint.
 
-Название          Значение          Ед. изм.   [✕]
-──────────────────────────────────────────────────
-Напряжение        220 В             В          [✕]
-Мощность          1500 Вт           Вт         [✕]
-[пустая строка]   [пустая строка]   [Select]
+### 10.4 Удаление характеристики
 
-[Сохранить все]
+```typescript
+// DELETE /api/v1/admin/products/{product_id}/characteristics/{parameter_id}
+// Удаляет ВСЕ значения данного параметра для продукта
+// Заблокированные (is_locked) характеристики не удаляются
+// Response: 204
+
+await fetch(`/api/v1/admin/products/${id}/characteristics/${paramId}`, {
+  method: 'DELETE',
+  headers,
+});
 ```
-Кнопка «Сохранить все» собирает diff и отправляет bulk-запрос.
+
+### 10.5 UI — рекомендуемый дизайн вкладки
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  ХАРАКТЕРИСТИКИ ПРОДУКТА                   [+ Добавить параметр] │
+│  ────────────────────────────────────────────────────────────── │
+│                                                                  │
+│  Параметр         Тип      Значение                      [✕]    │
+│  ─────────────────────────────────────────────────────────────── │
+│  Цвет             enum     [✓ Красный] [✓ Синий] [Зелёный]  [✕] │
+│  Вес              number   [2.5] кг                          [✕] │
+│  WiFi             bool     [✓]                               [✕] │
+│  Описание мат.    string   [Нержавеющая сталь 304]          [✕] │
+│                                                                  │
+│                                          [Сохранить всё (bulk)]  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Алгоритм работы UI:**
+1. При открытии вкладки: `GET /admin/products/{id}/characteristics` — текущие значения
+2. Параллельно: `GET /admin/parameters?page_size=100` — полный словарь для dropdown «Добавить параметр»
+3. При выборе параметра из dropdown — отобразить виджет по `value_type`:
+   - `enum` → Multi-select (чекбоксы) из `parameter.values`
+   - `number` → Input number + UOM-label
+   - `string` → Input text
+   - `bool` → Toggle
+   - `range` → два Input number (min–max)
+4. Кнопка «Сохранить всё» → `PUT /characteristics/bulk` со всеми параметрами
+
+**Фильтрация списка параметров по категориям:**
+При выборе «Добавить параметр» рекомендуется фильтровать словарь по категориям продукта — показывать параметры с `scope = "global"` или привязанные к текущим категориям продукта.
 
 ---
 
-## 10. Вкладка: Изображения
+## 11. Вкладка: Изображения
 
 ### Загрузка
 
@@ -460,7 +779,7 @@ await fetch(`/api/v1/admin/products/${id}/images/reorder`, {
 
 ---
 
-## 11. Вкладка: Цены
+## 12. Вкладка: Цены
 
 ### Загрузка
 
@@ -522,9 +841,7 @@ await fetch(`/api/v1/admin/products/${id}/prices/${priceId}`, {
 
 ---
 
-## 12. Вкладка: Контент-блоки
-
-> **НОВЫЙ функционал** — добавлен 2026-02-24.
+## 13. Вкладка: Контент-блоки
 
 Контент-блоки позволяют формировать богатое описание товара: тексты, изображения, видео, галереи, ссылки. Аналогично блокам для статей и услуг.
 
@@ -755,7 +1072,7 @@ interface ContentBlocksEditorProps {
 
 ---
 
-## 13. Вкладка: Привязка к категориям
+## 14. Вкладка: Привязка к категориям
 
 ### Загрузка текущих категорий продукта
 
@@ -804,7 +1121,7 @@ await fetch(`/api/v1/admin/products/${id}/categories/${linkId}`, {
 
 ---
 
-## 14. Вкладка: Алиасы и Аналоги
+## 15. Вкладка: Алиасы и Аналоги
 
 ### Алиасы (альтернативные названия/артикулы)
 
@@ -839,7 +1156,7 @@ const data = {
 
 ---
 
-## 15. Заявки на продукт
+## 16. Заявки на продукт
 
 Со страницы продукта можно быстро перейти к заявкам, которые оставили именно на этот товар.
 
@@ -858,12 +1175,14 @@ const { items } = await fetchJson(
 
 ---
 
-## 16. TypeScript-типы
+## 17. TypeScript-типы
 
 ```typescript
-// ========================
-// Core types
-// ========================
+// ============================================
+// Admin Catalog — полные типы (copy-paste ready)
+// ============================================
+
+// ---------- Справочники ----------
 
 interface UOM {
   id: string;
@@ -890,21 +1209,151 @@ interface Category {
   updated_at: string;
 }
 
+// ---------- Параметры (словарь характеристик) ----------
+
+type ParameterValueType = 'string' | 'number' | 'enum' | 'bool' | 'range';
+type ParameterScope = 'global' | 'category';
+
+interface ParameterValue {
+  id: string;
+  parameter_id: string;
+  label: string;
+  slug: string;
+  code: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Parameter {
+  id: string;
+  tenant_id: string;
+  name: string;
+  slug: string;
+  value_type: ParameterValueType;
+  uom_id: string | null;
+  scope: ParameterScope;
+  description: string | null;
+  constraints: Record<string, unknown> | null;
+  is_filterable: boolean;
+  is_required: boolean;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  values: ParameterValue[];
+  category_ids: string[];
+}
+
+interface ParameterCreate {
+  name: string;
+  slug?: string;
+  value_type: ParameterValueType;
+  uom_id?: string;
+  scope?: ParameterScope;
+  description?: string;
+  constraints?: Record<string, unknown>;
+  is_filterable?: boolean;
+  is_required?: boolean;
+  sort_order?: number;
+  category_ids?: string[];
+  values?: ParameterValueCreate[];
+}
+
+interface ParameterUpdate {
+  name?: string;
+  slug?: string;
+  description?: string;
+  uom_id?: string | null;
+  scope?: ParameterScope;
+  constraints?: Record<string, unknown>;
+  is_filterable?: boolean;
+  is_required?: boolean;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+interface ParameterValueCreate {
+  label: string;
+  slug?: string;
+  code?: string;
+  sort_order?: number;
+}
+
+interface ParameterValueUpdate {
+  label?: string;
+  slug?: string;
+  code?: string;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+interface ParameterCategorySet {
+  category_ids: string[];
+}
+
+// ---------- Характеристики продукта ----------
+
+type SourceType = 'manual' | 'import' | 'system';
+
+interface ProductCharacteristic {
+  id: string;
+  product_id: string;
+  parameter_id: string;
+  parameter_value_id: string | null;
+  value_text: string | null;
+  value_number: number | null;
+  value_bool: boolean | null;
+  uom_id: string | null;
+  source_type: SourceType;
+  is_locked: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProductCharacteristicCreate {
+  parameter_id: string;
+  parameter_value_id?: string;
+  value_text?: string;
+  value_number?: number;
+  value_bool?: boolean;
+  uom_id?: string;
+  source_type?: SourceType;
+}
+
+interface ProductCharacteristicBulkItem {
+  parameter_id: string;
+  parameter_value_ids?: string[];
+  value_text?: string;
+  value_number?: number;
+  value_bool?: boolean;
+  uom_id?: string;
+}
+
+interface ProductCharacteristicBulkCreate {
+  characteristics: ProductCharacteristicBulkItem[];
+}
+
+interface ProductCharacteristicBulkResponse {
+  created: number;
+  updated: number;
+  deleted: number;
+}
+
+// ---------- Продукт ----------
+
 interface ProductImage {
   id: string;
   url: string;
   alt: string | null;
   width: number | null;
   height: number | null;
+  size_bytes: number | null;
+  mime_type: string | null;
   sort_order: number;
   is_cover: boolean;
-}
-
-interface ProductChar {
-  id: string;
-  name: string;
-  value_text: string;
-  uom_id: string | null;
+  created_at: string;
 }
 
 interface ProductPrice {
@@ -927,6 +1376,14 @@ interface ProductCategoryLink {
 interface ProductAlias {
   id: string;
   alias: string;
+}
+
+interface ProductAnalog {
+  analog_product_id: string;
+  sku: string;
+  title: string;
+  relation: 'equivalent' | 'better' | 'worse';
+  notes: string | null;
 }
 
 interface ContentBlock {
@@ -962,16 +1419,14 @@ interface Product {
 }
 
 interface ProductDetail extends Product {
-  chars: ProductChar[];
-  aliases: { id: string; alias: string }[];
+  aliases: ProductAlias[];
   categories: ProductCategoryLink[];
   prices: ProductPrice[];
-  // content_blocks грузятся отдельно через /content-blocks endpoint
+  // characteristics загружаются отдельно: GET /admin/products/{id}/characteristics
+  // content_blocks загружаются отдельно: GET /admin/products/{id}/content-blocks
 }
 
-// ========================
-// Request types
-// ========================
+// ---------- Request types ----------
 
 interface ProductCreate {
   sku: string;
@@ -982,10 +1437,19 @@ interface ProductCreate {
   description?: string;
   uom_id?: string;
   is_active?: boolean;
+  category_ids?: string[];
 }
 
-interface ProductUpdate extends Partial<ProductCreate> {
-  version: number; // обязательно!
+interface ProductUpdate {
+  sku?: string;
+  slug?: string;
+  title?: string;
+  brand?: string;
+  model?: string;
+  description?: string;
+  uom_id?: string | null;
+  is_active?: boolean;
+  version: number; // обязательно — optimistic locking!
 }
 
 interface ContentBlockCreate {
@@ -1002,9 +1466,21 @@ interface ContentBlockCreate {
   block_metadata?: Record<string, unknown> | null;
 }
 
-// ========================
-// API responses
-// ========================
+interface ProductAnalogCreate {
+  analog_product_id: string;
+  relation?: 'equivalent' | 'better' | 'worse';
+  notes?: string;
+}
+
+interface ProductPriceCreate {
+  price_type?: 'regular' | 'sale' | 'wholesale' | 'cost';
+  amount: number;
+  currency?: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
+}
+
+// ---------- API responses ----------
 
 interface PagedResponse<T> {
   items: T[];
@@ -1016,7 +1492,7 @@ interface PagedResponse<T> {
 
 ---
 
-## 17. Обработка ошибок
+## 18. Обработка ошибок
 
 | Код | Причина | Действие в UI |
 |-----|---------|---------------|
@@ -1067,22 +1543,25 @@ const handleSave = async (data: ProductUpdate) => {
 
 ## Быстрый план реализации (приоритеты)
 
-### Sprint 1 — Список и CRUD продуктов
+### Sprint 1 — Справочники (фундамент)
+- [ ] Страница «Единицы измерения» — CRUD таблица
+- [ ] Страница «Категории» — дерево с drag-and-drop, CRUD
+- [ ] Страница «Параметры» — список с фильтрами, CRUD
+- [ ] Карточка параметра — управление enum-значениями, привязка к категориям
+
+### Sprint 2 — Продукты: основное
 - [ ] Страница `/admin/catalog/products` — таблица с фильтрами
-- [ ] Форма создания / редактирования продукта
+- [ ] Форма создания продукта (с выбором категорий)
+- [ ] Карточка продукта — основные поля, optimistic locking
 - [ ] Мягкое удаление
 
-### Sprint 2 — Вложенные данные
-- [ ] Вкладка «Характеристики» (EAV bulk-update)
-- [ ] Вкладка «Изображения» (upload + drag-and-drop)
-- [ ] Вкладка «Цены»
+### Sprint 3 — Продукты: характеристики и медиа
+- [ ] Вкладка «Характеристики» — привязка параметров, bulk-обновление, виджеты по типам
+- [ ] Вкладка «Изображения» — upload, drag-and-drop, cover selection
+- [ ] Вкладка «Цены» — CRUD, типы цен, даты действия
 
-### Sprint 3 — Контент и связи
+### Sprint 4 — Продукты: контент и связи
 - [ ] Вкладка «Контент-блоки» (переиспользовать компонент статей)
-- [ ] Вкладка «Категории» (дерево с чекбоксами)
+- [ ] Вкладка «Категории» (дерево с чекбоксами, primary)
 - [ ] Вкладка «Алиасы / Аналоги»
-
-### Sprint 4 — Справочники и интеграции
-- [ ] Страница «Единицы измерения» (UOM)
-- [ ] Страница «Категории» (дерево с drag-and-drop)
 - [ ] Блок «Заявки на товар» в карточке продукта

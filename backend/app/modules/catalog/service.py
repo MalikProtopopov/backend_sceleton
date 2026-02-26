@@ -17,7 +17,6 @@ from app.modules.catalog.models import (
     ProductAlias,
     ProductAnalog,
     ProductCategory,
-    ProductChar,
     ProductImage,
     ProductPrice,
     UOM,
@@ -27,7 +26,6 @@ from app.modules.catalog.schemas import (
     CategoryUpdate,
     ProductAliasCreate,
     ProductAnalogCreate,
-    ProductCharBulkUpdate,
     ProductCreate,
     ProductPriceCreate,
     ProductPriceUpdate,
@@ -231,8 +229,6 @@ class ProductService(BaseService[Product]):
         """Load product with optional eager-loaded relations."""
         options = [selectinload(Product.images)]
         if include:
-            if "chars" in include:
-                options.append(selectinload(Product.chars))
             if "aliases" in include:
                 options.append(selectinload(Product.aliases))
             if "categories" in include:
@@ -425,7 +421,6 @@ class ProductService(BaseService[Product]):
             )
             .options(
                 selectinload(Product.images),
-                selectinload(Product.chars),
                 selectinload(Product.prices),
                 selectinload(Product.categories).selectinload(ProductCategory.category),
             )
@@ -435,67 +430,6 @@ class ProductService(BaseService[Product]):
         if not product:
             raise NotFoundError("Product", slug)
         return product
-
-    # ========== Characteristics (EAV) ==========
-
-    async def list_chars(self, product_id: UUID, tenant_id: UUID) -> list[ProductChar]:
-        await self.get_by_id(product_id, tenant_id)
-        stmt = (
-            select(ProductChar)
-            .where(ProductChar.product_id == product_id)
-            .order_by(ProductChar.name)
-        )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
-
-    @transactional
-    async def bulk_update_chars(
-        self, product_id: UUID, tenant_id: UUID, data: ProductCharBulkUpdate,
-    ) -> dict:
-        await self.get_by_id(product_id, tenant_id)
-        created = 0
-        updated = 0
-        deleted = 0
-
-        if data.created:
-            for item in data.created:
-                char = ProductChar(
-                    product_id=product_id,
-                    name=item.name,
-                    value_text=item.value_text,
-                    uom_id=item.uom_id,
-                )
-                self.db.add(char)
-                created += 1
-
-        if data.updated:
-            for item in data.updated:
-                stmt = select(ProductChar).where(
-                    ProductChar.id == item.id,
-                    ProductChar.product_id == product_id,
-                )
-                result = await self.db.execute(stmt)
-                char = result.scalar_one_or_none()
-                if char:
-                    update_fields = item.model_dump(exclude={"id"}, exclude_unset=True)
-                    for field, value in update_fields.items():
-                        setattr(char, field, value)
-                    updated += 1
-
-        if data.deleted:
-            for char_id in data.deleted:
-                stmt = select(ProductChar).where(
-                    ProductChar.id == char_id,
-                    ProductChar.product_id == product_id,
-                )
-                result = await self.db.execute(stmt)
-                char = result.scalar_one_or_none()
-                if char:
-                    await self.db.delete(char)
-                    deleted += 1
-
-        await self.db.flush()
-        return {"created": created, "updated": updated, "deleted": deleted}
 
     # ========== Aliases ==========
 

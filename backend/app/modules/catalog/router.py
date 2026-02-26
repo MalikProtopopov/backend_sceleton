@@ -1,8 +1,9 @@
 """API routes for catalog module."""
 
+from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,14 +19,12 @@ from app.modules.catalog.schemas import (
     CategoryResponse,
     CategoryTreeResponse,
     CategoryUpdate,
+    FiltersResponse,
     ProductAliasCreate,
     ProductAliasBulkResponse,
     ProductAliasResponse,
     ProductAnalogCreate,
     ProductAnalogResponse,
-    ProductCharBulkResponse,
-    ProductCharBulkUpdate,
-    ProductCharResponse,
     ProductCreate,
     ProductDetailResponse,
     ProductImagePublicResponse,
@@ -41,6 +40,9 @@ from app.modules.catalog.schemas import (
     ProductPublicResponse,
     ProductResponse,
     ProductUpdate,
+    SeoFilterPagesResponse,
+    SeoFilterPage,
+    SeoFilterItem,
     UOMCreate,
     UOMResponse,
     UOMUpdate,
@@ -127,25 +129,87 @@ async def get_category_public(
 
 
 @router.get(
+    "/public/filters",
+    response_model=FiltersResponse,
+    summary="Get available filters with faceted counts",
+    tags=["Public - Catalog"],
+    dependencies=[require_catalog_public],
+)
+async def get_filters_public(
+    request: Request,
+    tenant_id: PublicTenantId,
+    category: str | None = Query(default=None, description="Category slug(s), comma-separated"),
+    price_min: Decimal | None = Query(default=None),
+    price_max: Decimal | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> FiltersResponse:
+    from app.modules.catalog.filter_service import CatalogFilterService
+
+    category_slugs = [s.strip() for s in category.split(",") if s.strip()] if category else []
+
+    # Extract dynamic filter params: any query param that isn't a known param
+    known_params = {"tenant_id", "category", "price_min", "price_max", "page", "page_size"}
+    active_filters: dict[str, list[str]] = {}
+    for key, value in request.query_params.items():
+        if key not in known_params and value:
+            active_filters[key] = [s.strip() for s in value.split(",") if s.strip()]
+
+    svc = CatalogFilterService(db)
+    return await svc.get_filters(
+        tenant_id,
+        category_slugs=category_slugs,
+        active_filters=active_filters,
+        price_min=price_min,
+        price_max=price_max,
+    )
+
+
+@router.get(
     "/public/products",
     response_model=ProductPublicListResponse,
-    summary="List published products",
+    summary="List published products with filtering and sorting",
     tags=["Public - Catalog"],
     dependencies=[require_catalog_public],
 )
 async def list_products_public(
+    request: Request,
     pagination: Pagination,
     tenant_id: PublicTenantId,
     search: str | None = Query(default=None, max_length=200),
     brand: str | None = Query(default=None, max_length=255),
-    category: UUID | None = Query(default=None),
+    category: str | None = Query(default=None, description="Category slug(s), comma-separated"),
+    price_min: Decimal | None = Query(default=None),
+    price_max: Decimal | None = Query(default=None),
+    sort: str = Query(default="newest", pattern="^(price_asc|price_desc|newest|title_asc|title_desc)$"),
     db: AsyncSession = Depends(get_db),
 ) -> ProductPublicListResponse:
-    service = ProductService(db)
-    products, total = await service.list_published(
-        tenant_id, page=pagination.page, page_size=pagination.page_size,
-        search=search, brand=brand, category_id=category,
+    from app.modules.catalog.filter_service import CatalogFilterService
+
+    category_slugs = [s.strip() for s in category.split(",") if s.strip()] if category else []
+
+    known_params = {
+        "tenant_id", "category", "price_min", "price_max",
+        "page", "page_size", "search", "brand", "sort",
+    }
+    param_filters: dict[str, list[str]] = {}
+    for key, value in request.query_params.items():
+        if key not in known_params and value:
+            param_filters[key] = [s.strip() for s in value.split(",") if s.strip()]
+
+    svc = CatalogFilterService(db)
+    products, total = await svc.list_products_filtered(
+        tenant_id,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        search=search,
+        brand=brand,
+        category_slugs=category_slugs,
+        param_filters_raw=param_filters,
+        price_min=price_min,
+        price_max=price_max,
+        sort=sort,
     )
+
     items = []
     for p in products:
         cover = next((img for img in (p.images or []) if img.is_cover), None)
@@ -162,6 +226,42 @@ async def list_products_public(
 
 
 @router.get(
+    "/public/seo/filter-pages",
+    response_model=SeoFilterPagesResponse,
+    summary="Generate SEO filter page combinations for sitemap",
+    tags=["Public - Catalog"],
+    dependencies=[require_catalog_public],
+)
+async def get_seo_filter_pages(
+    pagination: Pagination,
+    tenant_id: PublicTenantId,
+    category: str | None = Query(default=None, description="Category slug"),
+    min_products: int = Query(default=1, ge=1),
+    db: AsyncSession = Depends(get_db),
+) -> SeoFilterPagesResponse:
+    from app.modules.catalog.filter_service import CatalogFilterService
+
+    svc = CatalogFilterService(db)
+    pages_data, total = await svc.get_seo_filter_pages(
+        tenant_id,
+        category_slug=category,
+        min_products=min_products,
+        page=pagination.page,
+        page_size=pagination.page_size,
+    )
+    pages = [
+        SeoFilterPage(
+            category_slug=p["category_slug"],
+            filters=[SeoFilterItem(**f) for f in p["filters"]],
+            product_count=p["product_count"],
+            url_path=p["url_path"],
+        )
+        for p in pages_data
+    ]
+    return SeoFilterPagesResponse(pages=pages, total=total)
+
+
+@router.get(
     "/public/products/{slug}",
     response_model=ProductPublicDetailResponse,
     summary="Get product detail by slug",
@@ -174,6 +274,8 @@ async def get_product_public(
     tenant_id: PublicTenantId = ...,
     db: AsyncSession = Depends(get_db),
 ) -> ProductPublicDetailResponse:
+    from app.modules.catalog.filter_service import CatalogFilterService
+
     service = ProductService(db)
     product = await service.get_by_slug_public(slug, tenant_id)
 
@@ -185,6 +287,9 @@ async def get_product_public(
     block_service = ContentBlockService(db)
     blocks = await block_service.list_blocks("product", product.id, product.tenant_id, locale)
 
+    filter_svc = CatalogFilterService(db)
+    characteristics, chars_compat = await filter_svc.get_product_characteristics_public(product.id)
+
     return ProductPublicDetailResponse(
         id=product.id,
         slug=product.slug,
@@ -194,7 +299,8 @@ async def get_product_public(
         model=product.model,
         description=product.description,
         images=[ProductImagePublicResponse.model_validate(img) for img in (product.images or [])],
-        chars=[{"name": c.name, "value_text": c.value_text} for c in (product.chars or [])],
+        characteristics=characteristics,
+        chars=chars_compat,
         categories=categories,
         prices=[{"price_type": p.price_type, "amount": p.amount, "currency": p.currency} for p in (product.prices or [])],
         content_blocks=[ContentBlockResponse.model_validate(b) for b in blocks],
@@ -407,7 +513,7 @@ async def get_product(
     product_id: UUID,
     include: str | None = Query(
         default=None,
-        description="Comma-separated: chars,aliases,categories,prices",
+        description="Comma-separated: aliases,categories,prices",
     ),
     tenant_id: UUID = Depends(get_current_tenant_id),
     db: AsyncSession = Depends(get_db),
@@ -465,44 +571,6 @@ async def delete_product(
 ) -> None:
     service = ProductService(db)
     await service.soft_delete(product_id, tenant_id)
-
-
-# ============================================================================
-# Product Characteristics (EAV) routes
-# ============================================================================
-
-
-@router.get(
-    "/admin/products/{product_id}/chars",
-    response_model=list[ProductCharResponse],
-    summary="List product characteristics (EAV)",
-    dependencies=[require_catalog, Depends(PermissionChecker("catalog:read"))],
-)
-async def list_product_chars(
-    product_id: UUID,
-    tenant_id: UUID = Depends(get_current_tenant_id),
-    db: AsyncSession = Depends(get_db),
-) -> list[ProductCharResponse]:
-    service = ProductService(db)
-    items = await service.list_chars(product_id, tenant_id)
-    return [ProductCharResponse.model_validate(c) for c in items]
-
-
-@router.put(
-    "/admin/products/{product_id}/chars",
-    response_model=ProductCharBulkResponse,
-    summary="Bulk create/update/delete product characteristics",
-    dependencies=[require_catalog, Depends(PermissionChecker("catalog:update"))],
-)
-async def bulk_update_product_chars(
-    product_id: UUID,
-    data: ProductCharBulkUpdate,
-    tenant_id: UUID = Depends(get_current_tenant_id),
-    db: AsyncSession = Depends(get_db),
-) -> ProductCharBulkResponse:
-    service = ProductService(db)
-    result = await service.bulk_update_chars(product_id, tenant_id, data)
-    return ProductCharBulkResponse(**result)
 
 
 # ============================================================================

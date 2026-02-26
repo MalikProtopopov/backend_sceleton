@@ -10,6 +10,7 @@ from app.core.dependencies import Pagination
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.middleware.feature_check import require_catalog
 from app.modules.parameters.schemas import (
+    ParameterCategorySet,
     ParameterCreate,
     ParameterListResponse,
     ParameterResponse,
@@ -17,6 +18,8 @@ from app.modules.parameters.schemas import (
     ParameterValueCreate,
     ParameterValueResponse,
     ParameterValueUpdate,
+    ProductCharacteristicBulkCreate,
+    ProductCharacteristicBulkResponse,
     ProductCharacteristicCreate,
     ProductCharacteristicResponse,
 )
@@ -26,6 +29,12 @@ from app.modules.parameters.service import (
 )
 
 router = APIRouter()
+
+
+def _param_to_response(param) -> ParameterResponse:
+    data = ParameterResponse.model_validate(param)
+    data.category_ids = [link.category_id for link in (param.category_links or [])]
+    return data
 
 
 # ============================================================================
@@ -53,7 +62,7 @@ async def list_parameters(
         search=search, value_type=value_type, scope=scope,
     )
     return ParameterListResponse(
-        items=[ParameterResponse.model_validate(p) for p in items],
+        items=[_param_to_response(p) for p in items],
         total=total, page=pagination.page, page_size=pagination.page_size,
     )
 
@@ -71,7 +80,7 @@ async def get_parameter(
 ) -> ParameterResponse:
     service = ParameterService(db)
     param = await service.get_by_id(parameter_id, tenant_id)
-    return ParameterResponse.model_validate(param)
+    return _param_to_response(param)
 
 
 @router.post(
@@ -88,7 +97,7 @@ async def create_parameter(
 ) -> ParameterResponse:
     service = ParameterService(db)
     param = await service.create(tenant_id, data)
-    return ParameterResponse.model_validate(param)
+    return _param_to_response(param)
 
 
 @router.patch(
@@ -105,7 +114,7 @@ async def update_parameter(
 ) -> ParameterResponse:
     service = ParameterService(db)
     param = await service.update(parameter_id, tenant_id, data)
-    return ParameterResponse.model_validate(param)
+    return _param_to_response(param)
 
 
 @router.delete(
@@ -121,6 +130,27 @@ async def deactivate_parameter(
 ) -> None:
     service = ParameterService(db)
     await service.deactivate(parameter_id, tenant_id)
+
+
+# ============================================================================
+# Parameter Category routes
+# ============================================================================
+
+
+@router.put(
+    "/admin/parameters/{parameter_id}/categories",
+    summary="Set parameter categories (replace all)",
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:update"))],
+)
+async def set_parameter_categories(
+    parameter_id: UUID,
+    data: ParameterCategorySet,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ParameterService(db)
+    ids = await service.set_categories(parameter_id, tenant_id, data.category_ids)
+    return {"count": len(ids)}
 
 
 # ============================================================================
@@ -162,7 +192,7 @@ async def update_parameter_value(
     service = ParameterService(db)
     pv = await service.update_value(
         value_id, parameter_id, tenant_id,
-        label=data.label, code=data.code,
+        label=data.label, slug=data.slug, code=data.code,
         sort_order=data.sort_order, is_active=data.is_active,
     )
     return ParameterValueResponse.model_validate(pv)
@@ -223,10 +253,27 @@ async def set_product_characteristic(
     return ProductCharacteristicResponse.model_validate(char)
 
 
+@router.put(
+    "/admin/products/{product_id}/characteristics/bulk",
+    response_model=ProductCharacteristicBulkResponse,
+    summary="Bulk set product characteristics (replace per-parameter)",
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:update"))],
+)
+async def bulk_set_product_characteristics(
+    product_id: UUID,
+    data: ProductCharacteristicBulkCreate,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> ProductCharacteristicBulkResponse:
+    service = ProductCharacteristicService(db)
+    result = await service.bulk_set(product_id, tenant_id, data.characteristics)
+    return ProductCharacteristicBulkResponse(**result)
+
+
 @router.delete(
     "/admin/products/{product_id}/characteristics/{parameter_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete product characteristic",
+    summary="Delete product characteristic(s) for a parameter",
     dependencies=[require_catalog, Depends(PermissionChecker("catalog:delete"))],
 )
 async def delete_product_characteristic(
