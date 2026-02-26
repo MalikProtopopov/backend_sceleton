@@ -25,6 +25,7 @@ from app.modules.catalog.schemas import (
     ProductAliasResponse,
     ProductAnalogCreate,
     ProductAnalogResponse,
+    ProductCategoryLinkResponse,
     ProductCreate,
     ProductDetailResponse,
     ProductImagePublicResponse,
@@ -757,6 +758,31 @@ async def delete_product_price(
 # ============================================================================
 # Product Categories routes
 # ============================================================================
+
+
+@router.get(
+    "/admin/products/{product_id}/categories",
+    response_model=list[ProductCategoryLinkResponse],
+    summary="List product category links",
+    dependencies=[require_catalog, Depends(PermissionChecker("catalog:read"))],
+)
+async def list_product_categories(
+    product_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[ProductCategoryLinkResponse]:
+    from app.modules.catalog.models import ProductCategory
+    from sqlalchemy import select
+
+    service = ProductService(db)
+    await service.get_by_id(product_id, tenant_id)
+    stmt = (
+        select(ProductCategory)
+        .where(ProductCategory.product_id == product_id)
+        .order_by(ProductCategory.is_primary.desc())
+    )
+    result = await db.execute(stmt)
+    return [ProductCategoryLinkResponse.model_validate(c) for c in result.scalars().all()]
 
 
 @router.put(
