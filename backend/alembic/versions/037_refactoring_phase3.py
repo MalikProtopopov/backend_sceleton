@@ -12,8 +12,6 @@ down_revision = "036"
 branch_labels = None
 depends_on = None
 
-# Tables that use TenantMixin but did NOT already have an FK to tenants.id.
-# Models with explicit FK (audit_logs, admin_users, etc.) are excluded.
 _TENANT_MIXIN_TABLES = [
     "products",
     "product_prices",
@@ -54,20 +52,21 @@ _TENANT_MIXIN_TABLES = [
 
 
 def upgrade() -> None:
-    # 3.1 — Add FK constraint on tenant_id for all TenantMixin tables
+    # 3.1 — Add FK constraint on tenant_id (skip if already exists or table missing)
     for table in _TENANT_MIXIN_TABLES:
         fk_name = f"fk_{table}_tenant_id"
-        try:
-            op.create_foreign_key(
-                fk_name, table, "tenants",
-                ["tenant_id"], ["id"],
-                ondelete="CASCADE",
-            )
-        except Exception:
-            pass  # FK may already exist on some tables
+        op.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE {table}
+                    ADD CONSTRAINT {fk_name}
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+            EXCEPTION
+                WHEN duplicate_object THEN NULL;
+                WHEN undefined_table THEN NULL;
+            END $$;
+        """)
 
-    # 3.2 — Convert unique constraints to partial unique indexes (soft-delete safe)
-    # Products: tenant + SKU and tenant + slug
+    # 3.2 — Partial unique indexes (soft-delete safe)
     op.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS uq_products_tenant_sku")
     op.execute("ALTER TABLE products DROP CONSTRAINT IF EXISTS uq_products_tenant_slug")
     op.execute("""
@@ -79,14 +78,12 @@ def upgrade() -> None:
         ON products (tenant_id, slug) WHERE deleted_at IS NULL
     """)
 
-    # Categories: tenant + slug
     op.execute("ALTER TABLE categories DROP CONSTRAINT IF EXISTS uq_categories_tenant_slug")
     op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_categories_tenant_slug
         ON categories (tenant_id, slug) WHERE deleted_at IS NULL
     """)
 
-    # Variants: tenant + SKU and product + slug
     op.execute("ALTER TABLE product_variants DROP CONSTRAINT IF EXISTS uq_variants_tenant_sku")
     op.execute("ALTER TABLE product_variants DROP CONSTRAINT IF EXISTS uq_variants_product_slug")
     op.execute("""
@@ -98,33 +95,33 @@ def upgrade() -> None:
         ON product_variants (product_id, slug) WHERE deleted_at IS NULL
     """)
 
-    # 3.4 — Add missing CHECK constraints
+    # 3.4 — CHECK constraints (skip if already exists)
     op.execute("""
-        ALTER TABLE product_prices
-        ADD CONSTRAINT chk_product_prices_currency CHECK (length(currency) = 3)
+        DO $$ BEGIN
+            ALTER TABLE product_prices
+                ADD CONSTRAINT chk_product_prices_currency CHECK (length(currency) = 3);
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
     """)
     op.execute("""
-        ALTER TABLE variant_prices
-        ADD CONSTRAINT chk_variant_prices_currency CHECK (length(currency) = 3)
+        DO $$ BEGIN
+            ALTER TABLE variant_prices
+                ADD CONSTRAINT chk_variant_prices_currency CHECK (length(currency) = 3);
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
     """)
 
 
 def downgrade() -> None:
-    # Remove CHECK constraints
     op.execute("ALTER TABLE variant_prices DROP CONSTRAINT IF EXISTS chk_variant_prices_currency")
     op.execute("ALTER TABLE product_prices DROP CONSTRAINT IF EXISTS chk_product_prices_currency")
 
-    # Restore original unique constraints (non-partial)
     op.execute("DROP INDEX IF EXISTS uq_variants_product_slug")
     op.execute("DROP INDEX IF EXISTS uq_variants_tenant_sku")
     op.execute("DROP INDEX IF EXISTS uq_categories_tenant_slug")
     op.execute("DROP INDEX IF EXISTS uq_products_tenant_slug")
     op.execute("DROP INDEX IF EXISTS uq_products_tenant_sku")
 
-    # Remove FK constraints
     for table in reversed(_TENANT_MIXIN_TABLES):
         fk_name = f"fk_{table}_tenant_id"
-        try:
-            op.drop_constraint(fk_name, table, type_="foreignkey")
-        except Exception:
-            pass
+        op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {fk_name}")
