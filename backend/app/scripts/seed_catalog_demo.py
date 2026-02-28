@@ -16,6 +16,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.core.database import get_db_context
+from app.modules.auth.models import AdminUser  # noqa: F401 — register with SA mapper
 from app.modules.catalog.models import (
     Category,
     Product,
