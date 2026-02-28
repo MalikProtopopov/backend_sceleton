@@ -221,8 +221,9 @@ def upgrade() -> None:
 
     # Add variants_module feature flag for all existing tenants (disabled by default)
     op.execute("""
-        INSERT INTO feature_flags (tenant_id, feature_name, enabled, description)
-        SELECT id, 'variants_module', false, 'Product variants, tariff plans, option groups'
+        INSERT INTO feature_flags (id, tenant_id, feature_name, enabled, description)
+        SELECT gen_random_uuid(), id, 'variants_module', false,
+               'Product variants, tariff plans, option groups'
         FROM tenants
         WHERE id NOT IN (
             SELECT tenant_id FROM feature_flags WHERE feature_name = 'variants_module'
