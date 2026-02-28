@@ -337,7 +337,7 @@ async def find_tenant(db) -> Tenant:
         select(Tenant).where(
             Tenant.is_active == True,
             Tenant.deleted_at.is_(None),
-        ).order_by(Tenant.created_at)
+        ).order_by(Tenant.created_at).limit(1)
     )
     tenant = result.scalar_one_or_none()
     if not tenant:
