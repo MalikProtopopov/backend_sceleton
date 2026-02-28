@@ -21,7 +21,6 @@ PREFLIGHT_MAX_AGE = "86400"
 CORS_HEADERS = {
     "access-control-allow-credentials": "true",
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "Content-Type, Authorization, X-Tenant-ID, X-Requested-With, Accept, Accept-Language",
     "access-control-max-age": PREFLIGHT_MAX_AGE,
     "vary": "Origin",
 }
@@ -57,18 +56,20 @@ class DynamicCORSMiddleware:
         is_allowed = origin_normalized in allowed_origins
 
         if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
-            response = self._preflight_response(origin, is_allowed)
+            requested_headers = request.headers.get("access-control-request-headers", "")
+            response = self._preflight_response(origin, is_allowed, requested_headers)
             await response(scope, receive, send)
             return
 
         await self._simple_response(scope, receive, send, origin, is_allowed)
 
-    def _preflight_response(self, origin: str, is_allowed: bool) -> Response:
+    def _preflight_response(self, origin: str, is_allowed: bool, requested_headers: str) -> Response:
         if not is_allowed:
             return PlainTextResponse("Disallowed CORS origin", status_code=400)
 
         headers = {
             "access-control-allow-origin": origin,
+            "access-control-allow-headers": requested_headers or "Content-Type, Authorization",
             **CORS_HEADERS,
         }
         return PlainTextResponse("OK", status_code=200, headers=headers)
