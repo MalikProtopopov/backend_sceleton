@@ -48,7 +48,7 @@ class CategoryCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     slug: str = Field(..., min_length=1, max_length=255)
     parent_id: UUID | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     image_url: str | None = Field(default=None, max_length=500)
     is_active: bool = True
     sort_order: int = 0
@@ -58,7 +58,7 @@ class CategoryUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     slug: str | None = Field(default=None, max_length=255)
     parent_id: UUID | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     image_url: str | None = None
     is_active: bool | None = None
     sort_order: int | None = None
@@ -105,9 +105,13 @@ class ProductCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     brand: str | None = Field(default=None, max_length=255)
     model: str | None = Field(default=None, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     uom_id: UUID | None = None
     is_active: bool = True
+    product_type: str = Field(
+        default="physical",
+        pattern="^(physical|digital|service|course|subscription)$",
+    )
     category_ids: list[UUID] = Field(default_factory=list)
 
 
@@ -117,9 +121,14 @@ class ProductUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     brand: str | None = None
     model: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     uom_id: UUID | None = None
     is_active: bool | None = None
+    product_type: str | None = Field(
+        default=None,
+        pattern="^(physical|digital|service|course|subscription)$",
+    )
+    has_variants: bool | None = None
     version: int = Field(..., description="Current version for optimistic locking")
 
 
@@ -187,6 +196,10 @@ class ProductResponse(BaseModel):
     description: str | None = None
     uom_id: UUID | None = None
     is_active: bool
+    product_type: str = "physical"
+    has_variants: bool = False
+    price_from: Decimal | None = None
+    price_to: Decimal | None = None
     version: int
     created_at: datetime
     updated_at: datetime
@@ -348,6 +361,10 @@ class ProductPublicResponse(BaseModel):
     brand: str | None = None
     model: str | None = None
     description: str | None = None
+    product_type: str = "physical"
+    has_variants: bool = False
+    price_from: Decimal | None = None
+    price_to: Decimal | None = None
     cover_url: str | None = None
 
 
@@ -361,12 +378,19 @@ class ProductPublicDetailResponse(BaseModel):
     brand: str | None = None
     model: str | None = None
     description: str | None = None
+    product_type: str = "physical"
+    has_variants: bool = False
+    price_from: Decimal | None = None
+    price_to: Decimal | None = None
     images: list[ProductImagePublicResponse] = Field(default_factory=list)
     characteristics: list[ProductCharacteristicPublicResponse] = Field(default_factory=list)
     chars: list[ProductCharPublicResponse] = Field(default_factory=list)
     categories: list[CategoryPublicResponse] = Field(default_factory=list)
     prices: list[ProductPricePublicResponse] = Field(default_factory=list)
     content_blocks: list[ContentBlockResponse] = Field(default_factory=list)
+    # Variant data (populated when has_variants=true and variants_module enabled)
+    option_groups: list["OptionGroupPublicSchema"] | None = None
+    variants: list["VariantPublicSchema"] | None = None
 
 
 class ProductPublicListResponse(BaseModel):
@@ -434,3 +458,72 @@ class SeoFilterPage(BaseModel):
 class SeoFilterPagesResponse(BaseModel):
     pages: list[SeoFilterPage]
     total: int
+
+
+# ============================================================================
+# Public variant schemas (referenced from ProductPublicDetailResponse)
+# ============================================================================
+
+
+class OptionValuePublicSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str
+    slug: str
+    color_hex: str | None = None
+    image_url: str | None = None
+
+
+class OptionGroupPublicSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str
+    slug: str
+    display_type: str
+    values: list[OptionValuePublicSchema] = Field(default_factory=list)
+
+
+class VariantPricePublicSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    price_type: str
+    amount: Decimal
+    currency: str
+
+
+class VariantInclusionPublicSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str
+    description: str | None = None
+    is_included: bool
+    icon: str | None = None
+    group: str | None = None
+
+
+class VariantImagePublicSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    url: str
+    alt: str | None = None
+    sort_order: int
+    is_cover: bool
+
+
+class VariantPublicSchema(BaseModel):
+    id: UUID
+    slug: str
+    title: str
+    sku: str
+    description: str | None = None
+    is_default: bool
+    in_stock: bool
+    sort_order: int
+    prices: list[VariantPricePublicSchema] = Field(default_factory=list)
+    options: dict[str, str] = Field(default_factory=dict)
+    images: list[VariantImagePublicSchema] = Field(default_factory=list)
+    inclusions: list[VariantInclusionPublicSchema] = Field(default_factory=list)
+
+
+# Rebuild forward refs
+ProductPublicDetailResponse.model_rebuild()

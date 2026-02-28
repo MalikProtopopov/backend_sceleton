@@ -41,14 +41,14 @@ class InquiryFormBase(BaseModel):
 class InquiryFormCreate(InquiryFormBase):
     """Schema for creating inquiry form."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class InquiryFormUpdate(BaseModel):
     """Schema for updating inquiry form."""
 
     name: str | None = Field(default=None, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     is_active: bool | None = None
     notification_email: str | None = None
     success_message: dict | None = None

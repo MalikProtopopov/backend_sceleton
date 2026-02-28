@@ -120,6 +120,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -128,6 +130,11 @@ services:
       start_period: 30s
     networks:
       - cms_network
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
     logging:
       driver: "json-file"
       options:
@@ -139,7 +146,9 @@ services:
   # Uses the same image as backend
   # ---------------------------------------------------------------------------
   worker:
-    image: backend-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: cms_worker_prod
     restart: unless-stopped
     env_file:
@@ -158,6 +167,11 @@ services:
         condition: service_healthy
     networks:
       - cms_network
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -169,7 +183,9 @@ services:
   # Uses the same image as backend to ensure consistency
   # ---------------------------------------------------------------------------
   migrations:
-    image: backend-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: cms_migrations_prod
     env_file:
       - .env.prod
@@ -211,33 +227,35 @@ services:
   #       max-file: "3"
 
   # ---------------------------------------------------------------------------
-  # MinIO (Self-hosted S3) - Optional, use if not using external S3
+  # MinIO (Self-hosted S3) — file storage for images and assets
   # ---------------------------------------------------------------------------
-  # minio:
-  #   image: minio/minio:latest
-  #   container_name: cms_minio_prod
-  #   restart: unless-stopped
-  #   environment:
-  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
-  #   command: server /data --console-address ":9001"
-  #   volumes:
-  #     - minio_data:/data
-  #   expose:
-  #     - "9000"
-  #     - "9001"
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-  #     interval: 30s
-  #     timeout: 20s
-  #     retries: 3
-  #   networks:
-  #     - cms_network
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
+  minio:
+    image: minio/minio:latest
+    container_name: cms_minio_prod
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    expose:
+      - "9000"
+      - "9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      cms_network:
+        aliases:
+          - minio
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 # =============================================================================
 # Volumes
@@ -253,8 +271,8 @@ volumes:
     name: cms_caddy_config_prod
   admin_static:
     name: cms_admin_static
-  # minio_data:
-  #   name: cms_minio_data_prod
+  minio_data:
+    name: cms_minio_data_prod
 
 # =============================================================================
 # Networks

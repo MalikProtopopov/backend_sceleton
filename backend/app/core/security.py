@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 import bcrypt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError, ExpiredSignatureError as JWTExpiredError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -127,7 +128,7 @@ def decode_token(token: str) -> dict[str, Any]:
             algorithms=[settings.jwt_algorithm],
         )
         return payload
-    except jwt.ExpiredSignatureError:
+    except JWTExpiredError:
         raise TokenExpiredError()
     except JWTError:
         raise InvalidTokenError()

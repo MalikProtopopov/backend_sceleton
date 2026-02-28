@@ -14,7 +14,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import Settings
@@ -82,18 +82,28 @@ async def db_engine(test_settings: Settings) -> AsyncGenerator[Any, None]:
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session(db_engine: Any) -> AsyncGenerator[AsyncSession, None]:
-    """Create test database session with automatic rollback."""
-    session_factory = async_sessionmaker(
-        db_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
-    )
+    """Create test database session with savepoint-based rollback.
 
-    async with session_factory() as session:
+    Opens a connection-level transaction, then binds a session to it.
+    Service-level commits go to savepoints and the outer transaction
+    is always rolled back, keeping the DB clean between tests.
+    """
+    async with db_engine.connect() as conn:
+        txn = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False)
+
+        # Intercept session.commit() → savepoint release instead of real commit
+        @event.listens_for(session.sync_session, "after_transaction_end")
+        def _restart_savepoint(session_sync, transaction):
+            if transaction.nested and not transaction._parent.nested:
+                session_sync.begin_nested()
+
+        await conn.begin_nested()  # initial savepoint
+
         yield session
-        await session.rollback()
+
+        await session.close()
+        await txn.rollback()
 
 
 # ============================================================================

@@ -345,7 +345,7 @@ class TestPasswordResetTokens:
         uid = str(uuid4())
         tid = str(uuid4())
         token = create_password_reset_token(uid, tid, "a@b.com")
-        from jose import jwt
+        import jwt
 
         from app.config import settings
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])

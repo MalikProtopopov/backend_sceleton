@@ -4,7 +4,9 @@ These endpoints are called by infrastructure services (e.g. Caddy)
 and must NOT be exposed to the public internet.
 """
 
-from fastapi import APIRouter, Depends, Query, Request
+import hmac
+
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,9 +22,7 @@ router = APIRouter()
 
 _LOCALHOST_IPS = {"127.0.0.1", "::1"}
 
-# Docker bridge networks use 172.16-31.x.x / 10.x.x.x ranges.
-# When Caddy runs in Docker and calls the backend in the same network,
-# the client IP will be the Caddy container's Docker IP — allow it.
+
 def _is_internal_ip(ip: str) -> bool:
     return (
         ip in _LOCALHOST_IPS
@@ -48,14 +48,25 @@ def _is_internal_ip(ip: str) -> bool:
 async def check_domain_for_caddy(
     request: Request,
     domain: str = Query(..., description="Hostname to check"),
+    x_internal_secret: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Caddy calls this before issuing a cert via on_demand_tls.
 
-    Security: only localhost is allowed to call this endpoint.
+    Security: requires a shared secret header (INTERNAL_SECRET env var)
+    or a request from a private IP address (Docker network).
     """
+    settings = get_settings()
+    internal_secret = getattr(settings, "internal_secret", "")
     client_host = request.client.host if request.client else ""
-    if not _is_internal_ip(client_host):
+
+    secret_ok = (
+        bool(internal_secret)
+        and bool(x_internal_secret)
+        and hmac.compare_digest(x_internal_secret, internal_secret)
+    )
+
+    if not secret_ok and not _is_internal_ip(client_host):
         logger.warning(
             "internal_check_rejected",
             client_host=client_host,

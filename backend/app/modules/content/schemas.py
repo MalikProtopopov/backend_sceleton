@@ -38,7 +38,7 @@ class TopicLocaleBase(BaseModel):
 class TopicLocaleCreate(TopicLocaleBase):
     """Schema for creating topic locale."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class TopicLocaleUpdate(BaseModel):
@@ -47,7 +47,7 @@ class TopicLocaleUpdate(BaseModel):
     locale: str = Field(..., min_length=2, max_length=5)
     title: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=2, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     meta_title: str | None = Field(default=None, max_length=70)
     meta_description: str | None = Field(default=None, max_length=160)
 
@@ -697,7 +697,7 @@ class CaseLocaleBase(BaseModel):
 class CaseLocaleCreate(CaseLocaleBase):
     """Schema for creating case locale."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class CaseLocaleUpdate(BaseModel):
@@ -707,7 +707,7 @@ class CaseLocaleUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=2, max_length=255)
     excerpt: str | None = Field(default=None, max_length=500)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     results: str | None = None
     meta_title: str | None = Field(default=None, max_length=70)
     meta_description: str | None = Field(default=None, max_length=160)

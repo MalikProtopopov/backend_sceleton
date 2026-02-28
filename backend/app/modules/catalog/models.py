@@ -141,6 +141,13 @@ class Product(
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    product_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="physical", index=True,
+    )
+    has_variants: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    price_from: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    price_to: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+
     # Relations
     uom: Mapped["UOM | None"] = relationship("UOM", lazy="joined")
     images: Mapped[list["ProductImage"]] = relationship(
@@ -168,16 +175,37 @@ class Product(
         lazy="noload",
         cascade="all, delete-orphan",
     )
+    variants: Mapped[list["ProductVariant"]] = relationship(  # noqa: F821
+        "ProductVariant",
+        back_populates="product",
+        lazy="noload",
+        cascade="all, delete-orphan",
+    )
+    option_groups: Mapped[list["ProductOptionGroup"]] = relationship(  # noqa: F821
+        "ProductOptionGroup",
+        back_populates="product",
+        lazy="noload",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "sku", name="uq_products_tenant_sku"),
         UniqueConstraint("tenant_id", "slug", name="uq_products_tenant_slug"),
+        CheckConstraint(
+            "product_type IN ('physical', 'digital', 'service', 'course', 'subscription')",
+            name="ck_products_product_type",
+        ),
         Index("ix_products_tenant", "tenant_id"),
         Index("ix_products_title", "title"),
         Index(
             "ix_products_active",
             "tenant_id",
             "is_active",
+            postgresql_where="deleted_at IS NULL AND is_active = true",
+        ),
+        Index(
+            "ix_products_price_from",
+            "tenant_id", "price_from",
             postgresql_where="deleted_at IS NULL AND is_active = true",
         ),
     )

@@ -85,12 +85,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode='after')
     def validate_production_config(self) -> "Settings":
-        """Validate critical settings for production environment.
+        """Validate critical settings for non-development environments.
         
         Ensures security-sensitive settings are properly configured
-        before running in production mode.
+        before running in staging or production mode.
         """
-        if self.environment != "production":
+        if self.environment == "development":
             return self
         
         errors: list[str] = []
@@ -152,6 +152,9 @@ class Settings(BaseSettings):
     # Public API URL (for webhook URLs, must be HTTPS in production)
     public_api_url: str = ""
 
+    # Sentry (error tracking — set DSN in production)
+    sentry_dsn: str = ""
+
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["json", "console"] = "json"
@@ -163,6 +166,9 @@ class Settings(BaseSettings):
     single_tenant_mode: bool = False
     default_tenant_slug: str = "main"
     default_tenant_name: str = "Main Site"
+
+    # Internal endpoint shared secret (used by Caddy to call /internal/*)
+    internal_secret: str = ""
 
     # Domain provisioning (Caddy reverse proxy)
     caddy_admin_url: str = "http://localhost:2019"

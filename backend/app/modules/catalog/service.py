@@ -308,6 +308,7 @@ class ProductService(BaseService[Product]):
             description=data.description,
             uom_id=data.uom_id,
             is_active=data.is_active,
+            product_type=data.product_type,
         )
         self.db.add(product)
         await self.db.flush()
@@ -444,19 +445,21 @@ class ProductService(BaseService[Product]):
         self, product_id: UUID, tenant_id: UUID, aliases: list[str],
     ) -> dict:
         await self.get_by_id(product_id, tenant_id)
+
+        existing_stmt = select(func.lower(ProductAlias.alias)).where(
+            ProductAlias.product_id == product_id,
+        )
+        result = await self.db.execute(existing_stmt)
+        existing_lower = {row[0] for row in result.all()}
+
         created = 0
         skipped = 0
-
         for alias_text in aliases:
-            stmt = select(ProductAlias).where(
-                ProductAlias.product_id == product_id,
-                func.lower(ProductAlias.alias) == alias_text.lower(),
-            )
-            result = await self.db.execute(stmt)
-            if result.scalar_one_or_none():
+            if alias_text.lower() in existing_lower:
                 skipped += 1
             else:
                 self.db.add(ProductAlias(product_id=product_id, alias=alias_text))
+                existing_lower.add(alias_text.lower())
                 created += 1
 
         await self.db.flush()
@@ -550,6 +553,7 @@ class ProductService(BaseService[Product]):
         price = ProductPrice(product_id=product_id, **data.model_dump())
         self.db.add(price)
         await self.db.flush()
+        await self._refresh_price_range(product_id)
         await self.db.refresh(price)
         return price
 
@@ -571,6 +575,7 @@ class ProductService(BaseService[Product]):
             setattr(price, field, value)
 
         await self.db.flush()
+        await self._refresh_price_range(product_id)
         await self.db.refresh(price)
         return price
 
@@ -586,6 +591,11 @@ class ProductService(BaseService[Product]):
             raise NotFoundError("ProductPrice", price_id)
         await self.db.delete(price)
         await self.db.flush()
+        await self._refresh_price_range(product_id)
+
+    async def _refresh_price_range(self, product_id: UUID) -> None:
+        from app.modules.variants.service import update_product_price_range
+        await update_product_price_range(self.db, product_id)
 
     # ========== Categories ==========
 

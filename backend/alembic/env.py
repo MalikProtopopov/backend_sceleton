@@ -34,6 +34,10 @@ from app.modules.catalog.models import (  # noqa: F401
 from app.modules.parameters.models import (  # noqa: F401
     Parameter, ParameterValue, ParameterCategory, ProductCharacteristic,
 )
+from app.modules.variants.models import (  # noqa: F401
+    ProductOptionGroup, ProductOptionValue, ProductVariant,
+    VariantPrice, VariantOptionLink, VariantInclusion, VariantImage,
+)
 
 # Alembic Config object
 config = context.config

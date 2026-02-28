@@ -8,19 +8,23 @@ Provides:
 - Product characteristic serialisation for public API
 """
 
+import json
 from collections import defaultdict
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Date, and_, case, distinct, func, literal, or_, select, text
+from sqlalchemy import distinct, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.core.logging import get_logger
+
+_seo_logger = get_logger("catalog.seo_cache")
 
 from app.modules.catalog.models import (
     Category,
     Product,
     ProductCategory,
-    ProductPrice,
 )
 from app.modules.catalog.schemas import (
     CharacteristicValuePublic,
@@ -152,19 +156,11 @@ class CatalogFilterService:
     def _apply_price_filter(self, q, price_min: Decimal | None, price_max: Decimal | None):
         if price_min is None and price_max is None:
             return q
-        price_sub = (
-            select(ProductPrice.product_id)
-            .where(
-                ProductPrice.price_type == "regular",
-                or_(ProductPrice.valid_from.is_(None), ProductPrice.valid_from <= func.current_date()),
-                or_(ProductPrice.valid_to.is_(None), ProductPrice.valid_to >= func.current_date()),
-            )
-        )
         if price_min is not None:
-            price_sub = price_sub.where(ProductPrice.amount >= price_min)
+            q = q.where(Product.price_to >= price_min)
         if price_max is not None:
-            price_sub = price_sub.where(ProductPrice.amount <= price_max)
-        return q.where(Product.id.in_(price_sub))
+            q = q.where(Product.price_from <= price_max)
+        return q
 
     # ------------------------------------------------------------------
     # GET /public/filters
@@ -356,14 +352,11 @@ class CatalogFilterService:
 
         stmt = (
             select(
-                func.min(ProductPrice.amount),
-                func.max(ProductPrice.amount),
+                func.min(Product.price_from),
+                func.max(Product.price_to),
             )
             .where(
-                ProductPrice.price_type == "regular",
-                or_(ProductPrice.valid_from.is_(None), ProductPrice.valid_from <= func.current_date()),
-                or_(ProductPrice.valid_to.is_(None), ProductPrice.valid_to >= func.current_date()),
-                ProductPrice.product_id.in_(select(product_ids_sub.c.id)),
+                Product.id.in_(select(product_ids_sub.c.id)),
             )
         )
         result = await self.db.execute(stmt)
@@ -437,39 +430,17 @@ class CatalogFilterService:
             q = q.where(sub.exists())
 
         if price_min is not None or price_max is not None:
-            price_sub = (
-                select(ProductPrice.product_id)
-                .where(
-                    ProductPrice.price_type == "regular",
-                    or_(ProductPrice.valid_from.is_(None), ProductPrice.valid_from <= func.current_date()),
-                    or_(ProductPrice.valid_to.is_(None), ProductPrice.valid_to >= func.current_date()),
-                )
-            )
             if price_min is not None:
-                price_sub = price_sub.where(ProductPrice.amount >= price_min)
+                q = q.where(Product.price_to >= price_min)
             if price_max is not None:
-                price_sub = price_sub.where(ProductPrice.amount <= price_max)
-            q = q.where(Product.id.in_(price_sub))
+                q = q.where(Product.price_from <= price_max)
 
-        # Sorting
+        # Sorting — use denormalized price_from for performance
         if sort in ("price_asc", "price_desc"):
-            current_price_sub = (
-                select(func.min(ProductPrice.amount))
-                .where(
-                    ProductPrice.product_id == Product.id,
-                    ProductPrice.price_type == "regular",
-                    or_(ProductPrice.valid_from.is_(None), ProductPrice.valid_from <= func.current_date()),
-                    or_(ProductPrice.valid_to.is_(None), ProductPrice.valid_to >= func.current_date()),
-                )
-                .correlate(Product)
-                .scalar_subquery()
-                .label("current_price")
-            )
-            q = q.add_columns(current_price_sub)
             if sort == "price_asc":
-                q = q.order_by(current_price_sub.asc().nullslast())
+                q = q.order_by(Product.price_from.asc().nullslast())
             else:
-                q = q.order_by(current_price_sub.desc().nullslast())
+                q = q.order_by(Product.price_from.desc().nullslast())
         elif sort == "title_asc":
             q = q.order_by(Product.title.asc())
         elif sort == "title_desc":
@@ -502,16 +473,10 @@ class CatalogFilterService:
             )
             base_for_count = base_for_count.where(sub.exists())
         if price_min is not None or price_max is not None:
-            price_sub2 = select(ProductPrice.product_id).where(
-                ProductPrice.price_type == "regular",
-                or_(ProductPrice.valid_from.is_(None), ProductPrice.valid_from <= func.current_date()),
-                or_(ProductPrice.valid_to.is_(None), ProductPrice.valid_to >= func.current_date()),
-            )
             if price_min is not None:
-                price_sub2 = price_sub2.where(ProductPrice.amount >= price_min)
+                base_for_count = base_for_count.where(Product.price_to >= price_min)
             if price_max is not None:
-                price_sub2 = price_sub2.where(ProductPrice.amount <= price_max)
-            base_for_count = base_for_count.where(Product.id.in_(price_sub2))
+                base_for_count = base_for_count.where(Product.price_from <= price_max)
 
         count_stmt = select(func.count()).select_from(base_for_count.subquery())
         total = (await self.db.execute(count_stmt)).scalar() or 0
@@ -632,7 +597,24 @@ class CatalogFilterService:
         page: int = 1,
         page_size: int = 100,
     ) -> tuple[list[dict], int]:
-        """Generate SEO-friendly filter page combinations."""
+        """Generate SEO-friendly filter page combinations.
+
+        Results are cached in Redis for 1 hour per tenant+category.
+        """
+        from app.core.redis import get_redis_client
+        redis = get_redis_client()
+        cache_key = f"seo_filter:{tenant_id}:{category_slug or '_all_'}:{min_products}"
+        if redis:
+            try:
+                cached = await redis.get(cache_key)
+                if cached:
+                    all_pages = json.loads(cached)
+                    total = len(all_pages)
+                    start = (page - 1) * page_size
+                    return all_pages[start:start + page_size], total
+            except Exception:
+                _seo_logger.debug("seo_cache_miss", key=cache_key)
+
         category_ids = []
         if category_slug:
             category_ids = await self._resolve_category_ids(tenant_id, [category_slug])
@@ -740,8 +722,14 @@ class CatalogFilterService:
                             })
 
         pages.sort(key=lambda p: p["product_count"], reverse=True)
-        total = len(pages)
 
+        if redis:
+            try:
+                await redis.set(cache_key, json.dumps(pages), ex=3600)
+            except Exception:
+                pass
+
+        total = len(pages)
         start = (page - 1) * page_size
         end = start + page_size
         return pages[start:end], total

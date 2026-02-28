@@ -447,6 +447,13 @@ AVAILABLE_FEATURES: dict[str, dict[str, str]] = {
         "description_ru": "Каталог товаров с категориями, ценами и характеристиками",
         "category": "commerce",
     },
+    "variants_module": {
+        "title": "Product Variants & Tariffs",
+        "title_ru": "Вариации и тарифы товаров",
+        "description": "Product variants, tariff plans, option groups for catalog products",
+        "description_ru": "Вариации товаров, тарифные планы, группы опций для каталога",
+        "category": "commerce",
+    },
 }
 
 

@@ -15,6 +15,7 @@ from app.middleware.cache import CacheHeadersMiddleware
 from app.middleware.cors import DynamicCORSMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 
 # Setup logging on module load
 setup_logging()
@@ -27,6 +28,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     Handles startup and shutdown events.
     """
+    # Sentry initialization
+    if settings.sentry_dsn:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            release=settings.app_version,
+            traces_sample_rate=0.1,
+            send_default_pii=False,
+        )
+
     # Startup
     logger.info(
         "application_starting",
@@ -90,9 +102,11 @@ def create_app() -> FastAPI:
 
 def _setup_middleware(app: FastAPI) -> None:
     """Configure application middleware."""
-    # CORS - dynamic origins loaded from DB (tenant_domains + tenant_settings.site_url)
-    # combined with static fallback from CORS_ORIGINS env var.
+    # CORS - dynamic origins loaded from DB
     app.add_middleware(DynamicCORSMiddleware)
+
+    # Security response headers (X-Content-Type-Options, X-Frame-Options, etc.)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Cache headers (runs last on response, adds Cache-Control and ETag)
     app.add_middleware(CacheHeadersMiddleware)
@@ -154,6 +168,7 @@ def _setup_routers(app: FastAPI) -> None:
     from app.modules.internal.router import router as internal_router
     from app.modules.leads.router import router as leads_router
     from app.modules.parameters.router import router as parameters_router
+    from app.modules.variants.router import router as variants_router
     from app.modules.platform_dashboard.router import router as platform_dashboard_router
     from app.modules.seo.router import router as seo_router
     from app.modules.telegram.router import router as telegram_router
@@ -169,8 +184,8 @@ def _setup_routers(app: FastAPI) -> None:
         tags=["Authentication"],
     )
     
-    # Backward compatibility: also register auth routes without /api/v1 prefix
-    # This allows frontend to use /auth/login instead of /api/v1/auth/login
+    # Legacy /auth routes preserved for backward compatibility.
+    # Rate limiter now covers both /api/v1/auth and /auth prefixes.
     app.include_router(
         auth_router,
         prefix="/auth",
@@ -245,6 +260,11 @@ def _setup_routers(app: FastAPI) -> None:
         parameters_router,
         prefix=settings.api_prefix,
         tags=["Parameters"],
+    )
+    app.include_router(
+        variants_router,
+        prefix=settings.api_prefix,
+        tags=["Variants"],
     )
 
     # Public media endpoint (without API prefix)

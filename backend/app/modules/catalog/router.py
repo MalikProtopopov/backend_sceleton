@@ -20,6 +20,8 @@ from app.modules.catalog.schemas import (
     CategoryTreeResponse,
     CategoryUpdate,
     FiltersResponse,
+    OptionGroupPublicSchema,
+    OptionValuePublicSchema,
     ProductAliasCreate,
     ProductAliasBulkResponse,
     ProductAliasResponse,
@@ -43,6 +45,10 @@ from app.modules.catalog.schemas import (
     ProductUpdate,
     SeoFilterPagesResponse,
     SeoFilterPage,
+    VariantImagePublicSchema,
+    VariantInclusionPublicSchema,
+    VariantPricePublicSchema,
+    VariantPublicSchema,
     SeoFilterItem,
     UOMCreate,
     UOMResponse,
@@ -117,6 +123,8 @@ async def get_category_public(
         product_items.append(ProductPublicResponse(
             id=p.id, slug=p.slug, sku=p.sku, title=p.title,
             brand=p.brand, model=p.model, description=p.description,
+            product_type=p.product_type, has_variants=p.has_variants,
+            price_from=p.price_from, price_to=p.price_to,
             cover_url=cover_url,
         ))
 
@@ -218,6 +226,8 @@ async def list_products_public(
         items.append(ProductPublicResponse(
             id=p.id, slug=p.slug, sku=p.sku, title=p.title,
             brand=p.brand, model=p.model, description=p.description,
+            product_type=p.product_type, has_variants=p.has_variants,
+            price_from=p.price_from, price_to=p.price_to,
             cover_url=cover_url,
         ))
     return ProductPublicListResponse(
@@ -276,6 +286,8 @@ async def get_product_public(
     db: AsyncSession = Depends(get_db),
 ) -> ProductPublicDetailResponse:
     from app.modules.catalog.filter_service import CatalogFilterService
+    from app.modules.tenants.service import FeatureFlagService
+    from app.modules.variants.service import OptionGroupService, VariantService
 
     service = ProductService(db)
     product = await service.get_by_slug_public(slug, tenant_id)
@@ -291,6 +303,53 @@ async def get_product_public(
     filter_svc = CatalogFilterService(db)
     characteristics, chars_compat = await filter_svc.get_product_characteristics_public(product.id)
 
+    option_groups_data = None
+    variants_data = None
+
+    if product.has_variants:
+        ff_svc = FeatureFlagService(db)
+        variants_enabled = await ff_svc.is_enabled(tenant_id, "variants_module")
+        if variants_enabled:
+            og_svc = OptionGroupService(db)
+            groups = await og_svc.list_for_product(product.id, tenant_id)
+            option_groups_data = [
+                OptionGroupPublicSchema(
+                    title=g.title,
+                    slug=g.slug,
+                    display_type=g.display_type,
+                    values=[OptionValuePublicSchema.model_validate(v) for v in (g.values or [])],
+                )
+                for g in groups
+            ]
+
+            v_svc = VariantService(db)
+            raw_variants = await v_svc.list_for_product(product.id, tenant_id)
+            variants_data = []
+            for v in raw_variants:
+                if not v.is_active:
+                    continue
+                options_map: dict[str, str] = {}
+                for ol in (v.option_links or []):
+                    if ol.option_value and ol.option_value.option_group:
+                        options_map[ol.option_value.option_group.slug] = ol.option_value.slug
+                    elif ol.option_value:
+                        options_map[str(ol.option_value.id)] = ol.option_value.slug
+
+                variants_data.append(VariantPublicSchema(
+                    id=v.id,
+                    slug=v.slug,
+                    title=v.title,
+                    sku=v.sku,
+                    description=v.description,
+                    is_default=v.is_default,
+                    in_stock=v.stock_quantity is None or v.stock_quantity > 0,
+                    sort_order=v.sort_order,
+                    prices=[VariantPricePublicSchema(price_type=p.price_type, amount=p.amount, currency=p.currency) for p in (v.prices or [])],
+                    options=options_map,
+                    images=[VariantImagePublicSchema.model_validate(img) for img in (v.images or [])],
+                    inclusions=[VariantInclusionPublicSchema.model_validate(inc) for inc in (v.inclusions or [])],
+                ))
+
     return ProductPublicDetailResponse(
         id=product.id,
         slug=product.slug,
@@ -299,12 +358,18 @@ async def get_product_public(
         brand=product.brand,
         model=product.model,
         description=product.description,
+        product_type=product.product_type,
+        has_variants=product.has_variants,
+        price_from=product.price_from,
+        price_to=product.price_to,
         images=[ProductImagePublicResponse.model_validate(img) for img in (product.images or [])],
         characteristics=characteristics,
         chars=chars_compat,
         categories=categories,
         prices=[{"price_type": p.price_type, "amount": p.amount, "currency": p.currency} for p in (product.prices or [])],
         content_blocks=[ContentBlockResponse.model_validate(b) for b in blocks],
+        option_groups=option_groups_data,
+        variants=variants_data,
     )
 
 

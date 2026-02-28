@@ -155,6 +155,7 @@ require_seo_advanced = require_feature("seo_advanced")
 require_multilang = require_feature("multilang")
 require_analytics_advanced = require_feature("analytics_advanced")
 require_catalog = require_feature("catalog_module")
+require_variants = require_feature("variants_module")
 
 # ============================================================================
 # Pre-defined feature checkers for PUBLIC routes (no auth needed)
@@ -166,4 +167,5 @@ require_faq_public = require_feature_public("faq_module")
 require_team_public = require_feature_public("team_module")
 require_services_public = require_feature_public("services_module")
 require_catalog_public = require_feature_public("catalog_module")
+require_variants_public = require_feature_public("variants_module")
 

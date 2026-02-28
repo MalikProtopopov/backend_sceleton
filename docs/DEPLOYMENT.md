@@ -1,8 +1,13 @@
 # Руководство по развертыванию Corporate CMS Engine
 
+> **⚠ Внимание:** Продакшен-стек переведён на **Caddy** вместо Nginx.
+> Все ссылки на nginx в этом документе устарели.
+> Актуальная конфигурация: `docker-compose.prod.yml` + `deploy/caddy/Caddyfile`.
+> Caddy обеспечивает автоматический TLS (Let's Encrypt + on-demand для кастомных доменов).
+
 Это руководство описывает процесс развертывания проекта в разных окружениях:
 - **Development (localhost)** - локальная разработка
-- **Production (SSL)** - продакшен сервер с HTTPS
+- **Production (SSL)** - продакшен сервер с HTTPS (Caddy)
 
 ---
 

@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, event
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -116,16 +116,13 @@ class VersionMixin:
 
 
 class TenantMixin:
-    """Mixin that adds tenant_id for multi-tenancy support.
-    
-    Note: This creates the column only. For models that need a relationship
-    to Tenant, you must define the ForeignKey explicitly in the model.
-    """
+    """Mixin that adds tenant_id with FK to tenants.id for multi-tenancy."""
 
     @declared_attr
     def tenant_id(cls) -> Mapped[uuid.UUID]:
         return mapped_column(
             UUID(as_uuid=True),
+            ForeignKey("tenants.id", ondelete="CASCADE"),
             nullable=False,
             index=True,
         )

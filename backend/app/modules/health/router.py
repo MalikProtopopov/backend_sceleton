@@ -1,6 +1,7 @@
 """Health check endpoints."""
 
 from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import settings
@@ -63,19 +64,24 @@ async def liveness() -> HealthResponse:
         }
     },
 )
-async def readiness() -> ReadinessResponse:
-    """Readiness probe - checks all dependencies."""
+async def readiness():
+    """Readiness probe - checks all dependencies.
+
+    Returns 200 when all services are healthy, 503 otherwise.
+    """
     db_ok = await check_db_connection()
     redis_ok = await check_redis_connection()
 
     all_ok = db_ok and redis_ok
-    status_str = "ok" if all_ok else "degraded"
-
-    return ReadinessResponse(
-        status=status_str,
-        checks={
-            "database": db_ok,
-            "redis": redis_ok,
-        },
+    body = ReadinessResponse(
+        status="ok" if all_ok else "degraded",
+        checks={"database": db_ok, "redis": redis_ok},
     )
+
+    if not all_ok:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=body.model_dump(),
+        )
+    return body
 

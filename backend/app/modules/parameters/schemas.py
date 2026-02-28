@@ -52,7 +52,7 @@ class ParameterCreate(BaseModel):
     value_type: str = Field(..., pattern="^(string|number|enum|bool|range)$")
     uom_id: UUID | None = None
     scope: str = Field(default="global", pattern="^(global|category)$")
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     constraints: dict | None = None
     is_filterable: bool = False
     is_required: bool = False
@@ -67,7 +67,7 @@ class ParameterCreate(BaseModel):
 class ParameterUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     slug: str | None = Field(default=None, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     uom_id: UUID | None = None
     scope: str | None = Field(default=None, pattern="^(global|category)$")
     constraints: dict | None = None

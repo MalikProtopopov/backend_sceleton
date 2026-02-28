@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
-from app.core.image_upload import image_upload_service
+from app.core.image_upload import document_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.modules.documents.models import DocumentStatus
 from app.modules.documents.schemas import (
@@ -270,8 +270,7 @@ async def upload_document_file(
     service = DocumentService(db)
     document = await service.get_by_id(document_id, tenant_id)
 
-    # Upload file to S3
-    file_url = await image_upload_service.upload_image(
+    file_url = await document_upload_service.upload_image(
         file=file,
         tenant_id=tenant_id,
         folder="documents",
@@ -304,8 +303,7 @@ async def delete_document_file(
     document = await service.get_by_id(document_id, tenant_id)
 
     if document.file_url:
-        # Delete from S3
-        await image_upload_service.delete_image(document.file_url)
+        await document_upload_service.delete_image(document.file_url)
         document.file_url = None
         await db.commit()
 

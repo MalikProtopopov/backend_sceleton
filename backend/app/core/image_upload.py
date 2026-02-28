@@ -272,6 +272,41 @@ class ImageUploadService:
             return False
 
 
-# Singleton instance for reuse
+class DocumentUploadService(ImageUploadService):
+    """Service for uploading document files (PDF, DOC, etc.) to S3.
+
+    Extends ImageUploadService but with a MIME whitelist appropriate for
+    documents rather than raster images.
+    """
+
+    ALLOWED_TYPES: set[str] = {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "text/plain",
+        "text/csv",
+    }
+
+    MAX_SIZE: int = 50 * 1024 * 1024  # 50 MB
+
+    EXTENSION_MAP: dict[str, str] = {
+        "application/pdf": "pdf",
+        "application/msword": "doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+        "application/vnd.ms-excel": "xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+        "application/vnd.ms-powerpoint": "ppt",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+        "text/plain": "txt",
+        "text/csv": "csv",
+    }
+
+
+# Singleton instances for reuse
 image_upload_service = ImageUploadService()
+document_upload_service = DocumentUploadService()
 

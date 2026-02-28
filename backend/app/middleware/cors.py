@@ -21,7 +21,7 @@ PREFLIGHT_MAX_AGE = "86400"
 CORS_HEADERS = {
     "access-control-allow-credentials": "true",
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "*",
+    "access-control-allow-headers": "Content-Type, Authorization, X-Tenant-ID, X-Requested-With, Accept, Accept-Language",
     "access-control-max-age": PREFLIGHT_MAX_AGE,
     "vary": "Origin",
 }

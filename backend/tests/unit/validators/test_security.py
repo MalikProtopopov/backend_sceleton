@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from jose import jwt
+import jwt
 
 from app.config import settings
 from app.core.exceptions import InvalidTokenError, TokenExpiredError

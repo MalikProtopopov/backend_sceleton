@@ -36,7 +36,7 @@ class LoginRequest(BaseModel):
     """Login request schema."""
 
     email: EmailStr
-    password: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1, max_length=1000)
 
 
 class LoginResponse(BaseModel):
@@ -139,6 +139,7 @@ class RoleBase(BaseModel):
 class RoleCreate(RoleBase):
     """Schema for creating a role."""
 
+    description: str | None = Field(default=None, max_length=10000)
     permission_ids: list[UUID] = Field(default_factory=list)
 
 
@@ -146,7 +147,7 @@ class RoleUpdate(BaseModel):
     """Schema for updating a role."""
 
     name: str | None = Field(default=None, min_length=2, max_length=50)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     permission_ids: list[UUID] | None = None
 
 

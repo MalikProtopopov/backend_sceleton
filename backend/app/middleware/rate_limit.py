@@ -1,5 +1,8 @@
-"""Rate limiting middleware using Redis."""
+"""Rate limiting middleware using Redis with in-memory fallback."""
 
+import time
+from collections import defaultdict
+from threading import Lock
 from typing import Callable
 
 from fastapi import Request, Response
@@ -13,6 +16,35 @@ from app.core.redis import RateLimiter, get_redis_client
 logger = get_logger(__name__)
 
 
+class _InMemoryRateLimiter:
+    """Simple in-memory rate limiter used as fallback when Redis is unavailable.
+
+    Only applied to critical endpoints (login, inquiry) to prevent abuse
+    while Redis is down.  Non-critical endpoints are allowed through.
+    """
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, list[float]] = defaultdict(list)
+        self._lock = Lock()
+
+    def is_allowed(self, key: str, max_requests: int, window: int) -> tuple[bool, int, int]:
+        now = time.monotonic()
+        with self._lock:
+            hits = self._buckets[key]
+            cutoff = now - window
+            hits[:] = [t for t in hits if t > cutoff]
+            if len(hits) >= max_requests:
+                reset = int(hits[0] + window - now) + 1
+                return False, 0, reset
+            hits.append(now)
+            return True, max_requests - len(hits), window
+
+
+_mem_limiter = _InMemoryRateLimiter()
+
+_CRITICAL_KEYS = {"login", "inquiry"}
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware for rate limiting API requests.
     
@@ -22,45 +54,41 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     - Inquiry submission: 3 req/min per IP (spam protection)
     - Admin API: No limit (authenticated users)
     
-    Rate limit headers are added to all responses:
-    - X-RateLimit-Limit: Maximum requests allowed
-    - X-RateLimit-Remaining: Requests remaining in window
-    - X-RateLimit-Reset: Seconds until limit resets
+    When Redis is unavailable, an in-memory fallback protects critical
+    endpoints (login, inquiry) so brute-force protection is never silently
+    disabled.
     """
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Response]
     ) -> Response:
-        # Skip rate limiting for health checks
         path = request.url.path
         if path.startswith("/health"):
             return await call_next(request)
-        
-        # Get Redis client
-        redis_client = get_redis_client()
-        if redis_client is None:
-            # Redis not available, skip rate limiting
-            logger.warning("rate_limit_skipped", reason="redis_unavailable")
-            return await call_next(request)
-        
-        # Determine rate limit based on path
+
         limit_config = self._get_limit_config(path, request.method)
         if limit_config is None:
-            # No rate limit for this path
             return await call_next(request)
-        
+
         max_requests, window_seconds = limit_config
-        
-        # Build rate limit key
         client_ip = self._get_client_ip(request)
         key = self._build_key(path, client_ip)
-        
-        # Check rate limit
-        limiter = RateLimiter(redis_client)
-        is_allowed, remaining, reset_seconds = await limiter.is_allowed(
-            key, max_requests, window_seconds
-        )
-        
+
+        redis_client = get_redis_client()
+        if redis_client is not None:
+            limiter = RateLimiter(redis_client)
+            is_allowed, remaining, reset_seconds = await limiter.is_allowed(
+                key, max_requests, window_seconds
+            )
+        else:
+            bucket_name = key.split(":")[0]
+            if bucket_name in _CRITICAL_KEYS:
+                is_allowed, remaining, reset_seconds = _mem_limiter.is_allowed(
+                    key, max_requests, window_seconds
+                )
+            else:
+                return await call_next(request)
+
         if not is_allowed:
             logger.warning(
                 "rate_limit_exceeded",
@@ -87,55 +115,43 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 },
             )
         
-        # Process request
         response = await call_next(request)
-        
-        # Add rate limit headers to response
         response.headers["X-RateLimit-Limit"] = str(max_requests)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Reset"] = str(reset_seconds)
-        
         return response
     
     def _get_limit_config(
         self, path: str, method: str
     ) -> tuple[int, int] | None:
-        """Get rate limit configuration for a path.
-        
-        Returns:
-            Tuple of (max_requests, window_seconds) or None for no limit.
-        """
-        # Login endpoint - strict limit for brute force protection
-        # More lenient in development
-        if path == f"{settings.api_prefix}/auth/login" and method == "POST":
+        is_login = (
+            path == f"{settings.api_prefix}/auth/login"
+            or path == "/auth/login"
+        ) and method == "POST"
+        if is_login:
             if settings.is_development:
-                # Development: 50 requests per minute
                 return (50, 60)
             return (
                 settings.rate_limit_login_requests,
                 settings.rate_limit_login_window_seconds,
             )
         
-        # Inquiry submission - spam protection
         if path == f"{settings.api_prefix}/public/inquiries" and method == "POST":
             return (
                 settings.rate_limit_inquiry_requests,
                 settings.rate_limit_inquiry_window_seconds,
             )
         
-        # Public API endpoints
         if "/public/" in path or path.startswith(f"{settings.api_prefix}/public"):
             return (
                 settings.rate_limit_requests,
                 settings.rate_limit_window_seconds,
             )
         
-        # Admin API - no rate limit (authenticated)
         if "/admin/" in path:
             return None
         
-        # Default rate limit for other public endpoints
-        if path.startswith(settings.api_prefix):
+        if path.startswith(settings.api_prefix) or path.startswith("/auth"):
             return (
                 settings.rate_limit_requests,
                 settings.rate_limit_window_seconds,
@@ -144,8 +160,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return None
     
     def _build_key(self, path: str, client_ip: str) -> str:
-        """Build rate limit key based on path and IP."""
-        # Use path prefix for grouping similar endpoints
         if "/auth/login" in path:
             return f"login:{client_ip}"
         elif "/inquiries" in path:
@@ -156,18 +170,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return f"api:{client_ip}"
     
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request, handling proxies."""
-        # Check for forwarded headers (when behind proxy/load balancer)
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            # Take the first IP in the chain
-            return forwarded_for.split(",")[0].strip()
-        
+        """Extract client IP preferring X-Real-IP set by the reverse proxy."""
         real_ip = request.headers.get("x-real-ip")
         if real_ip:
-            return real_ip
-        
-        # Fall back to direct client
+            return real_ip.strip()
+
         if request.client:
             return request.client.host
         

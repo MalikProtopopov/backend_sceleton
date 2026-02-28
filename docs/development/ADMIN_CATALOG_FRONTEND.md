@@ -25,8 +25,14 @@
 14. [Вкладка: Привязка к категориям](#14-вкладка-привязка-к-категориям)
 15. [Вкладка: Алиасы и Аналоги](#15-вкладка-алиасы-и-аналоги)
 16. [Заявки на продукт (Leads)](#16-заявки-на-продукт)
-17. [TypeScript-типы](#17-typescript-типы)
-18. [Типовые ошибки и их обработка](#18-обработка-ошибок)
+17. [Тип продукта и вариативность](#17-тип-продукта)
+18. [Вкладка: Группы опций](#18-вкладка-группы-опций)
+19. [Вкладка: Вариации](#19-вкладка-вариации)
+20. [Вкладка: Цены вариантов](#20-вкладка-цены-вариантов)
+21. [Вкладка: Включения (тарифы)](#21-вкладка-включения)
+22. [Вкладка: Изображения вариантов](#22-вкладка-изображения-вариантов)
+23. [TypeScript-типы](#23-typescript-типы)
+24. [Типовые ошибки и их обработка](#24-обработка-ошибок)
 
 ---
 
@@ -64,6 +70,12 @@ if (!isCatalogEnabled) {
 ```
 
 Если флаг выключен — все catalog-эндпоинты вернут `403 Forbidden`.
+
+**Дополнительный флаг: `variants_module`** — управляет видимостью полей `product_type`, `has_variants`, `price_from`/`price_to` и всех вкладок вариантов (группы опций, вариации, цены вариантов, включения, изображения вариантов). Проверяется аналогично:
+
+```typescript
+const isVariantsEnabled = featureFlags.find(f => f.name === 'variants_module')?.is_enabled ?? false;
+```
 
 ---
 
@@ -109,6 +121,7 @@ const can = (permission: CatalogPermission) =>
   /admin/catalog/products/new       → Создание продукта
   /admin/catalog/products/:id       → Карточка продукта
     → вкладки: Основное | Характеристики | Изображения | Цены | Контент | Категории | Алиасы
+    → (если variants_module) : Группы опций | Вариации | Цены вариантов | Включения | Изобр. вариантов
 ```
 
 Боковая навигация показывает «Каталог» только если `catalog_module` включён.
@@ -1175,7 +1188,393 @@ const { items } = await fetchJson(
 
 ---
 
-## 17. TypeScript-типы
+## 17. Тип продукта и вариативность
+
+> **Feature flag:** Поля `product_type`, `has_variants`, `price_from`, `price_to` и все вкладки вариантов отображаются **только если** для тенанта включён флаг `variants_module`.
+
+### 17.1 Поле `product_type`
+
+Продукт теперь имеет тип, определяющий его природу:
+
+| Значение | Описание |
+|----------|----------|
+| `physical` | Физический товар (по умолчанию) |
+| `digital` | Цифровой продукт |
+| `service` | Услуга |
+| `course` | Курс / обучение |
+| `subscription` | Подписка |
+
+```typescript
+// В форме редактирования продукта — <Select>
+const PRODUCT_TYPES = [
+  { value: 'physical', label: 'Физический товар' },
+  { value: 'digital', label: 'Цифровой продукт' },
+  { value: 'service', label: 'Услуга' },
+  { value: 'course', label: 'Курс' },
+  { value: 'subscription', label: 'Подписка' },
+] as const;
+
+// Показывать Select только при включённом variants_module
+{isVariantsEnabled && (
+  <Select name="product_type" options={PRODUCT_TYPES} defaultValue="physical" />
+)}
+```
+
+### 17.2 Поле `has_variants`
+
+Булевый флаг — управляет отображением вкладок вариантов на карточке продукта.
+
+```typescript
+// Если has_variants = false — вкладки «Группы опций», «Вариации» и др. скрыты
+// Если has_variants = true — вкладки отображаются
+
+{product.has_variants && isVariantsEnabled && (
+  <>
+    <Tab label="Группы опций" />
+    <Tab label="Вариации" />
+    <Tab label="Цены вариантов" />
+    <Tab label="Включения" />
+    <Tab label="Изобр. вариантов" />
+  </>
+)}
+```
+
+### 17.3 Поля `price_from` / `price_to`
+
+Read-only поля, автоматически рассчитываемые бэкендом на основе минимальной и максимальной цены среди всех вариантов продукта.
+
+- Отображать в карточке продукта и в таблице списка
+- **Нельзя** менять вручную — пересчитываются автоматически при изменении цен вариантов
+- `null` — если у продукта нет вариантов с ценами
+
+```typescript
+// В таблице списка продуктов:
+<td>{product.price_from && product.price_to
+  ? `${product.price_from} – ${product.price_to}`
+  : '—'
+}</td>
+```
+
+---
+
+## 18. Вкладка: Группы опций
+
+> **Feature flag:** Вкладка видна только при `variants_module = true` и `product.has_variants = true`.
+
+Группы опций определяют оси вариативности: размер, цвет, объём и т.д. Каждая группа содержит набор значений.
+
+### 18.1 Загрузка
+
+```typescript
+// GET /api/v1/admin/products/{product_id}/option-groups
+// Response: OptionGroup[]
+
+const groups = await fetchJson(`/api/v1/admin/products/${id}/option-groups`);
+```
+
+### 18.2 Создание группы опций
+
+```typescript
+// POST /api/v1/admin/products/{product_id}/option-groups
+interface OptionGroupCreate {
+  title: string;                // обязательно, 1–255
+  slug: string;                 // обязательно, 1–255
+  display_type: 'dropdown' | 'buttons' | 'color_swatch' | 'cards';
+  sort_order?: number;          // default 0
+  is_required?: boolean;        // default true
+  parameter_id?: string | null; // привязка к параметру из словаря (опционально)
+  values?: OptionValueCreate[]; // начальные значения
+}
+
+interface OptionValueCreate {
+  title: string;
+  slug?: string;
+  sort_order?: number;
+  color_hex?: string | null;   // для display_type = "color_swatch"
+  image_url?: string | null;   // для display_type = "cards"
+}
+
+// Пример: создать группу "Размер"
+await fetch(`/api/v1/admin/products/${id}/option-groups`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    title: 'Размер',
+    slug: 'razmer',
+    display_type: 'buttons',
+    is_required: true,
+    values: [
+      { title: 'S' },
+      { title: 'M' },
+      { title: 'L' },
+      { title: 'XL' },
+    ],
+  }),
+});
+// Response 201: OptionGroup (с values[])
+```
+
+### 18.3 Обновление / удаление
+
+```typescript
+// PATCH /api/v1/admin/products/{product_id}/option-groups/{group_id}
+await fetch(`/api/v1/admin/products/${id}/option-groups/${groupId}`, {
+  method: 'PATCH',
+  headers,
+  body: JSON.stringify({ title: 'Новое название', display_type: 'dropdown' }),
+});
+
+// DELETE /api/v1/admin/products/{product_id}/option-groups/{group_id}
+// ВНИМАНИЕ: Удаление группы не удаляет варианты, но разрывает связи через VariantOptionLink. Сами варианты остаются.
+// Response: 204
+```
+
+### 18.4 UI — рекомендуемый дизайн
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  ГРУППЫ ОПЦИЙ                                 [+ Добавить группу]│
+│  ────────────────────────────────────────────────────────────── │
+│                                                                  │
+│  ☰  Размер  (buttons)  обязательное              [✎][✕]         │
+│     Значения: [S] [M] [L] [XL]  [+ добавить]                   │
+│                                                                  │
+│  ☰  Цвет  (color_swatch)  обязательное           [✎][✕]         │
+│     Значения: [🔴 Красный] [🔵 Синий] [+ добавить]             │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- `☰` — drag-handle для сортировки групп
+- Значения редактируются inline — клик по значению открывает форму
+- `display_type` определяет как значения отображаются на публичном сайте
+- `parameter_id` — опциональная привязка к параметру из словаря для синхронизации
+
+---
+
+## 19. Вкладка: Вариации
+
+> **Feature flag:** Вкладка видна только при `variants_module = true` и `product.has_variants = true`.
+
+Вариации — конкретные SKU-позиции, образованные комбинациями значений из групп опций.
+
+### 19.1 Загрузка
+
+```typescript
+// GET /api/v1/admin/products/{product_id}/variants
+// Response: ProductVariant[]
+
+const variants = await fetchJson(`/api/v1/admin/products/${id}/variants`);
+```
+
+### 19.2 Генерация матрицы вариантов
+
+Автоматическая генерация всех комбинаций из групп опций:
+
+```typescript
+// POST /api/v1/admin/products/{product_id}/variants/generate
+// Создаёт варианты для всех комбинаций значений опций,
+// которых ещё нет. Существующие варианты не затрагиваются.
+
+await fetch(`/api/v1/admin/products/${id}/variants/generate`, {
+  method: 'POST',
+  headers,
+  body: JSON.stringify({
+    option_group_ids: ['uuid1', 'uuid2'],  // обязательно, UUID групп опций
+    base_price: 1000,                       // опционально, базовая цена для новых вариантов
+  }),
+});
+// Response: { created_count: N, variants: [...] }
+```
+
+### 19.3 Создание варианта вручную
+
+```typescript
+// POST /api/v1/admin/products/{product_id}/variants
+interface VariantCreate {
+  sku: string;                    // уникальный в тенанте
+  slug: string;                   // обязательно, 1–255
+  title: string;                  // 1–500
+  description?: string;
+  is_default?: boolean;           // default false; только один может быть default
+  is_active?: boolean;            // default true
+  sort_order?: number;
+  stock_quantity?: number | null;
+  weight?: number | null;         // decimal (Decimal | None в Pydantic)
+  option_value_ids?: string[];   // UUID значений из групп опций
+}
+```
+
+### 19.4 Обновление / удаление
+
+```typescript
+// PATCH /api/v1/admin/products/{product_id}/variants/{variant_id}
+await fetch(`/api/v1/admin/products/${id}/variants/${variantId}`, {
+  method: 'PATCH',
+  headers,
+  body: JSON.stringify({ sku: 'NEW-SKU-001', is_active: false }),
+});
+
+// DELETE /api/v1/admin/products/{product_id}/variants/{variant_id}
+// Response: 204
+```
+
+### 19.5 UI — рекомендуемый дизайн
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  ВАРИАЦИИ                        [Сгенерировать] [+ Добавить вручную]│
+│  ──────────────────────────────────────────────────────────────────  │
+│                                                                      │
+│  SKU          Название        Размер  Цвет   Сток  Статус  Действия  │
+│  ─────────────────────────────────────────────────────────────────── │
+│  ▶ SKU-S-RED  Футболка S/Кр.  S      Красн.  50    ✅     [✎][✕]    │
+│  ▶ SKU-M-RED  Футболка M/Кр.  M      Красн.  30    ✅     [✎][✕]    │
+│  ▼ SKU-L-BLU  Футболка L/Син. L      Синий   0     ⚠️     [✎][✕]    │
+│    ├─ Цены: regular 1500₽, sale 1200₽                                │
+│    ├─ Изображения: 3 шт.                                            │
+│    └─ Включения: 5 пунктов                                          │
+│                                                                      │
+│  Bulk: [☑ Выбрать все] [Активировать] [Деактивировать] [Удалить]    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- `▶` / `▼` — раскрываемые строки с деталями (цены, изображения, включения)
+- Кнопка «Сгенерировать» — `POST /variants/generate`
+- Bulk-операции: выбрать несколько → групповое действие
+
+---
+
+## 20. Вкладка: Цены вариантов
+
+> **Feature flag:** Вкладка видна только при `variants_module = true` и `product.has_variants = true`.
+
+Цены устанавливаются на уровне каждого варианта. Структура идентична ценам продукта (секция 12), но привязана к варианту.
+
+### 20.1 CRUD
+
+```typescript
+// GET /api/v1/admin/products/{product_id}/variants/{variant_id}/prices
+// Response: VariantPrice[]
+
+// POST /api/v1/admin/products/{product_id}/variants/{variant_id}/prices
+interface VariantPriceCreate {
+  price_type?: 'regular' | 'sale' | 'wholesale' | 'cost';  // default "regular"
+  amount: number;
+  currency?: string;        // default "RUB"
+  valid_from?: string | null;
+  valid_to?: string | null;
+}
+
+// PATCH /api/v1/admin/products/{product_id}/variants/{variant_id}/prices/{price_id}
+// DELETE /api/v1/admin/products/{product_id}/variants/{variant_id}/prices/{price_id}
+// Response: 204
+```
+
+### 20.2 Автоматический пересчёт `price_from` / `price_to`
+
+После **любого** изменения цен вариантов (создание, обновление, удаление) бэкенд автоматически пересчитывает `product.price_from` и `product.price_to`. Фронтенд должен перезагрузить продукт для отображения актуальных значений:
+
+```typescript
+const handlePriceSave = async (variantId: string, priceData: VariantPriceCreate) => {
+  await createVariantPrice(productId, variantId, priceData);
+  await refetchProduct(); // обновить price_from / price_to в UI
+};
+```
+
+---
+
+## 21. Вкладка: Включения (тарифы)
+
+> **Feature flag:** Вкладка видна только при `variants_module = true` и `product.has_variants = true`.  
+> **Типы продуктов:** Релевантна для `course`, `subscription`, `service`. Для `physical` и `digital` — вкладку можно скрыть или показать пустой.
+
+Включения позволяют описать, что входит в каждый вариант/тариф — для построения сравнительных таблиц.
+
+### 21.1 CRUD
+
+```typescript
+// GET /api/v1/admin/products/{product_id}/variants/{variant_id}/inclusions
+// Response: VariantInclusion[]
+
+// POST /api/v1/admin/products/{product_id}/variants/{variant_id}/inclusions
+interface VariantInclusionCreate {
+  title: string;                 // обязательно, 1–500
+  description?: string | null;
+  is_included: boolean;          // true = входит, false = не входит
+  sort_order?: number;
+  icon?: string | null;          // имя иконки: "check", "star", "lock"
+  group?: string | null;         // группировка: "Базовые", "Премиум"
+}
+
+// PATCH /api/v1/admin/products/{product_id}/variants/{variant_id}/inclusions/{inclusion_id}
+// DELETE /api/v1/admin/products/{product_id}/variants/{variant_id}/inclusions/{inclusion_id}
+// Response: 204
+```
+
+### 21.2 UI — пример сравнительной таблицы
+
+```
+┌──────────────────────┬──────────┬──────────┬──────────┐
+│  Включено            │  Basic   │  Pro     │  Premium │
+├──────────────────────┼──────────┼──────────┼──────────┤
+│  Базовые             │          │          │          │
+│  ✅ Доступ к курсу   │    ✅    │    ✅    │    ✅    │
+│  ✅ Материалы        │    ✅    │    ✅    │    ✅    │
+│  Премиум             │          │          │          │
+│  🔒 Менторство       │    ❌    │    ✅    │    ✅    │
+│  🔒 Сертификат       │    ❌    │    ❌    │    ✅    │
+└──────────────────────┴──────────┴──────────┴──────────┘
+```
+
+Для генерации такой таблицы на публичном сайте фронтенд загружает `inclusions` всех вариантов и группирует по `group`.
+
+---
+
+## 22. Вкладка: Изображения вариантов
+
+> **Feature flag:** Вкладка видна только при `variants_module = true` и `product.has_variants = true`.
+
+Изображения привязываются к конкретному варианту. Если у варианта нет своих изображений — на публичном сайте показываются изображения продукта (fallback).
+
+### 22.1 CRUD
+
+```typescript
+// GET /api/v1/admin/products/{product_id}/variants/{variant_id}/images
+// Response: VariantImage[]
+
+// POST /api/v1/admin/products/{product_id}/variants/{variant_id}/images
+// Content-Type: multipart/form-data (аналогично загрузке изображений продукта)
+const formData = new FormData();
+formData.append('file', file);
+formData.append('alt', altText);
+formData.append('sort_order', '0');
+
+await fetch(`/api/v1/admin/products/${id}/variants/${variantId}/images`, {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}`, 'X-Tenant-ID': tenantId },
+  body: formData,
+});
+// Response 201: VariantImage
+
+// DELETE /api/v1/admin/products/{product_id}/variants/{variant_id}/images/{image_id}
+// Response: 204
+```
+
+### 22.2 Логика fallback на фронте
+
+```typescript
+const getDisplayImages = (variant: ProductVariant, product: ProductDetail): VariantImage[] | ProductImage[] => {
+  if (variant.images.length > 0) {
+    return variant.images;
+  }
+  return product.images;
+};
+```
+
+---
+
+## 23. TypeScript-типы
 
 ```typescript
 // ============================================
@@ -1401,6 +1800,8 @@ interface ContentBlock {
   block_metadata: Record<string, unknown> | null;
 }
 
+type ProductType = 'physical' | 'digital' | 'service' | 'course' | 'subscription';
+
 interface Product {
   id: string;
   tenant_id: string;
@@ -1411,6 +1812,10 @@ interface Product {
   model: string | null;
   description: string | null;
   uom_id: string | null;
+  product_type: ProductType;
+  has_variants: boolean;
+  price_from: string | null;
+  price_to: string | null;
   is_active: boolean;
   version: number;
   images: ProductImage[];
@@ -1426,6 +1831,88 @@ interface ProductDetail extends Product {
   // content_blocks загружаются отдельно: GET /admin/products/{id}/content-blocks
 }
 
+// ---------- Группы опций и значения ----------
+
+type OptionDisplayType = 'dropdown' | 'buttons' | 'color_swatch' | 'cards';
+
+interface OptionValue {
+  id: string;
+  title: string;
+  slug: string;
+  sort_order: number;
+  color_hex: string | null;
+  image_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface OptionGroup {
+  id: string;
+  product_id: string;
+  title: string;
+  slug: string;
+  display_type: OptionDisplayType;
+  sort_order: number;
+  is_required: boolean;
+  parameter_id: string | null;
+  values: OptionValue[];
+}
+
+// ---------- Вариации ----------
+
+interface VariantPrice {
+  id: string;
+  price_type: 'regular' | 'sale' | 'wholesale' | 'cost';
+  amount: string;
+  currency: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface VariantInclusion {
+  id: string;
+  title: string;
+  description: string | null;
+  is_included: boolean;
+  sort_order: number;
+  icon: string | null;
+  group: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface VariantImage {
+  id: string;
+  url: string;
+  alt: string | null;
+  width: number | null;
+  height: number | null;
+  size_bytes: number | null;
+  mime_type: string | null;
+  sort_order: number;
+  is_cover: boolean;
+}
+
+interface ProductVariant {
+  id: string;
+  product_id: string;
+  sku: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
+  stock_quantity: number | null;
+  weight: string | null;
+  prices: VariantPrice[];
+  option_values: OptionValue[];
+  inclusions: VariantInclusion[];
+  images: VariantImage[];
+}
+
 // ---------- Request types ----------
 
 interface ProductCreate {
@@ -1436,6 +1923,8 @@ interface ProductCreate {
   model?: string;
   description?: string;
   uom_id?: string;
+  product_type?: ProductType;    // default "physical" (только при variants_module)
+  has_variants?: boolean;        // default false
   is_active?: boolean;
   category_ids?: string[];
 }
@@ -1448,6 +1937,8 @@ interface ProductUpdate {
   model?: string;
   description?: string;
   uom_id?: string | null;
+  product_type?: ProductType;    // только при variants_module
+  has_variants?: boolean;
   is_active?: boolean;
   version: number; // обязательно — optimistic locking!
 }
@@ -1480,6 +1971,48 @@ interface ProductPriceCreate {
   valid_to?: string | null;
 }
 
+// ---------- Variant request types ----------
+
+interface OptionGroupCreate {
+  title: string;
+  slug: string;
+  display_type: OptionDisplayType;
+  sort_order?: number;
+  is_required?: boolean;
+  parameter_id?: string | null;
+  values?: Omit<OptionValue, 'id'>[];
+}
+
+interface VariantCreate {
+  sku: string;
+  slug: string;
+  title: string;
+  description?: string;
+  is_default?: boolean;
+  is_active?: boolean;
+  sort_order?: number;
+  stock_quantity?: number | null;
+  weight?: number | null;
+  option_value_ids?: string[];
+}
+
+interface VariantPriceCreate {
+  price_type?: VariantPrice['price_type'];
+  amount: number;
+  currency?: string;
+  valid_from?: string | null;
+  valid_to?: string | null;
+}
+
+interface VariantInclusionCreate {
+  title: string;
+  description?: string | null;
+  is_included: boolean;
+  sort_order?: number;
+  icon?: string | null;
+  group?: string | null;
+}
+
 // ---------- API responses ----------
 
 interface PagedResponse<T> {
@@ -1492,7 +2025,7 @@ interface PagedResponse<T> {
 
 ---
 
-## 18. Обработка ошибок
+## 24. Обработка ошибок
 
 | Код | Причина | Действие в UI |
 |-----|---------|---------------|
@@ -1565,3 +2098,13 @@ const handleSave = async (data: ProductUpdate) => {
 - [ ] Вкладка «Категории» (дерево с чекбоксами, primary)
 - [ ] Вкладка «Алиасы / Аналоги»
 - [ ] Блок «Заявки на товар» в карточке продукта
+
+### Sprint 5 — Вариации (требует `variants_module`)
+- [ ] Поле `product_type` — dropdown в форме продукта
+- [ ] Переключатель `has_variants` — показ/скрытие вкладок вариантов
+- [ ] Отображение `price_from` / `price_to` в списке и карточке
+- [ ] Вкладка «Группы опций» — CRUD, inline-управление значениями, drag-and-drop сортировка
+- [ ] Вкладка «Вариации» — таблица с раскрываемыми строками, генерация матрицы, bulk-операции
+- [ ] Вкладка «Цены вариантов» — CRUD цен на уровне варианта, авто-обновление price_from/price_to
+- [ ] Вкладка «Включения» — CRUD для тарифных сравнений (course/subscription/service)
+- [ ] Вкладка «Изображения вариантов» — upload per-variant, fallback-логика

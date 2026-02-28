@@ -2,7 +2,7 @@
 
 > **Назначение**: Полное руководство для фронтенд-разработчика по реализации каталога товаров на клиентском сайте.  
 > **Авторизация**: Не требуется. Все запросы — публичные.  
-> **Версия бэкенда**: 2026-02-26 (ветка `feat/product-catalog`)  
+> **Версия бэкенда**: 2026-02-28 (ветка `feat/product-catalog`)  
 > **Feature flag**: `catalog_module` — если выключен, все эндпоинты вернут `404`.
 
 ---
@@ -16,13 +16,14 @@
 5. [API: Фильтры каталога (фасетная навигация)](#5-api-фильтры-каталога)
 6. [API: Список продуктов (с фильтрацией и сортировкой)](#6-api-список-продуктов)
 7. [API: Карточка продукта](#7-api-карточка-продукта)
-8. [ЧПУ-спецификация (SEO-friendly URLs)](#8-чпу-спецификация)
-9. [SEO: Генерация страниц фильтров](#9-seo-генерация-страниц)
-10. [API: Заявка на продукт](#10-api-заявка-на-продукт)
-11. [Rate Limiting](#11-rate-limiting)
-12. [TypeScript-типы (copy-paste ready)](#12-typescript-типы)
-13. [Примеры интеграции (React/Next.js)](#13-примеры-интеграции)
-14. [Типичные сценарии и страницы](#14-типичные-сценарии)
+8. [Варианты и тарифы на карточке товара](#8-варианты-и-тарифы-на-карточке-товара)
+9. [ЧПУ-спецификация (SEO-friendly URLs)](#9-чпу-спецификация)
+10. [SEO: Генерация страниц фильтров](#10-seo-генерация-страниц)
+11. [API: Заявка на продукт](#11-api-заявка-на-продукт)
+12. [Rate Limiting](#12-rate-limiting)
+13. [TypeScript-типы (copy-paste ready)](#13-typescript-типы)
+14. [Примеры интеграции (React/Next.js)](#14-примеры-интеграции)
+15. [Типичные сценарии и страницы](#15-типичные-сценарии)
 
 ---
 
@@ -412,7 +413,11 @@ GET /api/v1/public/categories/{slug}?tenant_id={uuid}&page=1&page_size=20
         "brand": "WidgetCorp",
         "model": "Pro-2000",
         "description": "Краткое описание",
-        "cover_url": "https://cdn.example.com/products/wp2000/cover.jpg"
+        "cover_url": "https://cdn.example.com/products/wp2000/cover.jpg",
+        "product_type": "physical",
+        "has_variants": false,
+        "price_from": "15000.00",
+        "price_to": "15000.00"
       }
     ],
     "total": 24,
@@ -557,7 +562,11 @@ GET /api/v1/public/products?tenant_id={uuid}
       "brand": "WidgetCorp",
       "model": "Pro-2000",
       "description": "Профессиональный виджет",
-      "cover_url": "https://cdn.example.com/products/wp2000/cover.jpg"
+      "cover_url": "https://cdn.example.com/products/wp2000/cover.jpg",
+      "product_type": "physical",
+      "has_variants": true,
+      "price_from": "12000.00",
+      "price_to": "25000.00"
     }
   ],
   "total": 48,
@@ -567,6 +576,11 @@ GET /api/v1/public/products?tenant_id={uuid}
 ```
 
 > **Важно**: В списке НЕ отдаются изображения, характеристики, цены. Только `cover_url` — URL обложки (первое изображение с `is_cover=true`, или первое изображение по порядку, или `null`).
+
+> **Новые поля**:
+> - `product_type` — тип продукта: `physical`, `digital`, `service`, `course`, `subscription`
+> - `has_variants` — есть ли у товара варианты/тарифы
+> - `price_from` / `price_to` — денормализованный диапазон цен (минимальная и максимальная цена среди всех вариантов). `null` если цены не заданы. Для товаров без вариантов равны основной цене.
 
 ### Логика фильтрации
 
@@ -611,6 +625,10 @@ GET /api/v1/public/products/{slug}?tenant_id={uuid}&locale=ru
   "brand": "WidgetCorp",
   "model": "Pro-2000",
   "description": "Полное описание товара в HTML или plain text",
+  "product_type": "physical",
+  "has_variants": true,
+  "price_from": "12000.00",
+  "price_to": "25000.00",
 
   "images": [
     {
@@ -753,6 +771,50 @@ GET /api/v1/public/products/{slug}?tenant_id={uuid}&locale=ru
       "device_type": "both",
       "block_metadata": { "icon": "download" }
     }
+  ],
+
+  "option_groups": [
+    {
+      "title": "Цвет",
+      "slug": "color",
+      "display_type": "color_swatch",
+      "values": [
+        { "title": "Красный", "slug": "red", "color_hex": "#FF0000", "image_url": null },
+        { "title": "Синий", "slug": "blue", "color_hex": "#0000FF", "image_url": null }
+      ]
+    },
+    {
+      "title": "Размер",
+      "slug": "size",
+      "display_type": "buttons",
+      "values": [
+        { "title": "S", "slug": "s", "color_hex": null, "image_url": null },
+        { "title": "M", "slug": "m", "color_hex": null, "image_url": null },
+        { "title": "L", "slug": "l", "color_hex": null, "image_url": null }
+      ]
+    }
+  ],
+
+  "variants": [
+    {
+      "id": "variant-uuid-1",
+      "slug": "widget-pro-2000-red-s",
+      "title": "Widget Pro 2000 — Красный, S",
+      "sku": "WP-2000-RED-S",
+      "description": null,
+      "is_default": true,
+      "in_stock": true,
+      "sort_order": 0,
+      "prices": [
+        { "price_type": "regular", "amount": "15000.00", "currency": "RUB" },
+        { "price_type": "sale", "amount": "12000.00", "currency": "RUB" }
+      ],
+      "options": { "color": "red", "size": "s" },
+      "images": [
+        { "url": "https://cdn.example.com/variants/red-s.jpg", "alt": "Красный S", "sort_order": 0, "is_cover": true }
+      ],
+      "inclusions": []
+    }
   ]
 }
 ```
@@ -775,12 +837,18 @@ GET /api/v1/public/products/{slug}?tenant_id={uuid}&locale=ru
 | `brand` | string \| null | ❌ | Бренд/производитель |
 | `model` | string \| null | ❌ | Модель |
 | `description` | string \| null | ❌ | Краткое описание (plain text / HTML) |
+| `product_type` | string | ✅ | Тип продукта: `physical`, `digital`, `service`, `course`, `subscription` |
+| `has_variants` | boolean | ✅ | Есть ли варианты/тарифы |
+| `price_from` | string \| null | ❌ | Денормализованная мин. цена (по всем вариантам) |
+| `price_to` | string \| null | ❌ | Денормализованная макс. цена (по всем вариантам) |
 | `images` | array | ✅ | Изображения (может быть `[]`) |
 | `characteristics` | array | ✅ | Нормализованные характеристики (slug, type, values/number/text) |
 | `chars` | array | ✅ | Упрощённые характеристики `{name, value_text}` — backward compat |
 | `categories` | array | ✅ | Привязанные категории (может быть `[]`) |
 | `prices` | array | ✅ | Цены (может быть `[]`) |
 | `content_blocks` | array | ✅ | Контент-блоки (может быть `[]`) |
+| `option_groups` | array \| null | ❌ | Группы опций (только если `has_variants=true` и `variants_module` включён) |
+| `variants` | array \| null | ❌ | Варианты товара (только если `has_variants=true` и `variants_module` включён) |
 
 ### Типы контент-блоков — как рендерить
 
@@ -837,7 +905,198 @@ const formatPrice = (amount: string, currency: string) => {
 
 ---
 
-## 8. ЧПУ-спецификация (SEO-friendly URLs)
+## 8. Варианты и тарифы на карточке товара
+
+> **Feature flag**: `variants_module` — если включён, у товаров с `has_variants=true` в ответе карточки появляются `option_groups` и `variants`. Если модуль выключен — эти поля приходят как `null`.
+
+### 8.1 Когда отображать варианты
+
+Варианты рендерятся на карточке товара когда **одновременно**:
+- `has_variants === true`
+- `option_groups !== null && option_groups.length > 0`
+- `variants !== null && variants.length > 0`
+
+Если `has_variants=false` — товар простой, показывай цены из `prices[]` напрямую.
+
+### 8.2 Структура данных
+
+**option_groups[]** — группы опций для построения UI-селекторов:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `title` | string | Название группы («Цвет», «Размер», «Тариф») |
+| `slug` | string | Slug для маппинга к `variants[].options` |
+| `display_type` | string | Тип отображения: `dropdown`, `buttons`, `color_swatch`, `cards` |
+| `values[]` | array | Список значений |
+| `values[].title` | string | Отображаемое название значения |
+| `values[].slug` | string | Slug значения (ключ в `variants[].options`) |
+| `values[].color_hex` | string \| null | HEX-цвет для `color_swatch` |
+| `values[].image_url` | string \| null | URL изображения для `cards` |
+
+**variants[]** — конкретные варианты товара:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | UUID | Уникальный ID варианта |
+| `slug` | string | URL-slug варианта |
+| `title` | string | Название варианта |
+| `sku` | string | Артикул варианта |
+| `description` | string \| null | Описание варианта |
+| `is_default` | boolean | Вариант по умолчанию (выбрать при загрузке) |
+| `in_stock` | boolean | В наличии |
+| `sort_order` | number | Порядок сортировки |
+| `prices[]` | array | Цены варианта (`price_type`, `amount`, `currency`) |
+| `options` | object | Маппинг `{group_slug: value_slug}`, напр. `{"color": "red", "size": "s"}` |
+| `images[]` | array | Изображения варианта (`url`, `alt`, `sort_order`, `is_cover`) |
+| `inclusions[]` | array | Состав/включения для тарифных сравнений |
+
+**inclusions[]** — что входит в вариант (для тарифных планов):
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `title` | string | Название пункта |
+| `description` | string \| null | Дополнительное описание |
+| `is_included` | boolean | Входит ли в данный вариант |
+| `icon` | string \| null | Иконка (slug или URL) |
+| `group` | string \| null | Группировка пунктов (для визуального разделения) |
+
+### 8.3 Логика выбора варианта (Variant Selector)
+
+```typescript
+// 1. Построить UI из option_groups
+// Каждая группа → отдельный селектор в зависимости от display_type:
+//   - dropdown   → <select>
+//   - buttons    → набор кнопок
+//   - color_swatch → цветные кружки (color_hex)
+//   - cards      → карточки с изображением (image_url)
+
+// 2. При выборе опции — найти допустимые комбинации
+const findMatchingVariants = (
+  variants: VariantPublic[],
+  selected: Record<string, string>
+): VariantPublic[] => {
+  return variants.filter(v =>
+    Object.entries(selected).every(([group, value]) => v.options[group] === value)
+  );
+};
+
+// 3. Определить доступные значения для остальных групп
+const getAvailableValues = (
+  variants: VariantPublic[],
+  selected: Record<string, string>,
+  groupSlug: string
+): Set<string> => {
+  const otherSelections = { ...selected };
+  delete otherSelections[groupSlug];
+
+  const compatible = variants.filter(v => {
+    if (!v.in_stock) return false;
+    return Object.entries(otherSelections).every(([g, val]) => v.options[g] === val);
+  });
+
+  return new Set(compatible.map(v => v.options[groupSlug]));
+};
+
+// 4. Начальное состояние — выбрать вариант с is_default=true
+const defaultVariant = variants.find(v => v.is_default) ?? variants[0];
+const initialSelection = defaultVariant.options; // {"color": "red", "size": "s"}
+```
+
+**UX-правила:**
+- При загрузке выбирается вариант с `is_default=true` (или первый)
+- Недоступные комбинации (нет варианта) — визуально отключить (disabled)
+- Варианты с `in_stock=false` — показывать с пометкой «Нет в наличии»
+- При выборе варианта — переключить галерею на `variant.images[]` (если непустой), иначе показывать `product.images[]`
+
+### 8.4 Правила отображения цен
+
+**Простой товар** (`has_variants=false`):
+- Показывать `prices[]` из основного объекта продукта
+- Логика sale/regular — как в разделе 7
+
+**Товар с вариантами** (`has_variants=true`):
+- **В списке (каталог):** показывать «от {price_from}» если `price_from !== price_to`, иначе показывать точную цену
+- **На карточке до выбора варианта:** показывать диапазон «от {price_from} до {price_to}» или цену дефолтного варианта
+- **На карточке после выбора варианта:** показывать `variant.prices[]` выбранного варианта
+
+```typescript
+const formatVariantPrice = (product: ProductDetail, selectedVariant?: VariantPublic) => {
+  if (!product.has_variants) {
+    return formatProductPrices(product.prices);
+  }
+
+  if (selectedVariant) {
+    return formatProductPrices(selectedVariant.prices);
+  }
+
+  if (product.price_from && product.price_to) {
+    if (product.price_from === product.price_to) {
+      return formatPrice(product.price_from, 'RUB');
+    }
+    return `от ${formatPrice(product.price_from, 'RUB')}`;
+  }
+
+  return 'Цена по запросу';
+};
+```
+
+### 8.5 Таблица сравнения тарифов (Inclusions)
+
+Когда у вариантов заполнены `inclusions[]`, можно построить сравнительную таблицу тарифов:
+
+```typescript
+const buildComparisonGrid = (variants: VariantPublic[]) => {
+  const allInclusions = new Map<string, { title: string; group: string | null; icon: string | null }>();
+
+  for (const v of variants) {
+    for (const inc of v.inclusions) {
+      if (!allInclusions.has(inc.title)) {
+        allInclusions.set(inc.title, { title: inc.title, group: inc.group, icon: inc.icon });
+      }
+    }
+  }
+
+  const rows = Array.from(allInclusions.values());
+
+  // Группировка по group
+  const grouped = new Map<string | null, typeof rows>();
+  for (const row of rows) {
+    const key = row.group ?? '__ungrouped__';
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(row);
+  }
+
+  return { grouped, variants };
+};
+
+// Рендер ячейки:
+// inclusion найден у варианта → is_included ? ✓ : ✗
+// inclusion не найден → ✗
+const getCellValue = (variant: VariantPublic, inclusionTitle: string): boolean => {
+  const inc = variant.inclusions.find(i => i.title === inclusionTitle);
+  return inc?.is_included ?? false;
+};
+```
+
+**Визуальное представление:**
+
+| Функция | Базовый | Про | Бизнес |
+|---------|:-------:|:---:|:------:|
+| **Основное** | | | |
+| Доступ к API | ✓ | ✓ | ✓ |
+| Техподдержка | ✗ | ✓ | ✓ |
+| **Расширенное** | | | |
+| Приоритетная поддержка | ✗ | ✗ | ✓ |
+| SLA 99.9% | ✗ | ✗ | ✓ |
+
+- Строки группируются по `inclusion.group`
+- Для каждой группы — заголовок-разделитель
+- В ячейке: `is_included=true` → галочка (✓), `is_included=false` → крестик (✗)
+- Если `inclusion.description` не пустое — показать тултипом или подстрокой
+
+---
+
+## 9. ЧПУ-спецификация (SEO-friendly URLs)
 
 ### Формат URL фильтрованных страниц
 
@@ -927,7 +1186,7 @@ export default async function CatalogPage({
 
 ---
 
-## 9. SEO: Генерация страниц фильтров
+## 10. SEO: Генерация страниц фильтров
 
 ```
 GET /api/v1/public/seo/filter-pages?tenant_id={uuid}
@@ -998,7 +1257,7 @@ const generateFilterSitemap = async (tenantId: string): Promise<string[]> => {
 
 ---
 
-## 10. API: Заявка на продукт
+## 11. API: Заявка на продукт
 
 ```
 POST /api/v1/public/inquiries?tenant_id={uuid}
@@ -1150,7 +1409,7 @@ const submitInquiryMultipart = async (data: InquiryForm, files?: File[]) => {
 
 ---
 
-## 11. Rate Limiting
+## 12. Rate Limiting
 
 Публичные API имеют rate limiting по IP:
 
@@ -1189,7 +1448,7 @@ const submitWithRetry = async (data: InquiryForm) => {
 
 ---
 
-## 12. TypeScript-типы
+## 13. TypeScript-типы
 
 ```typescript
 // =============================================
@@ -1227,6 +1486,10 @@ interface ProductPublic {
   model: string | null;
   description: string | null;
   cover_url: string | null;
+  product_type: 'physical' | 'digital' | 'service' | 'course' | 'subscription';
+  has_variants: boolean;
+  price_from: string | null;
+  price_to: string | null;
 }
 
 interface ProductListResponse {
@@ -1354,20 +1617,67 @@ interface ContentBlock {
   block_metadata: Record<string, any> | null;
 }
 
-interface ProductDetail {
-  id: string;
-  slug: string;
-  sku: string;
-  title: string;
-  brand: string | null;
-  model: string | null;
-  description: string | null;
+interface ProductDetail extends ProductPublic {
   images: ProductImage[];
   characteristics: ProductCharacteristic[];
   chars: ProductChar[];  // backward compat (flat name+value_text)
   categories: CategoryPublic[];
   prices: ProductPrice[];
   content_blocks: ContentBlock[];
+  option_groups: OptionGroupPublic[] | null;
+  variants: VariantPublic[] | null;
+}
+
+// ---------- Варианты ----------
+
+interface OptionGroupPublic {
+  title: string;
+  slug: string;
+  display_type: 'dropdown' | 'buttons' | 'color_swatch' | 'cards';
+  values: OptionValuePublic[];
+}
+
+interface OptionValuePublic {
+  title: string;
+  slug: string;
+  color_hex: string | null;
+  image_url: string | null;
+}
+
+interface VariantPublic {
+  id: string;
+  slug: string;
+  title: string;
+  sku: string;
+  description: string | null;
+  is_default: boolean;
+  in_stock: boolean;
+  sort_order: number;
+  prices: VariantPricePublic[];
+  options: Record<string, string>;
+  images: VariantImagePublic[];
+  inclusions: VariantInclusionPublic[];
+}
+
+interface VariantPricePublic {
+  price_type: string;
+  amount: string;
+  currency: string;
+}
+
+interface VariantImagePublic {
+  url: string;
+  alt: string | null;
+  sort_order: number;
+  is_cover: boolean;
+}
+
+interface VariantInclusionPublic {
+  title: string;
+  description: string | null;
+  is_included: boolean;
+  icon: string | null;
+  group: string | null;
 }
 
 // ---------- Категория + продукты ----------
@@ -1473,7 +1783,7 @@ interface ValidationErrorBody {
 
 ---
 
-## 13. Примеры интеграции
+## 14. Примеры интеграции
 
 ### React hook для каталога
 
@@ -1686,7 +1996,7 @@ const ProductInquiryForm = ({ product }: { product: ProductDetail }) => {
 
 ---
 
-## 14. Типичные сценарии
+## 15. Типичные сценарии
 
 ### Страница каталога — полный flow
 

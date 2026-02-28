@@ -37,11 +37,12 @@ async def _ensure_unique_slug(
     slug: str,
     scope_filters: list,
     exclude_id: UUID | None = None,
+    max_attempts: int = 100,
 ) -> str:
     """Append numeric suffix if slug already exists within scope."""
     candidate = slug
     counter = 0
-    while True:
+    while counter <= max_attempts:
         filters = [*scope_filters, table.slug == candidate]
         if exclude_id:
             filters.append(table.id != exclude_id)
@@ -51,6 +52,7 @@ async def _ensure_unique_slug(
             return candidate
         counter += 1
         candidate = f"{slug}-{counter}"
+    return f"{slug}-{counter}"
 
 
 # ============================================================================
@@ -344,7 +346,10 @@ class ProductCharacteristicService:
         """Create or update a product characteristic. Auto-creates enum values."""
         await self._verify_product(product_id, tenant_id)
 
-        stmt = select(Parameter).where(Parameter.id == data.parameter_id)
+        stmt = select(Parameter).where(
+            Parameter.id == data.parameter_id,
+            Parameter.tenant_id == tenant_id,
+        )
         result = await self.db.execute(stmt)
         param = result.scalar_one_or_none()
         if not param:
@@ -411,7 +416,10 @@ class ProductCharacteristicService:
         deleted = 0
 
         for item in items:
-            stmt = select(Parameter).where(Parameter.id == item.parameter_id)
+            stmt = select(Parameter).where(
+                Parameter.id == item.parameter_id,
+                Parameter.tenant_id == tenant_id,
+            )
             result = await self.db.execute(stmt)
             param = result.scalar_one_or_none()
             if not param:

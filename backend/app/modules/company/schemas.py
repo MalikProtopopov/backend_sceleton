@@ -26,7 +26,7 @@ class ServiceLocaleBase(BaseModel):
 class ServiceLocaleCreate(ServiceLocaleBase):
     """Schema for creating service locale."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class ServiceLocaleUpdate(BaseModel):
@@ -36,7 +36,7 @@ class ServiceLocaleUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=2, max_length=255)
     short_description: str | None = Field(default=None, max_length=500)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     meta_title: str | None = Field(default=None, max_length=70)
     meta_description: str | None = Field(default=None, max_length=160)
 
@@ -438,7 +438,7 @@ class PracticeAreaLocaleBase(BaseModel):
 class PracticeAreaLocaleCreate(PracticeAreaLocaleBase):
     """Schema for creating practice area locale."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class PracticeAreaLocaleUpdate(BaseModel):
@@ -447,7 +447,7 @@ class PracticeAreaLocaleUpdate(BaseModel):
     locale: str = Field(..., min_length=2, max_length=5)
     title: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=2, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class PracticeAreaLocaleResponse(PracticeAreaLocaleBase):
@@ -530,7 +530,7 @@ class AdvantageLocaleBase(BaseModel):
 class AdvantageLocaleCreate(AdvantageLocaleBase):
     """Schema for creating advantage locale."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class AdvantageLocaleUpdate(BaseModel):
@@ -538,7 +538,7 @@ class AdvantageLocaleUpdate(BaseModel):
 
     locale: str = Field(..., min_length=2, max_length=5)
     title: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class AdvantageLocaleResponse(AdvantageLocaleBase):

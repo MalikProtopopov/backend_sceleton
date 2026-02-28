@@ -1,7 +1,6 @@
 """Tenant service layer - business logic for tenants and feature flags."""
 
 import json
-import logging
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -27,8 +26,9 @@ from app.modules.tenants.schemas import (
     TenantSettingsUpdate,
     TenantUpdate,
 )
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TenantService:

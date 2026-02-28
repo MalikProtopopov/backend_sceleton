@@ -23,6 +23,8 @@ engine = create_async_engine(
     max_overflow=settings.database_max_overflow,
     echo=settings.database_echo,
     pool_pre_ping=True,
+    pool_recycle=3600,
+    pool_timeout=30,
 )
 
 # Create async session factory

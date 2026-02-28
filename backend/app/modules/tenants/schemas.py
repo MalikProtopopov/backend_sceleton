@@ -113,7 +113,7 @@ class FeatureFlagBase(BaseModel):
 class FeatureFlagCreate(FeatureFlagBase):
     """Schema for creating a feature flag."""
 
-    pass
+    description: str | None = Field(default=None, max_length=10000)
 
 
 class FeatureFlagUpdate(BaseModel):

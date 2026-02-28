@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, Index, String
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,8 +47,11 @@ class FileAsset(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, TenantMixin):
     # Category/folder for organization
     folder: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # Uploader
-    uploaded_by: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    uploaded_by: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("admin_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         Index("ix_file_assets_tenant", "tenant_id"),

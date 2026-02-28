@@ -201,8 +201,8 @@ prod-logs:
 prod-logs-backend:
 	docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f backend
 
-prod-logs-nginx:
-	docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f nginx
+prod-logs-caddy:
+	docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f caddy
 
 prod-build:
 	docker compose -f docker-compose.prod.yml --env-file .env.prod build
@@ -210,8 +210,8 @@ prod-build:
 prod-restart:
 	docker compose -f docker-compose.prod.yml --env-file .env.prod restart backend
 
-prod-restart-nginx:
-	docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx -s reload
+prod-restart-caddy:
+	docker compose -f docker-compose.prod.yml --env-file .env.prod restart caddy
 
 prod-status:
 	docker compose -f docker-compose.prod.yml --env-file .env.prod ps
@@ -233,8 +233,7 @@ ssl-init:
 	./scripts/init-ssl.sh $(DOMAIN) $(EMAIL)
 
 ssl-renew:
-	docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm certbot renew
-	docker compose -f docker-compose.prod.yml --env-file .env.prod exec nginx nginx -s reload
+	@echo "Caddy handles TLS renewal automatically — no manual action needed."
 
 # =============================================================================
 # Backup Commands

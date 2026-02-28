@@ -67,8 +67,8 @@ class ExportService:
         elif resource_type == ExportResourceType.AUDIT_LOGS:
             data = await self._get_audit_logs(tenant_id, date_from, date_to)
             default_columns = [
-                "timestamp", "user_email", "user_name", "action",
-                "resource_type", "resource_id", "resource_name", "ip_address", "status",
+                "created_at", "user_email", "action",
+                "resource_type", "resource_id", "ip_address",
             ]
         else:
             data = []
@@ -104,6 +104,7 @@ class ExportService:
             .where(Inquiry.tenant_id == tenant_id)
             .where(Inquiry.deleted_at.is_(None))
             .order_by(Inquiry.created_at.desc())
+            .limit(10_000)
         )
 
         if status:
@@ -180,6 +181,7 @@ class ExportService:
             .where(Employee.deleted_at.is_(None))
             .options(selectinload(Employee.locales))
             .order_by(Employee.sort_order)
+            .limit(10_000)
         )
 
         result = await self.db.execute(stmt)
@@ -207,6 +209,7 @@ class ExportService:
             select(SEORoute)
             .where(SEORoute.tenant_id == tenant_id)
             .order_by(SEORoute.path)
+            .limit(10_000)
         )
 
         result = await self.db.execute(stmt)
@@ -254,29 +257,27 @@ class ExportService:
         stmt = (
             select(AuditLog)
             .where(AuditLog.tenant_id == tenant_id)
-            .order_by(AuditLog.timestamp.desc())
+            .order_by(AuditLog.created_at.desc())
+            .limit(10_000)
         )
 
         if date_from:
-            stmt = stmt.where(AuditLog.timestamp >= datetime.fromisoformat(date_from))
+            stmt = stmt.where(AuditLog.created_at >= datetime.fromisoformat(date_from))
 
         if date_to:
-            stmt = stmt.where(AuditLog.timestamp <= datetime.fromisoformat(date_to))
+            stmt = stmt.where(AuditLog.created_at <= datetime.fromisoformat(date_to))
 
         result = await self.db.execute(stmt)
         logs = result.scalars().all()
 
         return [
             {
-                "timestamp": log.timestamp.isoformat() if log.timestamp else "",
-                "user_email": log.user_email or "",
-                "user_name": log.user_name or "",
+                "created_at": log.created_at.isoformat() if log.created_at else "",
+                "user_email": log.user.email if log.user else "",
                 "action": log.action,
                 "resource_type": log.resource_type,
                 "resource_id": str(log.resource_id) if log.resource_id else "",
-                "resource_name": log.resource_name or "",
                 "ip_address": log.ip_address or "",
-                "status": log.status,
             }
             for log in logs
         ]

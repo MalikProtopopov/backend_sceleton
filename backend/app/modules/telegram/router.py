@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.database import get_db
 from app.core.exceptions import InvalidWebhookSecretError
-from app.core.security import CurrentUser, get_current_tenant_id, get_current_active_user
+from app.core.security import CurrentUser, PermissionChecker, get_current_tenant_id, get_current_active_user
 from app.modules.telegram.exceptions import (
     TelegramIntegrationNotFoundError,
     TelegramNotConfiguredError,
@@ -52,6 +52,7 @@ def get_telegram_service(db: AsyncSession = Depends(get_db)) -> TelegramIntegrat
     response_model=TelegramIntegrationResponse | None,
     summary="Get Telegram integration",
     description="Get current Telegram integration settings for the tenant.",
+    dependencies=[Depends(PermissionChecker("settings:read"))],
 )
 async def get_integration(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -90,6 +91,7 @@ Create or update Telegram bot integration.
 3. Follow instructions
 4. Copy the token
     """,
+    dependencies=[Depends(PermissionChecker("settings:update"))],
 )
 async def create_integration(
     data: TelegramIntegrationCreate,
@@ -111,6 +113,7 @@ async def create_integration(
     response_model=TelegramIntegrationResponse,
     summary="Update Telegram integration",
     description="Update existing Telegram integration settings.",
+    dependencies=[Depends(PermissionChecker("settings:update"))],
 )
 async def update_integration(
     data: TelegramIntegrationUpdate,
@@ -132,6 +135,7 @@ async def update_integration(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Telegram integration",
     description="Delete Telegram integration and remove webhook.",
+    dependencies=[Depends(PermissionChecker("settings:update"))],
 )
 async def delete_integration(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -152,6 +156,7 @@ async def delete_integration(
     response_model=WebhookUrlResponse,
     summary="Get webhook URL",
     description="Get the webhook URL to configure with Telegram.",
+    dependencies=[Depends(PermissionChecker("settings:read"))],
 )
 async def get_webhook_url(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -193,6 +198,7 @@ Register webhook URL with Telegram.
 - URL must be publicly accessible
 - For local development, use ngrok or similar
     """,
+    dependencies=[Depends(PermissionChecker("settings:update"))],
 )
 async def set_webhook(
     data: SetWebhookRequest,
@@ -214,6 +220,7 @@ async def set_webhook(
     response_model=WebhookStatusResponse,
     summary="Remove webhook",
     description="Remove webhook from Telegram.",
+    dependencies=[Depends(PermissionChecker("settings:update"))],
 )
 async def remove_webhook(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -239,6 +246,7 @@ async def remove_webhook(
     response_model=TestMessageResponse,
     summary="Send test message",
     description="Send a test message to verify configuration.",
+    dependencies=[Depends(PermissionChecker("settings:update"))],
 )
 async def send_test_message(
     data: SendTestMessageRequest | None = None,

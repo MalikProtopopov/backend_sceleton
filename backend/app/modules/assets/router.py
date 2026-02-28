@@ -1,5 +1,6 @@
 """API routes for assets module."""
 
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -196,6 +197,13 @@ async def delete_file(
 # ============================================================================
 
 
+_SAFE_PATH_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/\-]*$")
+_INLINE_CONTENT_TYPES = frozenset({
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    "application/pdf",
+})
+
+
 @media_router.get(
     "/{path:path}",
     summary="Serve media file",
@@ -214,10 +222,12 @@ async def serve_media(path: str) -> Response:
     Path format: /media/{tenant_id}/{folder}/{filename}
     Example: /media/abc123/articles/image.png
     """
+    if ".." in path or "//" in path or not _SAFE_PATH_RE.match(path):
+        raise FileNotFoundInStorageError(path)
+
     try:
         s3 = S3Service()
         
-        # Get object from S3
         response = s3.client.get_object(
             Bucket=settings.s3_bucket_name,
             Key=path,
@@ -225,13 +235,17 @@ async def serve_media(path: str) -> Response:
         
         content_type = response.get("ContentType", "application/octet-stream")
         body = response["Body"].read()
+
+        disposition = "inline" if content_type in _INLINE_CONTENT_TYPES else "attachment"
         
         return Response(
             content=body,
             media_type=content_type,
             headers={
-                "Cache-Control": "public, max-age=31536000",  # 1 year cache
+                "Cache-Control": "public, max-age=31536000",
                 "Content-Length": str(len(body)),
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": disposition,
             },
         )
         
