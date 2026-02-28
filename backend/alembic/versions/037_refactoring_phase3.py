@@ -52,7 +52,7 @@ _TENANT_MIXIN_TABLES = [
 
 
 def upgrade() -> None:
-    # 3.1 — Add FK constraint on tenant_id (skip if already exists or table missing)
+    # 3.1 — Add FK constraint on tenant_id (skip gracefully on any schema mismatch)
     for table in _TENANT_MIXIN_TABLES:
         fk_name = f"fk_{table}_tenant_id"
         op.execute(f"""
@@ -63,6 +63,7 @@ def upgrade() -> None:
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
                 WHEN undefined_table THEN NULL;
+                WHEN undefined_column THEN NULL;
             END $$;
         """)
 
