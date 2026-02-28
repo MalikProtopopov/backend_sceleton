@@ -154,7 +154,7 @@ fi
 if [ "$DO_BUILD" = true ]; then
     log_info "Step 3: Building Docker images..."
     
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build backend
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build backend migrations
     log_success "Docker images built"
     echo ""
 else
