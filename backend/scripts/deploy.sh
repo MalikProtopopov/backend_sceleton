@@ -154,7 +154,7 @@ fi
 if [ "$DO_BUILD" = true ]; then
     log_info "Step 3: Building Docker images..."
     
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build backend migrations
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build backend worker migrations
     log_success "Docker images built"
     echo ""
 else
@@ -182,9 +182,9 @@ fi
 # =============================================================================
 log_info "Step 5: Performing rolling restart..."
 
-# Start new backend container
-log_info "Starting new backend container..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps backend
+# Start new backend and worker containers
+log_info "Starting new backend and worker containers..."
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps backend worker
 
 # Wait for health check
 log_info "Waiting for backend health check..."
