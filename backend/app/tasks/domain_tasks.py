@@ -22,6 +22,13 @@ import app.modules.leads.models  # noqa: F401
 import app.modules.notifications.models  # noqa: F401
 import app.modules.content.models  # noqa: F401
 import app.modules.assets.models  # noqa: F401
+import app.modules.catalog.models  # noqa: F401
+import app.modules.parameters.models  # noqa: F401
+import app.modules.variants.models  # noqa: F401
+import app.modules.seo.models  # noqa: F401
+import app.modules.audit.models  # noqa: F401
+import app.modules.telegram.models  # noqa: F401
+import app.modules.localization.models  # noqa: F401
 
 logger = get_logger(__name__)
 
