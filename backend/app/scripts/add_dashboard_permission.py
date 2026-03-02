@@ -18,6 +18,8 @@ from app.modules.auth.models import (
     Role,
     RolePermission,
 )
+# Ensure billing models are loaded (Tenant.plan relationship resolves to Plan)
+import app.modules.billing.models  # noqa: F401
 from app.modules.tenants.models import Tenant
 
 ROLES_TO_UPDATE = ("site_owner", "content_manager", "marketer", "editor")
