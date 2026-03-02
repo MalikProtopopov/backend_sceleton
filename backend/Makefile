@@ -272,6 +272,12 @@ init-admin: dev-up
 init-admin-prod: .env.prod-check
 	docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m app.scripts.init_admin
 
+add-dashboard-permission: dev-up
+	docker compose exec backend python -m app.scripts.add_dashboard_permission
+
+add-dashboard-permission-prod: .env.prod-check
+	docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m app.scripts.add_dashboard_permission
+
 seed:
 	docker compose exec backend python -m app.scripts.seed_database
 

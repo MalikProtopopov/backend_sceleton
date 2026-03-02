@@ -279,6 +279,8 @@ DEFAULT_PERMISSIONS = [
     ("features:update", "Update Feature Flags", "features", "update"),
     # Audit
     ("audit:read", "Read Audit Logs", "audit", "read"),
+    # Dashboard (tenant dashboard, billing, upgrade requests)
+    ("dashboard:read", "Read Dashboard", "dashboard", "read"),
 ]
 
 # Default role configurations
@@ -302,6 +304,7 @@ DEFAULT_ROLES = {
             "settings:*",
             "users:*",
             "audit:read",
+            "dashboard:read",
         ],
     },
     "content_manager": {
@@ -313,6 +316,7 @@ DEFAULT_ROLES = {
             "employees:read",
             "catalog:*",
             "faq:*",
+            "dashboard:read",
         ],
     },
     "marketer": {
@@ -322,6 +326,7 @@ DEFAULT_ROLES = {
             "reviews:*",
             "seo:*",
             "inquiries:read",
+            "dashboard:read",
         ],
     },
     "editor": {
@@ -334,6 +339,7 @@ DEFAULT_ROLES = {
             "faq:create",
             "faq:read",
             "faq:update",
+            "dashboard:read",
         ],
     },
 }
