@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import Pagination, PublicTenantId
 from app.core.logging import get_logger
 from app.core.security import PermissionChecker, get_current_tenant_id
-from app.middleware.feature_check import require_crm_basic, require_crm_pro
+from app.middleware.feature_check import require_crm_basic, require_crm_basic_public, require_crm_pro
 from app.modules.notifications.service import NotificationService
 from app.modules.tenants.models import Tenant
 
@@ -61,6 +61,7 @@ router = APIRouter()
     summary="Submit inquiry",
     description="Submit an inquiry/lead from public form. Rate limited.",
     tags=["Public - Leads"],
+    dependencies=[require_crm_basic_public],
 )
 async def create_inquiry_public(
     data: InquiryCreatePublic,
@@ -102,6 +103,7 @@ async def create_inquiry_public(
     summary="Submit inquiry (multipart/form-data)",
     description="Submit an inquiry from FormData. Same fields as POST /public/inquiries. Optional file attachments (future). Rate limited.",
     tags=["Public - Leads"],
+    dependencies=[require_crm_basic_public],
 )
 async def create_inquiry_public_multipart(
     request: Request,

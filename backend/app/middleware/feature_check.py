@@ -215,9 +215,15 @@ require_services_public = require_feature_public("services_module")
 require_catalog_public = require_feature_public("catalog_module")
 require_variants_public = require_feature_public("variants_module")
 
-# New billing-module gating
+# New billing-module gating (admin)
 require_documents = require_feature("documents")
 require_crm_basic = require_feature("crm_basic")
 require_crm_pro = require_feature("crm_pro")
 require_company = require_feature("company")
+
+# New billing-module gating (public)
+require_company_public = require_feature_public("company")
+require_documents_public = require_feature_public("documents")
+require_crm_basic_public = require_feature_public("crm_basic")
+require_seo_advanced_public = require_feature_public("seo_advanced")
 

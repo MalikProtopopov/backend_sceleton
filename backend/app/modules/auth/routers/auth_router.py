@@ -391,27 +391,28 @@ async def get_my_features(
     human-readable titles, descriptions, and whether the feature
     can be requested (when disabled).
     
+    Source of truth: tenant_modules (billing).
+    
     - Superusers and platform_owners: all_features_enabled=True, all features marked enabled
-    - Regular users: actual feature flag status from database
+    - Regular users: actual module status from tenant_modules
     """
+    from app.modules.billing.service import ModuleAccessService, _FLAG_TO_MODULE
     from app.modules.tenants.models import AVAILABLE_FEATURES
 
     is_platform_owner = user.is_superuser or (user.role and user.role.name == "platform_owner")
-    
-    # Get enabled features from database
-    service = FeatureFlagService(db)
-    flags = await service.get_flags(user.tenant_id)
-    enabled_set = {f.feature_name for f in flags if f.enabled}
-    
-    # Build catalog items
+
+    access_svc = ModuleAccessService(db)
+    enabled_slugs = await access_svc.get_enabled_module_slugs(user.tenant_id)
+
     use_ru = locale.startswith("ru")
     catalog_items: list[FeatureCatalogItem] = []
-    
+
     for feature_name, meta in AVAILABLE_FEATURES.items():
-        enabled = is_platform_owner or feature_name in enabled_set
+        module_slug = _FLAG_TO_MODULE.get(feature_name, feature_name)
+        enabled = is_platform_owner or module_slug in enabled_slugs
         title = meta.get("title_ru" if use_ru else "title", feature_name)
         description = meta.get("description_ru" if use_ru else "description", "")
-        
+
         catalog_items.append(FeatureCatalogItem(
             name=feature_name,
             title=title,
@@ -420,7 +421,7 @@ async def get_my_features(
             enabled=enabled,
             can_request=not enabled,
         ))
-    
+
     return FeatureCatalogResponse(
         features=catalog_items,
         all_features_enabled=is_platform_owner,

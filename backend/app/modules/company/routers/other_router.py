@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Locale, PublicTenantId
 from app.core.security import PermissionChecker, get_current_tenant_id
-from app.middleware.feature_check import require_company
+from app.middleware.feature_check import require_company, require_company_public
 from app.modules.company.mappers import (
     map_advantage_to_public_response,
     map_advantages_to_public_response,
@@ -63,6 +63,7 @@ router = APIRouter()
     response_model=list[PracticeAreaPublicResponse],
     summary="List practice areas",
     tags=["Public - Company"],
+    dependencies=[require_company_public],
 )
 async def list_practice_areas_public(
     locale: Locale,
@@ -80,6 +81,7 @@ async def list_practice_areas_public(
     response_model=list[AdvantagePublicResponse],
     summary="List company advantages",
     tags=["Public - Company"],
+    dependencies=[require_company_public],
 )
 async def list_advantages_public(
     locale: Locale,
@@ -97,6 +99,7 @@ async def list_advantages_public(
     response_model=ContactsPublicResponse,
     summary="Get contact information",
     tags=["Public - Company"],
+    dependencies=[require_company_public],
 )
 async def get_contacts_public(
     tenant_id: PublicTenantId,

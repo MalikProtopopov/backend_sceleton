@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.dependencies import Pagination, PublicTenantId
 from app.core.logging import get_logger
 from app.core.security import PermissionChecker, get_current_tenant_id
-from app.middleware.feature_check import require_seo_advanced
+from app.middleware.feature_check import require_seo_advanced, require_seo_advanced_public
 from app.modules.seo.utils import normalize_path, validate_base_url, extract_domain
 from app.modules.seo.schemas import (
     RedirectCreate,
@@ -442,6 +442,7 @@ async def get_robots(
     response_model=RedirectExportResponse,
     summary="Get redirects for edge/proxy",
     tags=["Public - SEO"],
+    dependencies=[require_seo_advanced_public],
 )
 async def get_redirects_export(
     response: Response,
@@ -511,6 +512,7 @@ async def get_redirects_export(
     response_class=PlainTextResponse,
     summary="IndexNow key verification file",
     tags=["Public - SEO"],
+    dependencies=[require_seo_advanced_public],
 )
 async def get_indexnow_key_file(
     key: str,
@@ -548,6 +550,7 @@ async def get_indexnow_key_file(
     response_class=PlainTextResponse,
     summary="Get llms.txt for AI discovery",
     tags=["Public - SEO"],
+    dependencies=[require_seo_advanced_public],
 )
 async def get_llms_txt(
     request: Request,

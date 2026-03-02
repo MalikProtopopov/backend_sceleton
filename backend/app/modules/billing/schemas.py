@@ -274,3 +274,24 @@ class MyPlanResponse(BaseModel):
 
 class MyModulesResponse(BaseModel):
     items: list[TenantModuleResponse]
+
+
+# ============================================================================
+# Public Feature Catalog (client frontend sidebar)
+# ============================================================================
+
+
+class PublicFeatureItem(BaseModel):
+    """Feature availability for client frontend."""
+    name: str = Field(..., description="Feature key (e.g. 'blog_module')")
+    enabled: bool = Field(..., description="Whether this feature is enabled for the tenant")
+    category: str = Field(..., description="Feature category")
+
+
+class PublicFeaturesResponse(BaseModel):
+    tenant_id: UUID
+    features: list[PublicFeatureItem] = []
+    enabled_modules: list[str] = Field(
+        default_factory=list,
+        description="List of enabled billing module slugs (content, company, crm_basic, ...)",
+    )

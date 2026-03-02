@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_public_tenant_id
+from app.core.dependencies import PublicTenantId, get_public_tenant_id
 from app.core.exceptions import RateLimitExceededError
 from app.core.redis import RateLimiter, get_redis
 from app.core.security import (
@@ -30,6 +30,8 @@ from app.modules.billing.schemas import (
     PlanCreate,
     PlanResponse,
     PlanUpdate,
+    PublicFeatureItem,
+    PublicFeaturesResponse,
     TenantModuleCreate,
     TenantModuleRemove,
     TenantModuleResponse,
@@ -165,6 +167,43 @@ async def list_bundles_public(db: AsyncSession = Depends(get_db)):
     svc = PlanService(db)
     bundles = await svc.list_bundles(active_only=True)
     return [_bundle_response(b) for b in bundles]
+
+
+@router.get(
+    "/public/features",
+    response_model=PublicFeaturesResponse,
+    summary="Get enabled features for tenant (client frontend sidebar)",
+)
+async def get_public_features(
+    tenant_id: PublicTenantId,
+    db: AsyncSession = Depends(get_db),
+) -> PublicFeaturesResponse:
+    """Return which features/modules are enabled for a tenant.
+
+    Used by the client-facing frontend to decide which sections
+    to show in navigation (blog, cases, services, catalog, etc.).
+    No authentication required.
+    """
+    from app.modules.billing.service import _FLAG_TO_MODULE
+    from app.modules.tenants.models import AVAILABLE_FEATURES
+
+    access_svc = ModuleAccessService(db)
+    enabled_slugs = await access_svc.get_enabled_module_slugs(tenant_id)
+
+    features: list[PublicFeatureItem] = []
+    for feature_name, meta in AVAILABLE_FEATURES.items():
+        module_slug = _FLAG_TO_MODULE.get(feature_name, feature_name)
+        features.append(PublicFeatureItem(
+            name=feature_name,
+            enabled=module_slug in enabled_slugs,
+            category=meta.get("category", "other"),
+        ))
+
+    return PublicFeaturesResponse(
+        tenant_id=tenant_id,
+        features=features,
+        enabled_modules=sorted(enabled_slugs),
+    )
 
 
 # ============================================================================

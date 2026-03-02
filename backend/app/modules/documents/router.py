@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
-from app.middleware.feature_check import require_documents
+from app.middleware.feature_check import require_documents, require_documents_public
 from app.modules.media.upload_service import document_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.modules.documents.models import DocumentStatus
@@ -39,6 +39,7 @@ router = APIRouter()
     response_model=DocumentPublicListResponse,
     summary="List published documents",
     tags=["Public - Documents"],
+    dependencies=[require_documents_public],
 )
 async def list_documents_public(
     locale: Locale,
@@ -76,6 +77,7 @@ async def list_documents_public(
     response_model=DocumentPublicResponse,
     summary="Get document by slug",
     tags=["Public - Documents"],
+    dependencies=[require_documents_public],
 )
 async def get_document_by_slug(
     slug: str,
