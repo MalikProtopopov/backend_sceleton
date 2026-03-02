@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.audit.models import AuditLog
+from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.company.models import Employee, EmployeeLocale
 from app.modules.export.schemas import ExportFormat, ExportResourceType
 from app.modules.leads.models import Inquiry

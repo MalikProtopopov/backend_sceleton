@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.modules.auth.models import AuditLog
+from app.modules.audit.models import AuditLog
 
 logger = get_logger(__name__)
 

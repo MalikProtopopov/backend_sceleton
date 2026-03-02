@@ -155,7 +155,8 @@ def _setup_exception_handlers(app: FastAPI) -> None:
 
 def _setup_routers(app: FastAPI) -> None:
     """Register API routers."""
-    from app.modules.assets.router import media_router, router as assets_router
+    from app.modules.billing.router import router as billing_router
+    from app.modules.media.router import media_router, router as assets_router
     from app.modules.audit.router import router as audit_router
     from app.modules.auth.router import router as auth_router
     from app.modules.catalog.router import router as catalog_router
@@ -265,6 +266,11 @@ def _setup_routers(app: FastAPI) -> None:
         variants_router,
         prefix=settings.api_prefix,
         tags=["Variants"],
+    )
+    app.include_router(
+        billing_router,
+        prefix=settings.api_prefix,
+        tags=["Billing"],
     )
 
     # Public media endpoint (without API prefix)

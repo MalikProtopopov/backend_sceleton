@@ -24,9 +24,10 @@ from app.modules.content.models import (  # noqa: F401
     Topic, TopicLocale, Article, ArticleLocale, ArticleTopic,
     FAQ, FAQLocale, Case, CaseLocale, CaseServiceLink, Review,
 )
+from app.modules.content_blocks.models import ContentBlock  # noqa: F401
 from app.modules.leads.models import InquiryForm, Inquiry  # noqa: F401
 from app.modules.seo.models import SEORoute, Redirect  # noqa: F401
-from app.modules.assets.models import FileAsset  # noqa: F401
+from app.modules.media.models import FileAsset  # noqa: F401
 from app.modules.catalog.models import (  # noqa: F401
     UOM, Category, Product, ProductImage,
     ProductAlias, ProductAnalog, ProductCategory, ProductPrice,
@@ -37,6 +38,10 @@ from app.modules.parameters.models import (  # noqa: F401
 from app.modules.variants.models import (  # noqa: F401
     ProductOptionGroup, ProductOptionValue, ProductVariant,
     VariantPrice, VariantOptionLink, VariantInclusion, VariantImage,
+)
+from app.modules.billing.models import (  # noqa: F401
+    BillingModule, Plan, PlanModule, Bundle, BundleModule,
+    TenantModule, UpgradeRequest,
 )
 
 # Alembic Config object

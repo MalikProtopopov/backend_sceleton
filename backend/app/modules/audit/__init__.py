@@ -1,8 +1,5 @@
-"""Audit log module for tracking changes."""
+"""Audit module."""
 
-# Import AuditLog from auth module (model is defined there)
-from app.modules.auth.models import AuditLog
-from app.modules.audit.router import router
+from app.modules.audit.models import AuditLog
 
-__all__ = ["router", "AuditLog"]
-
+__all__ = ["AuditLog"]

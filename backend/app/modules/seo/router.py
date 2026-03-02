@@ -12,7 +12,7 @@ from app.core.dependencies import Pagination, PublicTenantId
 from app.core.logging import get_logger
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.middleware.feature_check import require_seo_advanced
-from app.core.url_utils import normalize_path, validate_base_url, extract_domain
+from app.modules.seo.utils import normalize_path, validate_base_url, extract_domain
 from app.modules.seo.schemas import (
     RedirectCreate,
     RedirectExportItem,

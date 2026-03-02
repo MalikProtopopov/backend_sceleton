@@ -482,100 +482,15 @@ class EmailService:
             logger.warning("email_log_flush_failed", to=to_email, email_type=email_type)
 
 
-class TelegramService:
-    """Service for sending Telegram notifications."""
-
-    async def send_inquiry_notification(
-        self,
-        chat_id: str,
-        inquiry_name: str,
-        inquiry_email: str | None,
-        inquiry_phone: str | None,
-        inquiry_message: str | None,
-        inquiry_source: str | None = None,
-    ) -> bool:
-        """Send Telegram notification about new inquiry.
-
-        Returns True if sent successfully.
-        """
-        if not settings.telegram_bot_token:
-            logger.warning("telegram_not_configured")
-            return False
-
-        message = self._build_inquiry_message(
-            inquiry_name,
-            inquiry_email,
-            inquiry_phone,
-            inquiry_message,
-            inquiry_source,
-        )
-
-        return await self._send_message(chat_id, message)
-
-    def _build_inquiry_message(
-        self,
-        name: str,
-        email: str | None,
-        phone: str | None,
-        message: str | None,
-        source: str | None,
-    ) -> str:
-        """Build Telegram message for inquiry notification."""
-        lines = [
-            "🆕 *Новая заявка*",
-            "",
-            f"👤 *Имя:* {self._escape_markdown(name)}",
-        ]
-
-        if email:
-            lines.append(f"📧 *Email:* {self._escape_markdown(email)}")
-        if phone:
-            lines.append(f"📱 *Телефон:* {self._escape_markdown(phone)}")
-        if message:
-            lines.append(f"\n💬 *Сообщение:*\n{self._escape_markdown(message)}")
-        if source:
-            lines.append(f"\n🔗 *Источник:* {self._escape_markdown(source)}")
-
-        return "\n".join(lines)
-
-    def _escape_markdown(self, text: str) -> str:
-        """Escape special characters for Telegram MarkdownV2."""
-        special_chars = ["_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"]
-        for char in special_chars:
-            text = text.replace(char, f"\\{char}")
-        return text
-
-    async def _send_message(self, chat_id: str, message: str) -> bool:
-        """Send message to Telegram chat."""
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
-                    json={
-                        "chat_id": chat_id,
-                        "text": message,
-                        "parse_mode": "MarkdownV2",
-                    },
-                )
-                success = response.status_code == 200
-                if not success:
-                    logger.error(
-                        "telegram_error",
-                        status=response.status_code,
-                        body=response.text,
-                    )
-                return success
-        except Exception as e:
-            logger.exception("telegram_exception", error=str(e))
-            return False
-
-
 class NotificationService:
-    """Unified notification service."""
+    """Unified notification service.
+
+    Telegram notifications are handled by modules.telegram.notifier (per-tenant).
+    This service focuses on email-based notifications.
+    """
 
     def __init__(self, db: AsyncSession | None = None) -> None:
         self.email = EmailService(db=db)
-        self.telegram = TelegramService()
 
     async def notify_inquiry(
         self,
@@ -588,11 +503,12 @@ class NotificationService:
         inquiry_source: str | None = None,
         tenant_id: UUID | None = None,
     ) -> dict:
-        """Send inquiry notifications via all configured channels.
+        """Send inquiry notifications via email.
 
         Returns dict with success status per channel.
+        Telegram is now handled per-tenant via modules.telegram.notifier.
         """
-        results = {"email": False, "telegram": False}
+        results: dict[str, bool] = {"email": False}
 
         if notification_email:
             results["email"] = await self.email.send_inquiry_notification(
@@ -605,20 +521,9 @@ class NotificationService:
                 tenant_id=tenant_id,
             )
 
-        if telegram_chat_id:
-            results["telegram"] = await self.telegram.send_inquiry_notification(
-                chat_id=telegram_chat_id,
-                inquiry_name=inquiry_name,
-                inquiry_email=inquiry_email,
-                inquiry_phone=inquiry_phone,
-                inquiry_message=inquiry_message,
-                inquiry_source=inquiry_source,
-            )
-
         logger.info(
             "notification_sent",
             email_sent=results["email"],
-            telegram_sent=results["telegram"],
             inquiry_name=inquiry_name,
         )
 

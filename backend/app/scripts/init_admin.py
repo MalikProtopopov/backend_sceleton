@@ -339,32 +339,39 @@ async def main():
                 print(f"  ✅ Updated admin user role to {admin_role.name}")
             
             await db.commit()
-            
-            print()
-            print("=" * 60)
-            print("✅ Initialization complete!")
-            print("=" * 60)
-            print()
-            print("📝 Login credentials:")
-            print(f"   Email:    {admin.email}")
-            print(f"   Password: admin123")
-            print(f"   Role:     {admin_role.name}")
-            print()
-            
-            if settings.single_tenant_mode:
-                print("🔐 Single-tenant mode:")
-                print("   No X-Tenant-ID header required for login!")
-            else:
-                print("🔐 Tenant ID (for login header X-Tenant-ID):")
-                print(f"   {tenant.id}")
-            print()
-            print("⚠️  Security:")
-            print("   1. Change password immediately after first login")
-            print("   2. Use: POST /api/v1/auth/me/password")
-            print()
-            print("📚 API Documentation:")
-            print("   http://localhost:8000/docs")
-            print()
+
+        # 5. Seed billing data (outside the main transaction — idempotent)
+        try:
+            from app.scripts.seed_billing import seed_billing
+            await seed_billing()
+        except Exception as e:
+            print(f"  ⚠️  Billing seed skipped: {e}")
+
+        print()
+        print("=" * 60)
+        print("✅ Initialization complete!")
+        print("=" * 60)
+        print()
+        print("📝 Login credentials:")
+        print(f"   Email:    {admin.email}")
+        print(f"   Password: admin123")
+        print(f"   Role:     {admin_role.name}")
+        print()
+        
+        if settings.single_tenant_mode:
+            print("🔐 Single-tenant mode:")
+            print("   No X-Tenant-ID header required for login!")
+        else:
+            print("🔐 Tenant ID (for login header X-Tenant-ID):")
+            print(f"   {tenant.id}")
+        print()
+        print("⚠️  Security:")
+        print("   1. Change password immediately after first login")
+        print("   2. Use: POST /api/v1/auth/me/password")
+        print()
+        print("📚 API Documentation:")
+        print("   http://localhost:8000/docs")
+        print()
             
     except Exception as e:
         print(f"❌ Error: {e}", file=sys.stderr)

@@ -9,7 +9,7 @@ from uuid import UUID
 
 from app.core.database import get_db_context
 from app.core.logging import get_logger
-from app.services.domain_provisioning import DomainProvisioningService
+from app.modules.tenants.services.domain_provisioning import DomainProvisioningService
 from app.tasks.broker import broker
 
 # Import all models so SQLAlchemy can resolve cross-module relationships

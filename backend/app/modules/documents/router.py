@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
-from app.core.image_upload import document_upload_service
+from app.middleware.feature_check import require_documents
+from app.modules.media.upload_service import document_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.modules.documents.models import DocumentStatus
 from app.modules.documents.schemas import (
@@ -98,7 +99,7 @@ async def get_document_by_slug(
     response_model=DocumentListResponse,
     summary="List documents",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:read"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:read"))],
 )
 async def list_documents(
     pagination: Pagination,
@@ -139,7 +140,7 @@ async def list_documents(
     status_code=status.HTTP_201_CREATED,
     summary="Create document",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:create"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:create"))],
 )
 async def create_document(
     data: DocumentCreate,
@@ -157,7 +158,7 @@ async def create_document(
     response_model=DocumentResponse,
     summary="Get document",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:read"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:read"))],
 )
 async def get_document(
     document_id: UUID,
@@ -175,7 +176,7 @@ async def get_document(
     response_model=DocumentResponse,
     summary="Update document",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:update"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:update"))],
 )
 async def update_document(
     document_id: UUID,
@@ -196,7 +197,7 @@ async def update_document(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete document",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:delete"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:delete"))],
 )
 async def delete_document(
     document_id: UUID,
@@ -213,7 +214,7 @@ async def delete_document(
     response_model=DocumentResponse,
     summary="Publish document",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:update"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:update"))],
 )
 async def publish_document(
     document_id: UUID,
@@ -233,7 +234,7 @@ async def publish_document(
     response_model=DocumentResponse,
     summary="Unpublish document",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:update"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:update"))],
 )
 async def unpublish_document(
     document_id: UUID,
@@ -258,7 +259,7 @@ async def unpublish_document(
     response_model=DocumentResponse,
     summary="Upload document file",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:update"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:update"))],
 )
 async def upload_document_file(
     document_id: UUID,
@@ -291,7 +292,7 @@ async def upload_document_file(
     response_model=DocumentResponse,
     summary="Delete document file",
     tags=["Admin - Documents"],
-    dependencies=[Depends(PermissionChecker("documents:update"))],
+    dependencies=[require_documents, Depends(PermissionChecker("documents:update"))],
 )
 async def delete_document_file(
     document_id: UUID,

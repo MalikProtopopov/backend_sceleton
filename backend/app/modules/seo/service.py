@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import transactional
 from app.core.exceptions import AlreadyExistsError, NotFoundError
-from app.core.url_utils import normalize_path, build_sitemap_url
+from app.modules.seo.utils import normalize_path, build_sitemap_url
 from app.modules.seo.models import Redirect, SEORoute
 from app.modules.seo.schemas import (
     RedirectCreate,

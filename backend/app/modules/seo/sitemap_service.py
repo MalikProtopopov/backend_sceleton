@@ -8,7 +8,7 @@ from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.url_utils import build_sitemap_url, normalize_path
+from app.modules.seo.utils import build_sitemap_url, normalize_path
 from app.modules.company.models import Employee, EmployeeLocale, Service, ServiceLocale
 from app.modules.content.models import Article, ArticleLocale, Case, CaseLocale, Topic, TopicLocale
 from app.modules.documents.models import Document, DocumentLocale

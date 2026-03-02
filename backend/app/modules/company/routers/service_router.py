@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Filtering, Locale, Pagination, PublicTenantId
-from app.core.image_upload import image_upload_service
+from app.modules.media.upload_service import image_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.middleware.feature_check import require_services, require_services_public
 from app.modules.company.mappers import (
@@ -37,7 +37,8 @@ from app.modules.content.schemas import (
     ContentBlockResponse,
     ContentBlockUpdate,
 )
-from app.modules.content.services import CaseService, ContentBlockService, ReviewService
+from app.modules.content.services import CaseService, ReviewService
+from app.modules.content_blocks.service import ContentBlockService
 
 router = APIRouter()
 

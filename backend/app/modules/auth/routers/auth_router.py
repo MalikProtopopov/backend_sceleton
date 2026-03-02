@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_optional_tenant_from_header, get_tenant_from_header
-from app.core.image_upload import image_upload_service
+from app.modules.media.upload_service import image_upload_service
 from app.core.logging import get_logger
 from app.core.redis import get_token_blacklist
 from app.core.security import (

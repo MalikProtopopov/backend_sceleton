@@ -9,7 +9,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.core.base_service import BaseService
 from app.core.database import transactional
 from app.core.exceptions import AlreadyExistsError, NotFoundError
-from app.core.image_upload import image_upload_service
+from app.modules.media.upload_service import image_upload_service
 from app.core.pagination import paginate_query
 from app.modules.catalog.models import (
     Category,

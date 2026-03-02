@@ -159,7 +159,13 @@ class SortOrderMixin:
 
 
 class PublishableMixin:
-    """Mixin for content with publish status."""
+    """Mixin for content with publish status.
+
+    Provides ``is_published`` / ``published_at`` columns **plus** helper
+    methods ``publish()``, ``unpublish()``, and ``archive()`` that also
+    work with a ``status`` column when present on the model (e.g.
+    ArticleStatus draft/published/archived).
+    """
 
     is_published: Mapped[bool] = mapped_column(
         default=False,
@@ -170,6 +176,25 @@ class PublishableMixin:
         DateTime(timezone=True),
         nullable=True,
     )
+
+    def publish(self) -> None:
+        """Mark entity as published."""
+        self.is_published = True
+        self.published_at = datetime.now(UTC)
+        if hasattr(self, "status"):
+            self.status = "published"
+
+    def unpublish(self) -> None:
+        """Revert entity to draft / unpublished state."""
+        self.is_published = False
+        if hasattr(self, "status"):
+            self.status = "draft"
+
+    def archive(self) -> None:
+        """Archive entity (unpublish + set status to archived if supported)."""
+        self.is_published = False
+        if hasattr(self, "status"):
+            self.status = "archived"
 
 
 

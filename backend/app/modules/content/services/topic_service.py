@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.core.base_service import BaseService
 from app.core.database import transactional
 from app.core.exceptions import NotFoundError
-from app.core.locale_helpers import (
+from app.modules.localization.helpers import (
     LocaleAlreadyExistsError,
     MinimumLocalesError,
     check_locale_exists,

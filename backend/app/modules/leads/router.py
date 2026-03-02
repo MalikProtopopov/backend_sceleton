@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import Pagination, PublicTenantId
 from app.core.logging import get_logger
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_crm_basic, require_crm_pro
 from app.modules.notifications.service import NotificationService
 from app.modules.tenants.models import Tenant
 
@@ -270,7 +271,7 @@ async def _send_inquiry_notification(
     response_model=list[InquiryFormResponse],
     summary="List inquiry forms",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:read"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("inquiries:read"))],
 )
 async def list_inquiry_forms(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -288,7 +289,7 @@ async def list_inquiry_forms(
     status_code=status.HTTP_201_CREATED,
     summary="Create inquiry form",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("settings:update"))],
 )
 async def create_inquiry_form(
     data: InquiryFormCreate,
@@ -306,7 +307,7 @@ async def create_inquiry_form(
     response_model=InquiryFormResponse,
     summary="Get inquiry form",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:read"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("inquiries:read"))],
 )
 async def get_inquiry_form(
     form_id: UUID,
@@ -324,7 +325,7 @@ async def get_inquiry_form(
     response_model=InquiryFormResponse,
     summary="Update inquiry form",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("settings:update"))],
 )
 async def update_inquiry_form(
     form_id: UUID,
@@ -343,7 +344,7 @@ async def update_inquiry_form(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete inquiry form",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("settings:update"))],
 )
 async def delete_inquiry_form(
     form_id: UUID,
@@ -365,7 +366,7 @@ async def delete_inquiry_form(
     response_model=InquiryListResponse,
     summary="List inquiries",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:read"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("inquiries:read"))],
 )
 async def list_inquiries(
     pagination: Pagination,
@@ -407,7 +408,7 @@ async def list_inquiries(
     response_model=InquiryAnalyticsSummary,
     summary="Get inquiry analytics",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:read"))],
+    dependencies=[require_crm_pro, Depends(PermissionChecker("inquiries:read"))],
 )
 async def get_inquiries_analytics(
     days: int = Query(default=30, ge=1, le=365),
@@ -425,7 +426,7 @@ async def get_inquiries_analytics(
     response_model=InquiryResponse,
     summary="Get inquiry",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:read"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("inquiries:read"))],
 )
 async def get_inquiry(
     inquiry_id: UUID,
@@ -443,7 +444,7 @@ async def get_inquiry(
     response_model=InquiryResponse,
     summary="Update inquiry",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:update"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("inquiries:update"))],
 )
 async def update_inquiry(
     inquiry_id: UUID,
@@ -462,7 +463,7 @@ async def update_inquiry(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete inquiry",
     tags=["Admin - Leads"],
-    dependencies=[Depends(PermissionChecker("inquiries:delete"))],
+    dependencies=[require_crm_basic, Depends(PermissionChecker("inquiries:delete"))],
 )
 async def delete_inquiry(
     inquiry_id: UUID,

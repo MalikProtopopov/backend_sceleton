@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Pagination
 from app.core.exceptions import NotFoundError, PermissionDeniedError
-from app.core.image_upload import image_upload_service
+from app.middleware.feature_check import require_limit
+from app.modules.media.upload_service import image_upload_service
 from app.core.security import (
     PermissionChecker,
     get_current_active_user,
@@ -90,7 +91,7 @@ async def list_users(
     status_code=status.HTTP_201_CREATED,
     summary="Create user",
     description="Create a new user. Platform owner can specify tenant_id to create users in any organization.",
-    dependencies=[Depends(PermissionChecker("users:create"))],
+    dependencies=[require_limit("max_users"), Depends(PermissionChecker("users:create"))],
 )
 async def create_user(
     data: UserCreate,

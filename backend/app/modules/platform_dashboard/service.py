@@ -19,7 +19,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.auth.models import AdminUser, AuditLog
+from app.modules.audit.models import AuditLog
+from app.modules.auth.models import AdminUser
 from app.modules.company.models import Employee, Service
 from app.modules.content.models import FAQ, Article, ArticleStatus, Case, Review, ReviewStatus
 from app.modules.documents.models import Document

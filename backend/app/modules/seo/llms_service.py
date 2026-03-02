@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.url_utils import build_sitemap_url
+from app.modules.seo.utils import build_sitemap_url
 from app.modules.company.models import Service, ServiceLocale
 from app.modules.content.models import Case, CaseLocale
 from app.modules.tenants.models import Tenant, TenantSettings

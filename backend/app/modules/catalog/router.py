@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Pagination, PublicTenantId
 from app.core.security import PermissionChecker, get_current_tenant_id
-from app.middleware.feature_check import require_catalog, require_catalog_public
+from app.middleware.feature_check import require_catalog, require_catalog_public, require_limit
 from app.modules.catalog.schemas import (
     CategoryCreate,
     CategoryListResponse,
@@ -60,13 +60,13 @@ from app.modules.catalog.service import (
     ProductService,
     UOMService,
 )
-from app.modules.content.schemas import (
+from app.modules.content_blocks.schemas import (
     ContentBlockCreate,
     ContentBlockReorderRequest,
     ContentBlockResponse,
     ContentBlockUpdate,
 )
-from app.modules.content.services.content_block_service import ContentBlockService
+from app.modules.content_blocks.service import ContentBlockService
 
 router = APIRouter()
 
@@ -595,7 +595,7 @@ async def get_product(
     response_model=ProductResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create product",
-    dependencies=[require_catalog, Depends(PermissionChecker("catalog:create"))],
+    dependencies=[require_catalog, require_limit("max_products"), Depends(PermissionChecker("catalog:create"))],
 )
 async def create_product(
     data: ProductCreate,

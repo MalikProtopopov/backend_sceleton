@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Pagination
 from app.core.exceptions import PermissionDeniedError
-from app.core.image_upload import image_upload_service
+from app.modules.media.upload_service import image_upload_service
 from app.core.security import (
     get_current_active_user,
     get_current_tenant_id,
@@ -557,7 +557,7 @@ async def verify_domain_dns(
     db: AsyncSession = Depends(get_db),
 ) -> DNSVerifyResponse:
     """Verify DNS and optionally trigger provisioning."""
-    from app.services.domain_provisioning import DomainProvisioningService
+    from app.modules.tenants.services.domain_provisioning import DomainProvisioningService
     from app.tasks.domain_tasks import provision_domain_task
 
     service = DomainProvisioningService(db)

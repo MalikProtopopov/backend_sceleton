@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import Locale, PublicTenantId
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_company
 from app.modules.company.mappers import (
     map_advantage_to_public_response,
     map_advantages_to_public_response,
@@ -121,7 +122,7 @@ async def get_contacts_public(
     response_model=PracticeAreaListResponse,
     summary="List practice areas (admin)",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:read"))],
 )
 async def list_practice_areas_admin(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -142,7 +143,7 @@ async def list_practice_areas_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create practice area",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:create"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:create"))],
 )
 async def create_practice_area(
     data: PracticeAreaCreate,
@@ -160,7 +161,7 @@ async def create_practice_area(
     response_model=PracticeAreaResponse,
     summary="Get practice area",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:read"))],
 )
 async def get_practice_area(
     pa_id: UUID,
@@ -178,7 +179,7 @@ async def get_practice_area(
     response_model=PracticeAreaResponse,
     summary="Update practice area",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def update_practice_area(
     pa_id: UUID,
@@ -197,7 +198,7 @@ async def update_practice_area(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete practice area",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:delete"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:delete"))],
 )
 async def delete_practice_area(
     pa_id: UUID,
@@ -216,7 +217,7 @@ async def delete_practice_area(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to practice area",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def create_practice_area_locale(
     pa_id: UUID,
@@ -235,7 +236,7 @@ async def create_practice_area_locale(
     response_model=PracticeAreaLocaleResponse,
     summary="Update practice area locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def update_practice_area_locale(
     pa_id: UUID,
@@ -255,7 +256,7 @@ async def update_practice_area_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete practice area locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def delete_practice_area_locale(
     pa_id: UUID,
@@ -278,7 +279,7 @@ async def delete_practice_area_locale(
     response_model=AdvantageListResponse,
     summary="List advantages (admin)",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:read"))],
 )
 async def list_advantages_admin(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -299,7 +300,7 @@ async def list_advantages_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create advantage",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:create"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:create"))],
 )
 async def create_advantage(
     data: AdvantageCreate,
@@ -317,7 +318,7 @@ async def create_advantage(
     response_model=AdvantageResponse,
     summary="Get advantage",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:read"))],
 )
 async def get_advantage(
     adv_id: UUID,
@@ -335,7 +336,7 @@ async def get_advantage(
     response_model=AdvantageResponse,
     summary="Update advantage",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def update_advantage(
     adv_id: UUID,
@@ -354,7 +355,7 @@ async def update_advantage(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete advantage",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:delete"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:delete"))],
 )
 async def delete_advantage(
     adv_id: UUID,
@@ -373,7 +374,7 @@ async def delete_advantage(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to advantage",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def create_advantage_locale(
     adv_id: UUID,
@@ -392,7 +393,7 @@ async def create_advantage_locale(
     response_model=AdvantageLocaleResponse,
     summary="Update advantage locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def update_advantage_locale(
     adv_id: UUID,
@@ -412,7 +413,7 @@ async def update_advantage_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete advantage locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("services:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("services:update"))],
 )
 async def delete_advantage_locale(
     adv_id: UUID,
@@ -435,7 +436,7 @@ async def delete_advantage_locale(
     response_model=AddressListResponse,
     summary="List addresses (admin)",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:read"))],
 )
 async def list_addresses_admin(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -456,7 +457,7 @@ async def list_addresses_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create address",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def create_address(
     data: AddressCreate,
@@ -474,7 +475,7 @@ async def create_address(
     response_model=AddressResponse,
     summary="Get address",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:read"))],
 )
 async def get_address(
     address_id: UUID,
@@ -492,7 +493,7 @@ async def get_address(
     response_model=AddressResponse,
     summary="Update address",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def update_address(
     address_id: UUID,
@@ -511,7 +512,7 @@ async def update_address(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete address",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def delete_address(
     address_id: UUID,
@@ -530,7 +531,7 @@ async def delete_address(
     status_code=status.HTTP_201_CREATED,
     summary="Add locale to address",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def create_address_locale(
     address_id: UUID,
@@ -549,7 +550,7 @@ async def create_address_locale(
     response_model=AddressLocaleResponse,
     summary="Update address locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def update_address_locale(
     address_id: UUID,
@@ -569,7 +570,7 @@ async def update_address_locale(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete address locale",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def delete_address_locale(
     address_id: UUID,
@@ -592,7 +593,7 @@ async def delete_address_locale(
     response_model=ContactListResponse,
     summary="List contacts (admin)",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:read"))],
 )
 async def list_contacts_admin(
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -613,7 +614,7 @@ async def list_contacts_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create contact",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def create_contact(
     data: ContactCreate,
@@ -631,7 +632,7 @@ async def create_contact(
     response_model=ContactResponse,
     summary="Get contact",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:read"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:read"))],
 )
 async def get_contact(
     contact_id: UUID,
@@ -649,7 +650,7 @@ async def get_contact(
     response_model=ContactResponse,
     summary="Update contact",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def update_contact(
     contact_id: UUID,
@@ -668,7 +669,7 @@ async def update_contact(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete contact",
     tags=["Admin - Company"],
-    dependencies=[Depends(PermissionChecker("settings:update"))],
+    dependencies=[require_company, Depends(PermissionChecker("settings:update"))],
 )
 async def delete_contact(
     contact_id: UUID,

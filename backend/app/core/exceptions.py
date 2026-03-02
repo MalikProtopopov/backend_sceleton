@@ -159,6 +159,45 @@ class FeatureDisabledError(AppException):
         )
 
 
+class LimitExceededError(AppException):
+    """Resource limit exceeded for this tenant."""
+
+    def __init__(self, resource: str, current: int | None = None, limit: int | None = None) -> None:
+        detail: dict[str, Any] = {
+            "resource": resource,
+            "restriction_level": "organization",
+        }
+        if current is not None:
+            detail["current_usage"] = current
+        if limit is not None:
+            detail["limit"] = limit
+
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code="limit_exceeded",
+            message=f"Resource limit reached for '{resource}'. "
+            "Upgrade your plan or purchase additional capacity.",
+            detail=detail,
+        )
+
+
+class LimitWarningError(AppException):
+    """Resource usage approaching limit (informational, does not block)."""
+
+    def __init__(self, resource: str, current: int, limit: int) -> None:
+        super().__init__(
+            status_code=status.HTTP_200_OK,
+            error_code="limit_warning",
+            message=f"Resource '{resource}' usage is at {current}/{limit} (80%+).",
+            detail={
+                "resource": resource,
+                "current_usage": current,
+                "limit": limit,
+                "restriction_level": "organization",
+            },
+        )
+
+
 class FeatureNotAvailableError(AppException):
     """Feature is disabled -- returns 404 for public API.
 

@@ -215,65 +215,7 @@ class AdminUser(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
         return f"<AdminUser {self.email}>"
 
 
-class AuditLog(Base, UUIDMixin):
-    """Audit log for tracking all changes.
-
-    Records who did what, when, and what changed.
-    Note: Audit logs are immutable, so no updated_at field.
-    """
-
-    __tablename__ = "audit_logs"
-
-    # Tenant - explicit ForeignKey for relationship support
-    tenant_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("tenants.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    # Who performed the action
-    user_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("admin_users.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    user: Mapped["AdminUser | None"] = relationship("AdminUser", lazy="selectin")
-
-    # What was affected
-    resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    resource_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-
-    # What action was performed
-    action: Mapped[str] = mapped_column(String(20), nullable=False)  # create, update, delete
-
-    # What changed (before/after for updates)
-    changes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-
-    # Request context
-    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
-    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
-
-    # Timestamp (only created_at since logs are immutable)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    __table_args__ = (
-        Index("ix_audit_logs_tenant_resource", "tenant_id", "resource_type", "resource_id"),
-        Index("ix_audit_logs_resource_id", "resource_id"),
-        Index("ix_audit_logs_user", "user_id"),
-        Index("ix_audit_logs_created", "tenant_id", "created_at"),
-        CheckConstraint(
-            "action IN ('create', 'update', 'delete', 'login', 'logout')",
-            name="ck_audit_logs_action",
-        ),
-    )
-
-    def __repr__(self) -> str:
-        return f"<AuditLog {self.action} {self.resource_type}/{self.resource_id}>"
+from app.modules.audit.models import AuditLog  # noqa: F401  # re-export for backward compat
 
 
 # Default permissions for the system

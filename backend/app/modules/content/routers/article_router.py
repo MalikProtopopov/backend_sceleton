@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
-from app.core.image_upload import image_upload_service
+from app.modules.media.upload_service import image_upload_service
 from app.core.security import PermissionChecker, get_current_active_user, get_current_tenant_id
-from app.middleware.feature_check import require_blog, require_blog_public
+from app.middleware.feature_check import require_blog, require_blog_public, require_limit
 from app.modules.auth.models import AdminUser
 from app.modules.content.mappers import (
     map_article_to_public_response,
@@ -30,7 +30,8 @@ from app.modules.content.schemas import (
     ContentBlockResponse,
     ContentBlockUpdate,
 )
-from app.modules.content.services import ArticleService, ContentBlockService
+from app.modules.content.services import ArticleService
+from app.modules.content_blocks.service import ContentBlockService
 
 router = APIRouter()
 
@@ -163,7 +164,7 @@ async def list_articles_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Create article",
     tags=["Admin - Content"],
-    dependencies=[require_blog, Depends(PermissionChecker("articles:create"))],
+    dependencies=[require_blog, require_limit("max_articles"), Depends(PermissionChecker("articles:create"))],
 )
 async def create_article(
     data: ArticleCreate,

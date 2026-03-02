@@ -6,6 +6,9 @@ before allowing access to related endpoints.
 Two variants:
 - require_feature() -- for admin routes (requires authentication token)
 - require_feature_public() -- for public routes (uses tenant_id from query param)
+
+Resource limit checking:
+- require_limit() -- for create endpoints (checks plan resource limits)
 """
 
 from uuid import UUID
@@ -15,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_public_tenant_id
-from app.core.exceptions import FeatureDisabledError, FeatureNotAvailableError
+from app.core.exceptions import FeatureDisabledError, FeatureNotAvailableError, LimitExceededError
 from app.core.security import TokenPayload, get_current_token
 from app.modules.tenants.service import FeatureFlagService
 
@@ -102,6 +105,49 @@ def require_feature_public(feature_name: str):
     return Depends(dependency)
 
 
+def require_limit(resource: str):
+    """Create a dependency that checks resource limits before create operations.
+
+    If the tenant has exceeded their plan limit for the given resource,
+    raises ``LimitExceededError`` (HTTP 403).
+
+    Superusers and platform_owners bypass limit checks.
+
+    Args:
+        resource: Limit key from Plan.limits, e.g. ``max_products``.
+
+    Usage:
+        @router.post(
+            "/admin/products",
+            dependencies=[require_limit("max_products")],
+        )
+    """
+
+    async def dependency(
+        token: TokenPayload = Depends(get_current_token),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        if token.is_superuser:
+            return
+        if "platform:*" in token.permissions or "platform:update" in token.permissions:
+            return
+
+        from app.modules.billing.service import LimitService, LimitStatus
+
+        svc = LimitService(db)
+        status = await svc.check_limit(token.tenant_id, resource)
+        if status == LimitStatus.EXCEEDED:
+            limits = await svc.get_limits(token.tenant_id)
+            usage = await svc.get_usage(token.tenant_id)
+            raise LimitExceededError(
+                resource,
+                current=usage.get(resource, 0),
+                limit=limits.get(resource),
+            )
+
+    return Depends(dependency)
+
+
 class FeatureRequiredChecker:
     """Class-based dependency for feature checking.
     
@@ -168,4 +214,10 @@ require_team_public = require_feature_public("team_module")
 require_services_public = require_feature_public("services_module")
 require_catalog_public = require_feature_public("catalog_module")
 require_variants_public = require_feature_public("variants_module")
+
+# New billing-module gating
+require_documents = require_feature("documents")
+require_crm_basic = require_feature("crm_basic")
+require_crm_pro = require_feature("crm_pro")
+require_company = require_feature("company")
 

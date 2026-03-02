@@ -12,6 +12,7 @@ from app.core.base_model import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.modules.auth.models import AdminUser
+    from app.modules.billing.models import Plan
 
 
 class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
@@ -42,7 +43,16 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin, VersionMixin):
     # Custom metadata / extra data
     extra_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict)
 
+    # Billing plan
+    plan_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("billing_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Relationships
+    plan: Mapped["Plan | None"] = relationship("Plan", foreign_keys=[plan_id], lazy="joined")
     settings: Mapped["TenantSettings"] = relationship(
         "TenantSettings",
         back_populates="tenant",

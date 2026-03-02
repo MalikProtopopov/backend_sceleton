@@ -7,7 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.auth.models import AdminUser, AuditLog
+from app.modules.audit.models import AuditLog
+from app.modules.auth.models import AdminUser
 from app.modules.audit.schemas import (
     AuditLogCreate,
     AuditLogResponse,

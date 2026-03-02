@@ -143,7 +143,7 @@ class TenantService:
 
     @transactional
     async def create(self, data: TenantCreate) -> Tenant:
-        """Create a new tenant."""
+        """Create a new tenant with billing plan and modules."""
         # Check slug uniqueness
         existing = await self.db.execute(
             select(Tenant).where(Tenant.slug == data.slug).where(Tenant.deleted_at.is_(None))
@@ -151,8 +151,20 @@ class TenantService:
         if existing.scalar_one_or_none():
             raise AlreadyExistsError("Tenant", "slug", data.slug)
 
+        # Resolve billing plan
+        from app.modules.billing.service import PlanService, TenantModuleSource
+        from app.modules.billing.models import TenantModule as TenantModuleModel
+
+        plan_svc = PlanService(self.db)
+        plan_slug = data.plan_slug or "starter"
+        try:
+            plan = await plan_svc.get_plan_by_slug(plan_slug)
+        except Exception:
+            plan = await plan_svc.get_default_plan()
+
         # Create tenant
-        tenant = Tenant(**data.model_dump())
+        tenant_data = data.model_dump(exclude={"plan_slug"})
+        tenant = Tenant(**tenant_data, plan_id=plan.id)
         self.db.add(tenant)
         await self.db.flush()
 
@@ -160,7 +172,16 @@ class TenantService:
         settings = TenantSettings(tenant_id=tenant.id)
         self.db.add(settings)
 
-        # Create default feature flags (enabled=True by default for new tenants)
+        # Create TenantModule rows from plan (replaces old feature_flags creation)
+        for link in plan.module_links:
+            self.db.add(TenantModuleModel(
+                tenant_id=tenant.id,
+                module_id=link.module_id,
+                source=TenantModuleSource.PLAN.value,
+                enabled=True,
+            ))
+
+        # Keep legacy feature_flags for backward compatibility
         for feature_name in AVAILABLE_FEATURES:
             flag = FeatureFlag(
                 tenant_id=tenant.id,
@@ -179,10 +200,10 @@ class TenantService:
             resource_type="tenant",
             resource_id=tenant.id,
             action="create",
-            changes={"name": tenant.name, "slug": tenant.slug},
+            changes={"name": tenant.name, "slug": tenant.slug, "plan": plan_slug},
         )
 
-        await self.db.refresh(tenant)  # Full refresh for scalar fields (updated_at, etc.)
+        await self.db.refresh(tenant)
         await self.db.refresh(tenant, ["settings", "feature_flags"])
 
         return tenant
@@ -375,18 +396,29 @@ class FeatureFlagService:
     async def is_enabled(self, tenant_id: UUID, feature_name: str) -> bool:
         """Check if a feature is enabled for a tenant.
 
+        Delegates to ModuleAccessService which checks the new
+        ``tenant_modules`` table.  Falls back to the legacy
+        ``feature_flags`` table if no billing module row is found.
+
         Usage:
             if await feature_service.is_enabled(tenant_id, "cases_module"):
                 # Feature is enabled
         """
+        from app.modules.billing.service import ModuleAccessService
+
+        access_svc = ModuleAccessService(self.db)
+        result = await access_svc.is_enabled(tenant_id, feature_name)
+        if result:
+            return True
+
+        # Fallback: check legacy feature_flags table
         stmt = (
             select(FeatureFlag.enabled)
             .where(FeatureFlag.tenant_id == tenant_id)
             .where(FeatureFlag.feature_name == feature_name)
         )
-        result = await self.db.execute(stmt)
-        enabled = result.scalar_one_or_none()
-
+        db_result = await self.db.execute(stmt)
+        enabled = db_result.scalar_one_or_none()
         return enabled is True
 
     @transactional

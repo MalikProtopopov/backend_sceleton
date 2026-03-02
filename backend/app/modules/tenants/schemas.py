@@ -431,7 +431,7 @@ class TenantCreate(TenantBase):
     Note: logo_url is managed via POST /tenants/{id}/logo endpoint.
     """
 
-    pass
+    plan_slug: str | None = Field(default=None, description="Billing plan slug (default: starter)")
 
 
 class TenantUpdate(BaseModel):
@@ -466,6 +466,7 @@ class TenantResponse(TenantBase):
 
     id: UUID
     logo_url: str | None = None
+    plan_id: UUID | None = None
     version: int
     users_count: int = Field(default=0, description="Number of active users in this tenant")
     created_at: datetime

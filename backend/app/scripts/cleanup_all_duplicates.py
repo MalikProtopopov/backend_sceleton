@@ -36,7 +36,7 @@ from app.modules.documents.models import DocumentLocale
 from app.modules.leads.models import InquiryForm
 from app.modules.seo.models import Redirect, SEORoute
 from app.modules.tenants.models import Tenant
-from app.modules.assets.models import FileAsset
+from app.modules.media.models import FileAsset
 
 
 # Define duplicate detection rules for each table

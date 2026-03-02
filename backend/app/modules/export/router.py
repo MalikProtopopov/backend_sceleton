@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import PermissionChecker, get_current_tenant_id
+from app.middleware.feature_check import require_crm_pro
 from app.modules.export.schemas import ExportFormat, ExportResourceType
 from app.modules.export.service import ExportService
 
@@ -17,7 +18,7 @@ router = APIRouter(tags=["Admin - Export"])
 @router.get(
     "/export",
     summary="Export data",
-    dependencies=[Depends(PermissionChecker("export:read"))],
+    dependencies=[require_crm_pro, Depends(PermissionChecker("export:read"))],
 )
 async def export_data(
     resource_type: ExportResourceType = Query(..., alias="resourceType"),

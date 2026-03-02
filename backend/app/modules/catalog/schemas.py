@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.content.schemas import ContentBlockResponse
+from app.modules.content_blocks.schemas import ContentBlockResponse
 
 
 # ============================================================================

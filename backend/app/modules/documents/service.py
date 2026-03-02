@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.core.base_service import BaseService
 from app.core.database import transactional
 from app.core.exceptions import NotFoundError
-from app.core.locale_helpers import check_slug_unique
+from app.modules.localization.helpers import check_slug_unique
 from app.modules.documents.models import (
     Document,
     DocumentLocale,

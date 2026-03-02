@@ -1,2 +1,1 @@
-"""Assets module - file upload and S3 storage."""
-
+"""Backward-compatible re-export. Actual code moved to app.modules.media."""

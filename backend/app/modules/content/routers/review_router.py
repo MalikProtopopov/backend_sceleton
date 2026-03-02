@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import Locale, Pagination, PublicTenantId
-from app.core.image_upload import image_upload_service
+from app.modules.media.upload_service import image_upload_service
 from app.core.security import PermissionChecker, get_current_tenant_id
 from app.middleware.feature_check import require_reviews, require_reviews_public
 from app.modules.content.mappers import map_case_to_minimal_response
