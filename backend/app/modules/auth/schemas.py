@@ -282,6 +282,49 @@ class FeatureCatalogResponse(BaseModel):
 
 
 # ============================================================================
+# Sidebar (unified billing + RBAC check)
+# ============================================================================
+
+
+class SidebarItemAccess(BaseModel):
+    """Access status for a single sidebar section."""
+
+    name: str = Field(..., description="Feature key (e.g. 'blog_module')")
+    title: str = Field(..., description="Human-readable title")
+    category: str = Field(..., description="Feature category")
+    path: str = Field(..., description="Admin route path")
+    icon: str = Field(..., description="Icon name suggestion")
+    visible: bool = Field(
+        ...,
+        description="Whether to show this item in sidebar at all",
+    )
+    accessible: bool = Field(
+        ...,
+        description="Whether the user can actually open this section (both billing + RBAC ok)",
+    )
+    reason: str | None = Field(
+        default=None,
+        description="If not accessible: 'billing' | 'role' | 'billing+role' | null",
+    )
+    required_permission: str | None = Field(
+        default=None,
+        description="RBAC permission needed (e.g. 'articles:read')",
+    )
+
+
+class SidebarResponse(BaseModel):
+    """Full sidebar manifest: sections with billing + RBAC access info."""
+
+    tenant_id: UUID
+    role: str | None = Field(default=None, description="Current user role name")
+    all_access: bool = Field(
+        default=False,
+        description="True for superuser/platform_owner (everything unlocked)",
+    )
+    sections: list[SidebarItemAccess] = []
+
+
+# ============================================================================
 # Tenant Switcher Schemas
 # ============================================================================
 

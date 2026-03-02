@@ -31,6 +31,8 @@ from app.modules.auth.schemas import (
     ResetPasswordRequest,
     RoleResponse,
     SelectTenantRequest,
+    SidebarItemAccess,
+    SidebarResponse,
     SwitchTenantRequest,
     TenantAccessInfo,
     TenantOption,
@@ -426,6 +428,143 @@ async def get_my_features(
         features=catalog_items,
         all_features_enabled=is_platform_owner,
         tenant_id=user.tenant_id,
+    )
+
+
+# Sidebar section definitions: feature_name → (path, icon, required_permission)
+_SIDEBAR_SECTIONS: list[dict] = [
+    # Core (always visible, no feature gate)
+    {"name": "_dashboard",       "path": "/admin/dashboard",   "icon": "dashboard",    "feature": None, "perm": "dashboard:read", "category": "core"},
+    {"name": "_media",           "path": "/admin/media",       "icon": "image",        "feature": None, "perm": "settings:read",  "category": "core"},
+    {"name": "_settings",        "path": "/admin/settings",    "icon": "settings",     "feature": None, "perm": "settings:read",  "category": "core"},
+    {"name": "_users",           "path": "/admin/users",       "icon": "users",        "feature": None, "perm": "users:read",     "category": "core"},
+    # Content
+    {"name": "blog_module",      "path": "/admin/articles",    "icon": "article",      "feature": "blog_module",    "perm": "articles:read",   "category": "content"},
+    {"name": "cases_module",     "path": "/admin/cases",       "icon": "briefcase",    "feature": "cases_module",   "perm": "cases:read",      "category": "content"},
+    {"name": "reviews_module",   "path": "/admin/reviews",     "icon": "star",         "feature": "reviews_module", "perm": "reviews:read",    "category": "content"},
+    {"name": "faq_module",       "path": "/admin/faq",         "icon": "help-circle",  "feature": "faq_module",     "perm": "faq:read",        "category": "content"},
+    # Company
+    {"name": "services_module",  "path": "/admin/services",    "icon": "layers",       "feature": "services_module","perm": "services:read",   "category": "company"},
+    {"name": "team_module",      "path": "/admin/employees",   "icon": "people",       "feature": "team_module",    "perm": "employees:read",  "category": "company"},
+    # CRM
+    {"name": "_inquiries",       "path": "/admin/inquiries",   "icon": "mail",         "feature": "crm_basic",      "perm": "inquiries:read",  "category": "crm"},
+    # Commerce
+    {"name": "catalog_module",   "path": "/admin/products",    "icon": "shopping-bag",  "feature": "catalog_module", "perm": "catalog:read",    "category": "commerce"},
+    {"name": "variants_module",  "path": "/admin/variants",    "icon": "git-branch",    "feature": "variants_module","perm": "catalog:read",    "category": "commerce"},
+    # Platform
+    {"name": "seo_advanced",     "path": "/admin/seo",         "icon": "search",       "feature": "seo_advanced",   "perm": "seo:read",        "category": "platform"},
+    {"name": "multilang",        "path": "/admin/locales",     "icon": "globe",        "feature": "multilang",      "perm": "settings:read",   "category": "platform"},
+    {"name": "analytics_advanced","path": "/admin/analytics",  "icon": "bar-chart",    "feature": "analytics_advanced","perm": "inquiries:read", "category": "platform"},
+    # Documents
+    {"name": "_documents",       "path": "/admin/documents",   "icon": "file-text",    "feature": "documents",      "perm": "documents:read",  "category": "content"},
+    # Billing (always visible)
+    {"name": "_billing",         "path": "/admin/billing",     "icon": "credit-card",  "feature": None, "perm": "dashboard:read", "category": "billing"},
+]
+
+
+@router.get(
+    "/me/sidebar",
+    response_model=SidebarResponse,
+    summary="Get sidebar manifest with access reasons",
+    description=(
+        "Returns every admin sidebar section with access status. "
+        "For each section: is it visible, is it accessible, and if not — why "
+        "(billing = module not in plan, role = RBAC permission missing, or both)."
+    ),
+)
+async def get_my_sidebar(
+    locale: str = Query(default="ru", description="Locale for titles (en, ru)"),
+    user: AdminUser = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> SidebarResponse:
+    from app.modules.billing.service import ModuleAccessService, _FLAG_TO_MODULE
+    from app.modules.tenants.models import AVAILABLE_FEATURES
+
+    is_privileged = user.is_superuser or (user.role and user.role.name == "platform_owner")
+
+    # Billing: enabled module slugs
+    access_svc = ModuleAccessService(db)
+    enabled_slugs = await access_svc.get_enabled_module_slugs(user.tenant_id)
+
+    # RBAC: user permissions set
+    user_perms: set[str] = set()
+    if user.role:
+        user_perms = {rp.permission.code for rp in user.role.role_permissions}
+
+    def has_permission(required: str) -> bool:
+        if is_privileged:
+            return True
+        if required in user_perms:
+            return True
+        resource = required.split(":")[0]
+        return f"{resource}:*" in user_perms
+
+    use_ru = locale.startswith("ru")
+    sections: list[SidebarItemAccess] = []
+
+    for sec in _SIDEBAR_SECTIONS:
+        feature_name = sec["feature"]
+        perm = sec["perm"]
+
+        # Billing check
+        if feature_name is None:
+            billing_ok = True
+        else:
+            slug = _FLAG_TO_MODULE.get(feature_name, feature_name)
+            billing_ok = is_privileged or slug in enabled_slugs
+
+        # RBAC check
+        role_ok = has_permission(perm)
+
+        accessible = billing_ok and role_ok
+
+        # Determine reason
+        reason = None
+        if not accessible:
+            if not billing_ok and not role_ok:
+                reason = "billing+role"
+            elif not billing_ok:
+                reason = "billing"
+            else:
+                reason = "role"
+
+        # Title: use AVAILABLE_FEATURES if present, else derive from name
+        meta = AVAILABLE_FEATURES.get(sec["name"], {})
+        if meta:
+            title = meta.get("title_ru" if use_ru else "title", sec["name"])
+        else:
+            titles_map = {
+                "_dashboard": "Дашборд" if use_ru else "Dashboard",
+                "_media": "Медиа" if use_ru else "Media",
+                "_settings": "Настройки" if use_ru else "Settings",
+                "_users": "Пользователи" if use_ru else "Users",
+                "_inquiries": "Заявки" if use_ru else "Inquiries",
+                "_documents": "Документы" if use_ru else "Documents",
+                "_billing": "Тариф" if use_ru else "Billing",
+            }
+            title = titles_map.get(sec["name"], sec["name"])
+
+        # Visible: always show core/billing; show feature sections even if
+        # disabled (so user sees the lock icon and can request upgrade)
+        visible = True
+
+        sections.append(SidebarItemAccess(
+            name=sec["name"],
+            title=title,
+            category=sec["category"],
+            path=sec["path"],
+            icon=sec["icon"],
+            visible=visible,
+            accessible=accessible,
+            reason=reason,
+            required_permission=perm if not role_ok and not is_privileged else None,
+        ))
+
+    return SidebarResponse(
+        tenant_id=user.tenant_id,
+        role=user.role.name if user.role else None,
+        all_access=is_privileged,
+        sections=sections,
     )
 
 
