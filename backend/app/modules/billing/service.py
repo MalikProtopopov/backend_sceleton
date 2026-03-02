@@ -287,6 +287,16 @@ class PlanService:
         return list(result.scalars().all())
 
     @transactional
+    async def get_tenant_modules_for_tenant(self, tenant_id: UUID) -> list[TenantModule]:
+        result = await self.db.execute(
+            select(TenantModule)
+            .options(selectinload(TenantModule.module))
+            .where(TenantModule.tenant_id == tenant_id)
+            .order_by(TenantModule.activated_at)
+        )
+        return list(result.scalars().all())
+
+    @transactional
     async def add_tenant_module(
         self,
         tenant_id: UUID,
@@ -298,7 +308,6 @@ class PlanService:
             select(TenantModule).where(
                 TenantModule.tenant_id == tenant_id,
                 TenantModule.module_id == mod.id,
-                TenantModule.source == source,
             )
         )
         if existing.scalar_one_or_none():

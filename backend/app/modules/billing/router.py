@@ -386,6 +386,21 @@ async def update_module(
     return await svc.update_module(module_id, data.model_dump(exclude_none=True))
 
 
+@router.get(
+    "/admin/platform/tenants/{tenant_id}/modules",
+    response_model=list[TenantModuleResponse],
+    summary="List active modules for a specific tenant",
+)
+async def list_tenant_modules(
+    tenant_id: UUID,
+    user: AdminUser = Depends(require_platform_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    svc = PlanService(db)
+    modules = await svc.get_tenant_modules_for_tenant(tenant_id)
+    return [_tenant_module_response(tm) for tm in modules]
+
+
 @router.post(
     "/admin/platform/tenants/{tenant_id}/modules",
     response_model=TenantModuleResponse,
