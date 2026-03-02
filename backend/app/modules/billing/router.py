@@ -185,11 +185,16 @@ async def get_my_plan(
     plan_svc = PlanService(db)
     limit_svc = LimitService(db)
 
+    from app.modules.billing.models import Plan, PlanModule
     from app.modules.tenants.models import Tenant
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    stmt = select(Tenant).options(selectinload(Tenant.plan)).where(Tenant.id == tenant_id)
+    stmt = select(Tenant).options(
+        selectinload(Tenant.plan)
+        .selectinload(Plan.module_links)
+        .selectinload(PlanModule.module)
+    ).where(Tenant.id == tenant_id)
     result = await db.execute(stmt)
     tenant = result.scalar_one_or_none()
 
