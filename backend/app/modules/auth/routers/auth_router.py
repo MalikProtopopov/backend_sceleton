@@ -431,34 +431,46 @@ async def get_my_features(
     )
 
 
-# Sidebar section definitions: feature_name → (path, icon, required_permission)
+# Sidebar section definitions matching frontend routes.
+# name     — unique key (feature flag name or _prefix for non-feature sections)
+# path     — frontend route path (what user sees in browser)
+# icon     — suggested icon name
+# feature  — billing feature gate (None = always available, no billing check)
+# perm     — RBAC permission required
+# category — grouping for sidebar
+# platform_only — True = show only for platform_owner / superuser
 _SIDEBAR_SECTIONS: list[dict] = [
-    # Core (always visible, no feature gate)
-    {"name": "_dashboard",       "path": "/admin/dashboard",   "icon": "dashboard",    "feature": None, "perm": "dashboard:read", "category": "core"},
-    {"name": "_media",           "path": "/admin/media",       "icon": "image",        "feature": None, "perm": "settings:read",  "category": "core"},
-    {"name": "_settings",        "path": "/admin/settings",    "icon": "settings",     "feature": None, "perm": "settings:read",  "category": "core"},
-    {"name": "_users",           "path": "/admin/users",       "icon": "users",        "feature": None, "perm": "users:read",     "category": "core"},
-    # Content
-    {"name": "blog_module",      "path": "/admin/articles",    "icon": "article",      "feature": "blog_module",    "perm": "articles:read",   "category": "content"},
-    {"name": "cases_module",     "path": "/admin/cases",       "icon": "briefcase",    "feature": "cases_module",   "perm": "cases:read",      "category": "content"},
-    {"name": "reviews_module",   "path": "/admin/reviews",     "icon": "star",         "feature": "reviews_module", "perm": "reviews:read",    "category": "content"},
-    {"name": "faq_module",       "path": "/admin/faq",         "icon": "help-circle",  "feature": "faq_module",     "perm": "faq:read",        "category": "content"},
-    # Company
-    {"name": "services_module",  "path": "/admin/services",    "icon": "layers",       "feature": "services_module","perm": "services:read",   "category": "company"},
-    {"name": "team_module",      "path": "/admin/employees",   "icon": "people",       "feature": "team_module",    "perm": "employees:read",  "category": "company"},
-    # CRM
-    {"name": "_inquiries",       "path": "/admin/inquiries",   "icon": "mail",         "feature": "crm_basic",      "perm": "inquiries:read",  "category": "crm"},
-    # Commerce
-    {"name": "catalog_module",   "path": "/admin/products",    "icon": "shopping-bag",  "feature": "catalog_module", "perm": "catalog:read",    "category": "commerce"},
-    {"name": "variants_module",  "path": "/admin/variants",    "icon": "git-branch",    "feature": "variants_module","perm": "catalog:read",    "category": "commerce"},
-    # Platform
-    {"name": "seo_advanced",     "path": "/admin/seo",         "icon": "search",       "feature": "seo_advanced",   "perm": "seo:read",        "category": "platform"},
-    {"name": "multilang",        "path": "/admin/locales",     "icon": "globe",        "feature": "multilang",      "perm": "settings:read",   "category": "platform"},
-    {"name": "analytics_advanced","path": "/admin/analytics",  "icon": "bar-chart",    "feature": "analytics_advanced","perm": "inquiries:read", "category": "platform"},
-    # Documents
-    {"name": "_documents",       "path": "/admin/documents",   "icon": "file-text",    "feature": "documents",      "perm": "documents:read",  "category": "content"},
-    # Billing (always visible)
-    {"name": "_billing",         "path": "/admin/billing",     "icon": "credit-card",  "feature": None, "perm": "dashboard:read", "category": "billing"},
+    # ── Core ──
+    {"name": "_dashboard",    "path": "/",              "icon": "dashboard",     "feature": None,  "perm": "dashboard:read",  "category": "core",      "platform_only": False},
+    {"name": "_media",        "path": "/media",         "icon": "image",         "feature": None,  "perm": "settings:read",   "category": "core",      "platform_only": False},
+    # ── Content ──
+    {"name": "blog_module",   "path": "/articles",      "icon": "file-text",     "feature": "blog_module",    "perm": "articles:read",   "category": "content",   "platform_only": False},
+    {"name": "cases_module",  "path": "/cases",         "icon": "briefcase",     "feature": "cases_module",   "perm": "cases:read",      "category": "content",   "platform_only": False},
+    {"name": "faq_module",    "path": "/faq",           "icon": "help-circle",   "feature": "faq_module",     "perm": "faq:read",        "category": "content",   "platform_only": False},
+    {"name": "_documents",    "path": "/documents",     "icon": "file",          "feature": "documents",      "perm": "documents:read",  "category": "content",   "platform_only": False},
+    # ── Company ──
+    {"name": "services_module","path": "/services",     "icon": "layers",        "feature": "services_module","perm": "services:read",   "category": "company",   "platform_only": False},
+    {"name": "team_module",   "path": "/team",          "icon": "users",         "feature": "team_module",    "perm": "employees:read",  "category": "company",   "platform_only": False},
+    {"name": "reviews_module","path": "/reviews",       "icon": "star",          "feature": "reviews_module", "perm": "reviews:read",    "category": "company",   "platform_only": False},
+    {"name": "_company",      "path": "/company",       "icon": "building",      "feature": "company",    "perm": "services:read",   "category": "company",   "platform_only": False},
+    # ── Commerce (catalog) ──
+    {"name": "catalog_module","path": "/catalog/products","icon": "shopping-bag", "feature": "catalog_module", "perm": "catalog:read",    "category": "commerce",  "platform_only": False},
+    # ── CRM / Leads ──
+    {"name": "_leads",        "path": "/leads",         "icon": "mail",          "feature": "crm_basic",  "perm": "inquiries:read",  "category": "crm",       "platform_only": False},
+    # ── Admin / Platform features ──
+    {"name": "seo_advanced",  "path": "/seo/paths",     "icon": "search",        "feature": "seo_advanced",   "perm": "seo:read",        "category": "platform",  "platform_only": False},
+    {"name": "_users",        "path": "/users",         "icon": "user-cog",      "feature": None,  "perm": "users:read",      "category": "admin",     "platform_only": False},
+    {"name": "_audit",        "path": "/audit",         "icon": "shield",        "feature": None,  "perm": "audit:read",      "category": "admin",     "platform_only": False},
+    {"name": "_settings",     "path": "/settings",      "icon": "settings",      "feature": None,  "perm": "settings:read",   "category": "admin",     "platform_only": False},
+    # ── Billing (always visible for any authenticated user) ──
+    {"name": "_billing",      "path": "/billing",       "icon": "credit-card",   "feature": None,  "perm": "dashboard:read",  "category": "billing",   "platform_only": False},
+    # ── Platform owner only ──
+    {"name": "_platform_dashboard","path": "/platform",          "icon": "monitor",   "feature": None, "perm": "platform:read", "category": "platform_admin", "platform_only": True},
+    {"name": "_tenants",      "path": "/tenants",       "icon": "database",      "feature": None,  "perm": "platform:read",   "category": "platform_admin", "platform_only": True},
+    {"name": "_platform_plans","path": "/platform/plans","icon": "package",       "feature": None,  "perm": "platform:read",   "category": "platform_admin", "platform_only": True},
+    {"name": "_platform_modules","path": "/platform/modules","icon": "puzzle",    "feature": None,  "perm": "platform:read",   "category": "platform_admin", "platform_only": True},
+    {"name": "_platform_bundles","path": "/platform/bundles","icon": "gift",      "feature": None,  "perm": "platform:read",   "category": "platform_admin", "platform_only": True},
+    {"name": "_platform_requests","path": "/platform/requests","icon": "inbox",   "feature": None,  "perm": "platform:read",   "category": "platform_admin", "platform_only": True},
 ]
 
 
@@ -502,9 +514,49 @@ async def get_my_sidebar(
     use_ru = locale.startswith("ru")
     sections: list[SidebarItemAccess] = []
 
+    titles_ru: dict[str, str] = {
+        "_dashboard": "Дашборд",
+        "_media": "Медиатека",
+        "_settings": "Настройки",
+        "_users": "Пользователи",
+        "_leads": "Заявки",
+        "_documents": "Документы",
+        "_company": "О компании",
+        "_billing": "Тариф",
+        "_audit": "Журнал аудита",
+        "_platform_dashboard": "Платформа",
+        "_tenants": "Проекты",
+        "_platform_plans": "Тарифы",
+        "_platform_modules": "Модули",
+        "_platform_bundles": "Бандлы",
+        "_platform_requests": "Заявки на апгрейд",
+    }
+    titles_en: dict[str, str] = {
+        "_dashboard": "Dashboard",
+        "_media": "Media",
+        "_settings": "Settings",
+        "_users": "Users",
+        "_leads": "Inquiries",
+        "_documents": "Documents",
+        "_company": "Company",
+        "_billing": "Billing",
+        "_audit": "Audit Log",
+        "_platform_dashboard": "Platform",
+        "_tenants": "Tenants",
+        "_platform_plans": "Plans",
+        "_platform_modules": "Modules",
+        "_platform_bundles": "Bundles",
+        "_platform_requests": "Upgrade Requests",
+    }
+
     for sec in _SIDEBAR_SECTIONS:
         feature_name = sec["feature"]
         perm = sec["perm"]
+        platform_only = sec.get("platform_only", False)
+
+        # Platform-only sections: hide for regular users
+        if platform_only and not is_privileged:
+            continue
 
         # Billing check
         if feature_name is None:
@@ -518,7 +570,6 @@ async def get_my_sidebar(
 
         accessible = billing_ok and role_ok
 
-        # Determine reason
         reason = None
         if not accessible:
             if not billing_ok and not role_ok:
@@ -528,25 +579,13 @@ async def get_my_sidebar(
             else:
                 reason = "role"
 
-        # Title: use AVAILABLE_FEATURES if present, else derive from name
+        # Title: prefer AVAILABLE_FEATURES metadata, then static map
         meta = AVAILABLE_FEATURES.get(sec["name"], {})
         if meta:
             title = meta.get("title_ru" if use_ru else "title", sec["name"])
         else:
-            titles_map = {
-                "_dashboard": "Дашборд" if use_ru else "Dashboard",
-                "_media": "Медиа" if use_ru else "Media",
-                "_settings": "Настройки" if use_ru else "Settings",
-                "_users": "Пользователи" if use_ru else "Users",
-                "_inquiries": "Заявки" if use_ru else "Inquiries",
-                "_documents": "Документы" if use_ru else "Documents",
-                "_billing": "Тариф" if use_ru else "Billing",
-            }
-            title = titles_map.get(sec["name"], sec["name"])
-
-        # Visible: always show core/billing; show feature sections even if
-        # disabled (so user sees the lock icon and can request upgrade)
-        visible = True
+            t_map = titles_ru if use_ru else titles_en
+            title = t_map.get(sec["name"], sec["name"])
 
         sections.append(SidebarItemAccess(
             name=sec["name"],
@@ -554,7 +593,7 @@ async def get_my_sidebar(
             category=sec["category"],
             path=sec["path"],
             icon=sec["icon"],
-            visible=visible,
+            visible=True,
             accessible=accessible,
             reason=reason,
             required_permission=perm if not role_ok and not is_privileged else None,

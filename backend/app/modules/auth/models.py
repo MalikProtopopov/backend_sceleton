@@ -277,6 +277,17 @@ DEFAULT_PERMISSIONS = [
     # Features (module management)
     ("features:read", "Read Feature Flags", "features", "read"),
     ("features:update", "Update Feature Flags", "features", "update"),
+    # Documents
+    ("documents:create", "Create Documents", "documents", "create"),
+    ("documents:read", "Read Documents", "documents", "read"),
+    ("documents:update", "Update Documents", "documents", "update"),
+    ("documents:delete", "Delete Documents", "documents", "delete"),
+    # Export
+    ("export:read", "Export Data", "export", "read"),
+    # Bulk content operations
+    ("content:bulk", "Bulk Content Operations", "content", "bulk"),
+    # Cases publish (separate from CRUD)
+    ("cases:publish", "Publish Cases", "cases", "publish"),
     # Audit
     ("audit:read", "Read Audit Logs", "audit", "read"),
     # Dashboard (tenant dashboard, billing, upgrade requests)
@@ -299,16 +310,19 @@ DEFAULT_ROLES = {
             "cases:*",
             "reviews:*",
             "faq:*",
+            "documents:*",
             "inquiries:*",
             "seo:*",
             "settings:*",
             "users:*",
+            "export:read",
+            "content:bulk",
             "audit:read",
             "dashboard:read",
         ],
     },
     "content_manager": {
-        "description": "Manage articles, FAQ, services, catalog",
+        "description": "Manage articles, FAQ, services, catalog, documents",
         "permissions": [
             "articles:*",
             "services:read",
@@ -316,6 +330,10 @@ DEFAULT_ROLES = {
             "employees:read",
             "catalog:*",
             "faq:*",
+            "documents:read",
+            "documents:create",
+            "documents:update",
+            "content:bulk",
             "dashboard:read",
         ],
     },
@@ -326,6 +344,8 @@ DEFAULT_ROLES = {
             "reviews:*",
             "seo:*",
             "inquiries:read",
+            "documents:read",
+            "export:read",
             "dashboard:read",
         ],
     },
@@ -339,6 +359,9 @@ DEFAULT_ROLES = {
             "faq:create",
             "faq:read",
             "faq:update",
+            "documents:read",
+            "documents:create",
+            "documents:update",
             "dashboard:read",
         ],
     },

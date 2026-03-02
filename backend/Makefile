@@ -278,6 +278,12 @@ add-dashboard-permission: dev-up
 add-dashboard-permission-prod: .env.prod-check
 	docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m app.scripts.add_dashboard_permission
 
+sync-permissions: dev-up
+	docker compose exec backend python -m app.scripts.sync_permissions
+
+sync-permissions-prod: .env.prod-check
+	docker compose -f docker-compose.prod.yml --env-file .env.prod exec backend python -m app.scripts.sync_permissions
+
 seed:
 	docker compose exec backend python -m app.scripts.seed_database
 
