@@ -312,7 +312,7 @@ def upgrade() -> None:
                 "price_monthly_kopecks, price_yearly_kopecks, setup_fee_kopecks, "
                 "is_default, is_active, sort_order, limits) "
                 "VALUES (:id, :slug, :name, :name_ru, :description_ru, "
-                ":pm, :py, :sf, :is_default, true, :sort, :limits::jsonb)"
+                ":pm, :py, :sf, :is_default, true, :sort, CAST(:limits AS jsonb))"
             ),
             {
                 "id": pid, "slug": p["slug"], "name": p["name"], "name_ru": p["name_ru"],
