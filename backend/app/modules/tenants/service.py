@@ -396,9 +396,9 @@ class FeatureFlagService:
     async def is_enabled(self, tenant_id: UUID, feature_name: str) -> bool:
         """Check if a feature is enabled for a tenant.
 
-        Delegates to ModuleAccessService which checks the new
-        ``tenant_modules`` table.  Falls back to the legacy
-        ``feature_flags`` table if no billing module row is found.
+        Uses tenant_modules (billing) as the single source of truth.
+        Legacy feature_flags are kept for display/backward compatibility
+        but do not affect access control.
 
         Usage:
             if await feature_service.is_enabled(tenant_id, "cases_module"):
@@ -407,25 +407,15 @@ class FeatureFlagService:
         from app.modules.billing.service import ModuleAccessService
 
         access_svc = ModuleAccessService(self.db)
-        result = await access_svc.is_enabled(tenant_id, feature_name)
-        if result:
-            return True
-
-        # Fallback: check legacy feature_flags table
-        stmt = (
-            select(FeatureFlag.enabled)
-            .where(FeatureFlag.tenant_id == tenant_id)
-            .where(FeatureFlag.feature_name == feature_name)
-        )
-        db_result = await self.db.execute(stmt)
-        enabled = db_result.scalar_one_or_none()
-        return enabled is True
+        return await access_svc.is_enabled(tenant_id, feature_name)
 
     @transactional
     async def update_flag(
         self, tenant_id: UUID, feature_name: str, data: FeatureFlagUpdate
     ) -> FeatureFlag:
-        """Update a feature flag."""
+        """Update a feature flag. Syncs to tenant_modules when feature maps to a billing module."""
+        from app.modules.billing.service import PlanService, _FLAG_TO_MODULE
+
         stmt = (
             select(FeatureFlag)
             .where(FeatureFlag.tenant_id == tenant_id)
@@ -440,6 +430,12 @@ class FeatureFlagService:
         old_enabled = flag.enabled
         flag.enabled = data.enabled
         await self.db.flush()
+
+        # Sync to tenant_modules (single source of truth for access control)
+        module_slug = _FLAG_TO_MODULE.get(feature_name)
+        if module_slug and old_enabled != data.enabled:
+            plan_svc = PlanService(self.db)
+            await plan_svc.set_module_enabled(tenant_id, module_slug, data.enabled)
 
         # Audit log: feature flag toggled
         if old_enabled != data.enabled:

@@ -335,6 +335,33 @@ class PlanService:
         )
 
     @transactional
+    async def set_module_enabled(
+        self, tenant_id: UUID, module_slug: str, enabled: bool
+    ) -> None:
+        """Set enabled state for a tenant's module. Used when syncing from feature_flags."""
+        mod = await self.get_module_by_slug(module_slug)
+        stmt = (
+            select(TenantModule)
+            .where(TenantModule.tenant_id == tenant_id)
+            .where(TenantModule.module_id == mod.id)
+        )
+        result = await self.db.execute(stmt)
+        tm = result.scalar_one_or_none()
+        if tm:
+            tm.enabled = enabled
+            await self.db.flush()
+        elif enabled:
+            self.db.add(
+                TenantModule(
+                    tenant_id=tenant_id,
+                    module_id=mod.id,
+                    source=TenantModuleSource.MANUAL.value,
+                    enabled=True,
+                )
+            )
+            await self.db.flush()
+
+    @transactional
     async def set_plan_for_tenant(self, tenant_id: UUID, plan: Plan) -> None:
         """Replace plan-sourced modules with those from the new plan.
 
