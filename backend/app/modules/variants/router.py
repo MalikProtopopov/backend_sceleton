@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import PermissionChecker, get_current_tenant_id
-from app.middleware.feature_check import require_catalog, require_variants
+from app.middleware.feature_check import require_catalog, require_limit, require_variants
 from app.modules.variants.schemas import (
     OptionGroupCreate,
     OptionGroupResponse,
@@ -41,7 +41,7 @@ from app.modules.variants.service import (
 router = APIRouter()
 
 _read_deps = [require_catalog, require_variants, Depends(PermissionChecker("catalog:read"))]
-_create_deps = [require_catalog, require_variants, Depends(PermissionChecker("catalog:create"))]
+_create_deps = [require_catalog, require_variants, require_limit("max_variants"), Depends(PermissionChecker("catalog:create"))]
 _update_deps = [require_catalog, require_variants, Depends(PermissionChecker("catalog:update"))]
 _delete_deps = [require_catalog, require_variants, Depends(PermissionChecker("catalog:delete"))]
 

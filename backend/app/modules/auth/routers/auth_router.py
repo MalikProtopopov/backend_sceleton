@@ -32,6 +32,7 @@ from app.modules.auth.schemas import (
     RoleResponse,
     SelectTenantRequest,
     SidebarItemAccess,
+    SidebarLimitInfo,
     SidebarResponse,
     SwitchTenantRequest,
     TenantAccessInfo,
@@ -489,7 +490,7 @@ async def get_my_sidebar(
     user: AdminUser = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> SidebarResponse:
-    from app.modules.billing.service import ModuleAccessService, _FLAG_TO_MODULE
+    from app.modules.billing.service import LimitService, ModuleAccessService, _FLAG_TO_MODULE
     from app.modules.tenants.models import AVAILABLE_FEATURES
 
     is_privileged = user.is_superuser or (user.role and user.role.name == "platform_owner")
@@ -497,6 +498,10 @@ async def get_my_sidebar(
     # Billing: enabled module slugs
     access_svc = ModuleAccessService(db)
     enabled_slugs = await access_svc.get_enabled_module_slugs(user.tenant_id)
+
+    # Limits: usage report for limit_info
+    limit_svc = LimitService(db)
+    usage_report = await limit_svc.get_full_usage_report(user.tenant_id)
 
     # RBAC: user permissions set
     user_perms: set[str] = set()
@@ -549,6 +554,12 @@ async def get_my_sidebar(
         "_platform_requests": "Upgrade Requests",
     }
 
+    _section_limit_map: dict[str, str] = {
+        "catalog_module": "max_products",
+        "blog_module": "max_articles",
+        "_users": "max_users",
+    }
+
     for sec in _SIDEBAR_SECTIONS:
         feature_name = sec["feature"]
         perm = sec["perm"]
@@ -587,6 +598,17 @@ async def get_my_sidebar(
             t_map = titles_ru if use_ru else titles_en
             title = t_map.get(sec["name"], sec["name"])
 
+        limit_info = None
+        limit_resource = _section_limit_map.get(sec["name"])
+        if limit_resource and limit_resource in usage_report:
+            lr = usage_report[limit_resource]
+            limit_info = SidebarLimitInfo(
+                resource=limit_resource,
+                current=lr["current"],
+                limit=lr["limit"],
+                status=lr["status"],
+            )
+
         sections.append(SidebarItemAccess(
             name=sec["name"],
             title=title,
@@ -597,6 +619,7 @@ async def get_my_sidebar(
             accessible=accessible,
             reason=reason,
             required_permission=perm if not role_ok and not is_privileged else None,
+            limit_info=limit_info,
         ))
 
     return SidebarResponse(

@@ -45,6 +45,7 @@ class LimitStatus(str, Enum):
     OK = "ok"
     WARNING = "warning"
     EXCEEDED = "exceeded"
+    NOT_AVAILABLE = "not_available"
 
 
 class ModuleAccessService:
@@ -437,7 +438,7 @@ class LimitService:
         return out
 
     async def get_usage(self, tenant_id: UUID) -> dict[str, int]:
-        from app.modules.auth.models import AdminUser
+        from app.modules.auth.models import AdminUser, Role
         from app.modules.media.models import FileAsset
         from app.modules.leads.models import Inquiry
         from app.modules.catalog.models import Product
@@ -467,6 +468,9 @@ class LimitService:
             ),
             "max_articles": select(func.count()).select_from(Article).where(
                 Article.tenant_id == tenant_id
+            ),
+            "max_rbac_roles": select(func.count()).select_from(Role).where(
+                Role.tenant_id == tenant_id
             ),
         }
 
@@ -504,8 +508,10 @@ class LimitService:
         for key in all_keys:
             limit_val = limits.get(key)
             current = usage.get(key, 0)
-            if limit_val is None or limit_val == 0:
+            if limit_val is None:
                 status = LimitStatus.OK
+            elif limit_val == 0:
+                status = LimitStatus.NOT_AVAILABLE
             elif current >= limit_val:
                 status = LimitStatus.EXCEEDED
             elif limit_val > 0 and current >= limit_val * 0.8:

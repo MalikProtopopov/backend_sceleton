@@ -271,6 +271,7 @@ DEFAULT_PERMISSIONS = [
     ("users:read", "Read Users", "users", "read"),
     ("users:update", "Update Users", "users", "update"),
     ("users:delete", "Delete Users", "users", "delete"),
+    ("users:manage", "Manage Roles", "users", "manage"),
     # Platform (PLATFORM_OWNER only)
     ("platform:read", "Read Platform Settings", "platform", "read"),
     ("platform:update", "Update Platform Settings", "platform", "update"),

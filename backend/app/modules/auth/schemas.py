@@ -286,6 +286,15 @@ class FeatureCatalogResponse(BaseModel):
 # ============================================================================
 
 
+class SidebarLimitInfo(BaseModel):
+    """Resource limit summary for a sidebar section."""
+
+    resource: str = Field(..., description="Limit key, e.g. 'max_products'")
+    current: int = Field(..., description="Current usage count")
+    limit: int | None = Field(default=None, description="Plan limit (null = unlimited)")
+    status: str = Field(..., description="ok | warning | exceeded | not_available")
+
+
 class SidebarItemAccess(BaseModel):
     """Access status for a single sidebar section."""
 
@@ -309,6 +318,10 @@ class SidebarItemAccess(BaseModel):
     required_permission: str | None = Field(
         default=None,
         description="RBAC permission needed (e.g. 'articles:read')",
+    )
+    limit_info: SidebarLimitInfo | None = Field(
+        default=None,
+        description="Resource limit for this section (products, articles, etc.)",
     )
 
 

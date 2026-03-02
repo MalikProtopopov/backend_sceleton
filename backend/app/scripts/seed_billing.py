@@ -12,7 +12,7 @@ import json
 import sys
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.database import get_db_context
 from app.modules.billing.models import (
@@ -222,7 +222,7 @@ async def seed_billing():
                 db.add(PlanModule(id=uuid4(), plan_id=plan.id, module_id=mid))
             for mid in existing_links - desired_ids:
                 await db.execute(
-                    select(PlanModule).where(PlanModule.plan_id == plan.id, PlanModule.module_id == mid)
+                    delete(PlanModule).where(PlanModule.plan_id == plan.id, PlanModule.module_id == mid)
                 )
 
             await db.flush()
