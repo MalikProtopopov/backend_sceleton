@@ -27,6 +27,7 @@ import app.modules.parameters.models  # noqa: F401
 import app.modules.variants.models  # noqa: F401
 import app.modules.seo.models  # noqa: F401
 import app.modules.audit.models  # noqa: F401
+import app.modules.billing.models  # noqa: F401 - Plan in registry for Tenant.plan
 import app.modules.telegram.models  # noqa: F401
 import app.modules.localization.models  # noqa: F401
 
